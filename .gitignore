@@ -1,21 +1,41 @@
-*.iml
-.gradle/
-/local.properties
-/.idea/
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
+# ──────────────────────────────────────────────
+# Android / Gradle
+# ──────────────────────────────────────────────
 build/
-/captures
-.externalNativeBuild/
-.cxx/
+.gradle/
 local.properties
-*.jks
-*.keystore
-secrets.properties
+captures/
+.cxx/
+.externalNativeBuild/
+*.apk
+*.aab
+*.ap_
+*.dex
+output-metadata.json
+release/
+
+# ──────────────────────────────────────────────
+# IDE — IntelliJ / Android Studio
+# ──────────────────────────────────────────────
+.idea/
+*.iml
 .kotlin/
 *.hprof
+
+# ──────────────────────────────────────────────
+# OS
+# ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ──────────────────────────────────────────────
+# Secrets — NEVER commit these
+# ──────────────────────────────────────────────
+*.jks
+*.keystore
+*.pfx
+*.pem
+*.env
+secrets.properties
+**/apikeys*.*
