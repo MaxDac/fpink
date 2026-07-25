@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 data class NotesListUiState(
     val notes: List<Note> = emptyList(),
     val isLoading: Boolean = true,
+    val error: String? = null,
 )
 
 class NotesListViewModel(
@@ -29,8 +30,16 @@ class NotesListViewModel(
     fun refresh() {
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true) }
-            val notes = noteRepository.list().getOrDefault(emptyList())
-            _uiState.update { it.copy(notes = notes, isLoading = false) }
+            noteRepository.list().fold(
+                onSuccess = { notes ->
+                    _uiState.update { it.copy(notes = notes, isLoading = false, error = null) }
+                },
+                onFailure = { e ->
+                    _uiState.update {
+                        it.copy(isLoading = false, error = "Failed to load notes: ${e.message}")
+                    }
+                },
+            )
         }
     }
 }
