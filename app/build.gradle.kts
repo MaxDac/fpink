@@ -38,8 +38,25 @@ dependencies {
     implementation(project(":core:ai"))
     implementation(project(":core:storage"))
 
+    implementation(libs.androidx.core.ktx)
+
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
+    debugImplementation(libs.compose.ui.tooling)
+
     implementation(libs.androidx.activity.compose)
+    implementation(libs.navigation.compose)
+
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.viewmodel.compose)
+
+    implementation(libs.datastore.preferences)
+
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.okhttp)
+
+    implementation(libs.coil.compose)
 }
