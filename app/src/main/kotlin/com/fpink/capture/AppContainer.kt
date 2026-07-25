@@ -9,6 +9,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 
 class AppContainer(context: Context) {
+    val appContext: Context = context.applicationContext
+
     val settingsStore = SettingsStore(context)
 
     private val fileStore = AndroidFileStore(context)

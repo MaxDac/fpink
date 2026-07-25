@@ -38,6 +38,10 @@ class NoteRepository(
         fileStore.write(path, data).getOrThrow()
     }
 
+    suspend fun saveImage(noteId: String, imageBytes: ByteArray): Result<Unit> = runCatching {
+        fileStore.write("$IMAGES_DIR/$noteId.jpg", imageBytes).getOrThrow()
+    }
+
     suspend fun delete(id: String): Result<Unit> = runCatching {
         fileStore.delete("$NOTES_DIR/$id.json").getOrThrow()
         // Also try to delete the image, but don't fail if it's missing
