@@ -1,0 +1,68 @@
+[
+  {
+    "name": "Paddle-Lite-APACHE-2.0.txt",
+    "url": "https://raw.githubusercontent.com/PaddlePaddle/Paddle-Lite/28fe23f222de1865e01f0ab41d2494a1222be4f0/LICENSE",
+    "bytes": 11438,
+    "sha256": "ff6311c56c1b22c9209c96cc8afc16da91c24ee55a15e14ebc46fe1960dbd856"
+  },
+  {
+    "name": "PaddleOCR-models-APACHE-2.0.txt",
+    "url": "https://raw.githubusercontent.com/PaddlePaddle/Paddle-Lite-Demo/71c8499765fab203335f2d159ea8d51e0d1914c2/LICENSE",
+    "bytes": 11357,
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+  },
+  {
+    "name": "FlatBuffers-APACHE-2.0.txt",
+    "url": "https://raw.githubusercontent.com/google/flatbuffers/v1.12.0/LICENSE.txt",
+    "bytes": 11358,
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+  },
+  {
+    "name": "Eigen-MPL-2.0.txt",
+    "url": "https://raw.githubusercontent.com/eigenteam/eigen-git-mirror/3.3.7/COPYING.MPL2",
+    "bytes": 16726,
+    "sha256": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85"
+  },
+  {
+    "name": "Eigen-BSD.txt",
+    "url": "https://raw.githubusercontent.com/eigenteam/eigen-git-mirror/3.3.7/COPYING.BSD",
+    "bytes": 1516,
+    "sha256": "4f877e5ae4672568ef82cfd0023e2cef4a7cf55d867ab249efc9569a7eb9e5b1"
+  },
+  {
+    "name": "xxHash-BSD-2-Clause.txt",
+    "url": "https://raw.githubusercontent.com/Cyan4973/xxHash/v0.6.5/LICENSE",
+    "bytes": 1314,
+    "sha256": "86ec6953794503942b70fcd4f35b565d44f63f703b7037ce44dad965c4aaae91"
+  },
+  {
+    "name": "GCC-GPL-3.0.txt",
+    "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-4.9.4/COPYING3",
+    "bytes": 35147,
+    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+  },
+  {
+    "name": "GCC-Runtime-Library-Exception-3.1.txt",
+    "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-4.9.4/COPYING.RUNTIME",
+    "bytes": 3324,
+    "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+  },
+  {
+    "name": "LLVM-libcxx.txt",
+    "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-19.1.7/libcxx/LICENSE.TXT",
+    "bytes": 16703,
+    "sha256": "539dd7aed86e8a4f12cbdd0e6c50c189c7d74847e4fecc64ce2c6ee3a01da38b"
+  },
+  {
+    "name": "LLVM-libcxxabi.txt",
+    "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-19.1.7/libcxxabi/LICENSE.TXT",
+    "bytes": 16706,
+    "sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c"
+  },
+  {
+    "name": "LLVM-libunwind.txt",
+    "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-19.1.7/libunwind/LICENSE.TXT",
+    "bytes": 16706,
+    "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d"
+  }
+]

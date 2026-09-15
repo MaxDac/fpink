@@ -11,22 +11,35 @@ import org.junit.jupiter.api.Test
 /**
  * In-memory [FileStore] backed by a [MutableMap]. Used for testing only.
  */
-private class InMemoryFileStore : FileStore {
-    private val files = mutableMapOf<String, ByteArray>()
+internal class InMemoryFileStore : FileStore {
+    val files = mutableMapOf<String, ByteArray>()
+    val writes = mutableListOf<String>()
+    var fail: (operation: String, path: String) -> Boolean = { _, _ -> false }
+    var afterWrite: suspend (String) -> Unit = {}
+
+    private fun checkFailure(operation: String, path: String) {
+        if (fail(operation, path)) throw java.io.IOException("Injected $operation failure: $path")
+    }
 
     override suspend fun read(path: String): Result<ByteArray> = runCatching {
+        checkFailure("read", path)
         files[path] ?: throw NoSuchElementException("No such file: $path")
     }
 
     override suspend fun write(path: String, data: ByteArray): Result<Unit> = runCatching {
+        checkFailure("write", path)
         files[path] = data
+        writes += path
+        afterWrite(path)
     }
 
     override suspend fun delete(path: String): Result<Unit> = runCatching {
+        checkFailure("delete", path)
         if (files.remove(path) == null) throw NoSuchElementException("No such file: $path")
     }
 
     override suspend fun list(directory: String): Result<List<String>> = runCatching {
+        checkFailure("list", directory)
         val prefix = "$directory/"
         files.keys
             .filter { it.startsWith(prefix) }
@@ -34,6 +47,7 @@ private class InMemoryFileStore : FileStore {
     }
 
     override suspend fun exists(path: String): Result<Boolean> = runCatching {
+        checkFailure("exists", path)
         files.containsKey(path)
     }
 }

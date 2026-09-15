@@ -17,4 +17,10 @@ data class Note(
     val userEdited: Boolean = false,
     val tags: List<String> = emptyList(),
     val links: List<String> = emptyList(),
+    val sourceId: String? = null,
+    val paragraphIndex: Int? = null,
+    val paragraphPolygon: List<ImagePoint> = emptyList(),
+    val recognitionProvider: String? = null,
+    val recognitionModelVersion: String? = null,
+    val inkColorOrigin: InkColorOrigin? = null,
 )

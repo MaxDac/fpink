@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.fpink.capture.acceptance.FixturePickerActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <provider
+            android:name="com.fpink.capture.acceptance.FixtureImageProvider"
+            android:authorities="${applicationId}.images"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

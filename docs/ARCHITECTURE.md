@@ -1,82 +1,177 @@
 # Architecture
 
-## Module Diagram
+## Modules and boundaries
 
-```
-┌─────────────────────────────────────────────────┐
-│                    :app                         │
-│  Compose UI · CameraX · DataStore · Navigation  │
-│  AndroidFileStore · AppContainer (DI)           │
-└────────┬──────────┬────────────────┬────────────┘
-         │          │                │
-         ▼          ▼                ▼
-   ┌──────────┐ ┌──────────┐ ┌─────────────┐
-   │:core:ai  │ │:core:    │ │:core:       │
-   │          │ │ model    │ │ storage     │
-   │Ktor      │ │Note      │ │NoteRepo     │
-   │Azure AOAI│ │IdGen     │ │FileStore    │
-   │Prompts   │ │Instant   │ │(interface)  │
-   └────┬─────┘ └──────────┘ └──────┬──────┘
-        │                           │
-        └───── pure Kotlin/JVM ─────┘
-              (no Android imports)
-```
+| Module | Responsibility |
+|--------|----------------|
+| `:core:model` | Serializable notes, normalized image points and colour provenance |
+| `:core:ai` | Two public contracts, Azure Read implementation, paragraph and colour processing |
+| `:core:storage` | Portable note repository and recoverable batch publication |
+| `:recognition:paddle` | Android/native CPU OCR, model assets and runtime provenance |
+| `:app` | Image intake, permissions, encrypted settings, lifecycle, UI and manual DI |
 
-## Data Flow
+All `:core:*` modules remain Android-free. Android `Bitmap`, `Uri`, Keystore and
+native handles never cross their boundary. `AppContainer` wires the pipeline
+without a plugin registry or DI framework.
 
-```
-Camera (CameraX)
-  │
-  ▼
-JPEG bytes ──► :core:ai ──► Azure OpenAI (vision)
-                  │
-                  ▼
-             PageAnalysis { text, inkColorHex, inkColorName, confidence, modelNotes }
-                  │
-                  ▼
-             :core:storage (NoteRepository)
-                  │
-                  ├── notes/{id}.json   (Note serialised via kotlinx.serialization)
-                  └── images/{id}.jpg   (archived source photo)
+## Pipeline
+
+```text
+CameraX / ACTION_GET_CONTENT chooser
+    -> private source import, bounded decode, orientation normalization
+    -> PreparedImage (encoded PNG/JPEG + matching ARGB pixels)
+    -> explicitly selected RecognitionProvider
+         PaddleOcrProvider: native PP-OCRv5 mobile CPU
+         AzureReadProvider: prebuilt-read, API 2024-11-30
+    -> RecognitionDocument (text regions + normalized geometry + paragraph hints)
+    -> DefaultNoteProcessor
+         logical paragraph grouping
+         dominant foreground-ink cluster
+    -> ParagraphDraft[]
+    -> recoverable NoteRepository.saveBatch
+    -> ordinary independent notes in the list
 ```
 
-## Note Schema
+`RecognitionProvider.recognize` only recognizes text and layout. It neither creates
+notes nor chooses their colours. `NoteProcessor.process` consumes the normalized
+result and the same prepared colour pixels, without knowing vendor response DTOs.
+Both return explicit `Result` values and propagate coroutine cancellation.
 
-```kotlin
-data class Note(
-    val id: String,              // ULID-like, e.g. "20260725-a1b2c3"
-    val capturedAt: Instant,
-    val imagePath: String,       // relative: "images/{id}.jpg"
-    val text: String,            // transcribed handwriting
-    val inkColorHex: String?,    // e.g. "#1A3C5E"
-    val inkColorName: String?,   // e.g. "Pilot Iroshizuku Kon-peki"
-    val confidence: Float?,      // 0.0–1.0, model self-reported
-    val modelNotes: String?,     // free-text observations from the model
-    val userEdited: Boolean,     // true after manual edit
-    val tags: List<String>,      // reserved for Phase 1
-    val links: List<String>,     // reserved for Phase 1
-)
-```
+Paddle is selected by default. Azure is only constructed/used for an explicitly
+selected online job; no error triggers another provider. Provider configuration
+is snapshotted for each job rather than reread midway through recognition.
 
-## AiError Hierarchy
+## Coordinates, paragraphs and colour
 
-```
-AiError (sealed class, extends Exception)
-├── NetworkError    — connection failures, timeouts
-├── AuthError       — HTTP 401 / invalid API key
-├── RateLimited     — HTTP 429
-├── MalformedResponse — JSON parse failures from the model
-└── Unknown         — anything else
-```
+`ImagePoint` coordinates are finite values in `[0, 1]`, relative to the
+orientation-corrected prepared image. Encoded bytes and the ARGB pixel buffer must
+describe that same image. A provider must reverse any detection/crop/resize
+transform before returning polygons.
 
-All errors carry a human-readable `message`. `NetworkError`, `MalformedResponse`, and
-`Unknown` also carry the original `cause` throwable for logging.
+Azure paragraph hints take precedence when available. Without hints, deterministic
+layout heuristics consider reading order, relative spacing and indentation.
+Visual newlines alone do not define notes. Soft wraps are joined without inventing
+text, rewriting accents or automatically repairing ambiguous hyphens.
 
-## Key Design Decisions
+Colour sampling uses the union of text polygons, so overlapping detections do not
+count pixels twice. Paper/background and long ruling are suppressed where
+possible. Similar foreground colours are grouped and the cluster with the greatest
+ink-pixel support wins, regardless of the number of recognized words.
 
-| Decision | Rationale |
-|----------|-----------|
-| No Hilt / Koin | Manual DI via `AppContainer` is sufficient at this scale and avoids annotation-processor overhead |
-| Flat JSON files, not Room | Simpler, portable, no schema migrations; sufficient for MVP note counts |
-| Abstract `FileStore` interface | Decouples `:core:storage` from Android `filesDir`; enables KMP and test doubles |
-| `:core:*` = pure Kotlin | Keeps the KMP migration path open without rewriting business logic |
+`InkColorOrigin` distinguishes `DETECTED`, `DEFAULTED` and `USER_SELECTED`.
+Unreliable colour estimation preserves text and defaults to black. An actual
+detected black is not mislabeled as a fallback. Photo colour is not calibrated,
+and layout/colour heuristics cannot resolve every ambiguous journal page.
+The processor bounds input to 4,096 regions, 64 polygon vertices per region and
+one million text characters. Colour work is limited to 131,072 samples per
+paragraph and 1,048,576 per document, with a separate geometry-work budget.
+Tiny strokes can be undersampled, and paragraphs with no distinguishing layout
+cue cannot always be separated correctly. The detail editor shares the processor's
+`inkColorName("#RRGGBB")` helper rather than maintaining a second colour-name map.
+
+## Notes and persistence
+
+The original `Note` fields and defaults remain readable: ID, timestamp, image
+path, transcription, optional colour/confidence/model observations, edit flag,
+tags and links. Tags/links remain reserved fields, not new category UI.
+
+New optional/defaulted fields are:
+
+| Field | Meaning |
+|-------|---------|
+| `sourceId` | Shared image/batch identity |
+| `paragraphIndex` | Reading order within a batch |
+| `paragraphPolygon` | Normalized region for this paragraph |
+| `recognitionProvider`, `recognitionModelVersion` | OCR provenance |
+| `inkColorOrigin` | Detected, defaulted or manually selected colour |
+
+Each job has a stable source ID. Sibling note IDs are derived from that source
+and paragraph index; the shared source is `images/{sourceId}.png`. Each paragraph
+is a normal note record, not a sub-document that must be regenerated when edited.
+
+`saveBatch(sourceId, imageBytes, imageExtension, notes)` writes the source and
+notes atomically per file, then publishes a batch completion marker. New batch
+notes are not visible through get/list until publication. Legacy flat notes
+without batch metadata remain visible. A retry of an already committed batch
+does not overwrite subsequent manual edits or create duplicate notes.
+
+`staging/{sourceId}.json` records ownership before source/note writes.
+`batches/{sourceId}.json` is the atomic publication and membership record. Recovery
+rolls back unpublished owned files and preserves published batches. A cleanup
+failure after publication can report an error even though the batch committed;
+retry finishes recovery safely. Different original note IDs or image extensions
+cannot reuse an existing batch ID.
+
+Repository mutations are serialized. Storage read/write/cleanup failures are
+surfaced rather than converted into an empty library. Deleting a paragraph first
+updates committed membership atomically, then removes its record. Its source is
+retained while any committed note references it, and removed after the last
+reference. Empty batch markers remain as retry tombstones so even fully deleted
+batches cannot be resurrected; they are omitted from the note list. Legacy
+deletions use a recovery journal and the original stored image path. List ordering
+preserves paragraph order for equal timestamps.
+`isSourceCommitted(sourceId)` includes empty tombstones, so restoring an old job
+does not upload or recognize its image again after all its notes were deleted.
+
+`AndroidFileStore` uses atomic renames and file/directory synchronization.
+Filesystem durability still requires device validation rather than only
+in-memory repository tests.
+
+## Input, lifecycle and settings
+
+Gallery uses a compatible image chooser, not an exclusive default-gallery API.
+The app reads `ContentResolver` streams immediately into private storage; later
+processing never depends on a transient external URI grant. Camera permission is
+requested only on the camera path, and camera hardware is optional.
+
+Navigation carries an internal job/source ID, not image bytes or an external
+filesystem path. Staging and lifecycle state retain that identity across retries.
+Cancellation first persists a secret-free tombstone outside the image staging
+directory, before waiting for a native kernel to finish. Restored jobs and cached
+retries honour that marker even if image cleanup fails. If marker persistence
+fails, durable selection invalidation prevents restoration; inability to persist
+either is reported explicitly rather than claiming cancellation succeeded.
+Cancelled or superseded work must not publish late notes.
+
+Settings separate provider selection from Azure endpoint/key configuration. The
+key is encrypted with Android Keystore-backed AES-GCM, never stored as a plaintext
+preference or included in note JSON. Old Azure OpenAI settings are not migrated to
+Document Intelligence. Backup rules exclude private notes, sources and secrets.
+
+Azure submits the prepared image with its true MIME type and polls a bounded
+asynchronous operation. Polling is restricted to the configured trusted HTTPS
+origin; redirects must not leak the API key. The connection test uses a non-image
+resource operation and states its limits. No font-style/Layout add-ons or cloud
+colour computation are requested.
+
+## Errors and verification boundaries
+
+`RecognitionError` distinguishes configuration, unsupported device, missing model,
+network, authentication, rate limiting and malformed service responses. No-text
+results create zero notes and receive a visible outcome. Only unreliable colour
+has the deliberate black fallback; OCR, image, storage and cancellation failures
+must not be disguised as successful colour fallback.
+
+JVM tests exercise contracts, old JSON, Azure mock responses, paragraph/colour
+fixtures and storage failure/recovery. Android device checks remain necessary for
+native inference and page sizes, chooser grants, EXIF decoding, Keystore,
+lifecycle and camera behavior. Model download size is not measured APK size, and
+passing synthetic tests is not a cursive-recognition quality claim.
+
+The app's `verifyDebugRecognitionPackage` task inspects the installable APK, not
+just linker outputs. It prevents a successfully linked JNI wrapper from shipping
+without its required Paddle runtime or model assets. The native module explicitly
+packages its pinned runtime through the `native` JNI-library source directory.
+
+Android acceptance runs use isolated directories and Keystore aliases, with a
+test application that does not initialize production settings or migrations.
+The separate-UID picker/provider fixture is framework-only Java: dependencies
+shared with the target app are not available when the test APK starts its own
+process. This preserves actual cross-UID grants without relying on shared
+Kotlin/AndroidX classes or replacing provider access with a mock.
+
+The complete offline pipeline is exercised separately in
+`NativePipelineAcceptanceTest`: a generated two-paragraph, two-colour photograph
+passes through real import, bundled Paddle, paragraph/colour processing and
+file-backed persistence. Emulator results validate that path, not real journal
+accuracy, physical-camera capture or 16 KB device behavior.

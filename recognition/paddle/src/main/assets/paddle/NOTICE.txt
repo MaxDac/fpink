@@ -1,0 +1,60 @@
+FPInk PaddleOCR adapter — third-party attribution and provenance
+
+PaddleOCR PP-OCRv5_mobile_det and PP-OCRv5_mobile_rec, matching
+ppocr_keys_ocrv5.txt dictionary, and the Paddle-Lite public inference API/runtime:
+Copyright PaddlePaddle Authors. Apache License 2.0.
+Source/model revisions and exact redistributed binaries are recorded in the
+module's artifacts.lock.json and README.md.
+The official Paddle-Lite-Demo CPU archive supplies the ARM64 runtime.
+FPInk modifies the runtime's non-loaded .dynsym section-header sh_info field
+from 3 to 10, correcting an upstream ELF metadata defect rejected by modern
+linkers. Exactly one byte changes at file offset 0x38E384. All loadable segment
+bytes, symbols, relocations, dependencies and segment alignment are unchanged.
+Original SHA-256:
+6558bf52fee978db21a550bb023378f865d145672751cccf84d0e797df60b369
+Modified SHA-256:
+3966a5d0ac2569ca63ca9cbd84093d5d23026eb85fa64e7a3062fa8aba89a9b6
+The transformation and before/after verification are reproducible with
+scripts/normalize-runtime.ps1. No linker error checks are disabled.
+Paddle headers are redistributed unmodified with their original notices.
+FPInk's JNI preprocessing/postprocessing code is a new implementation, not the
+questionnaire-gated shell demo. No gated source was accessed.
+
+FlatBuffers 1.12.0:
+Copyright Google Inc. Apache License 2.0.
+Paddle Lite uses FlatBuffers for its model representation; this is a general
+serialization dependency, not a Google OCR provider or network integration.
+
+Eigen (conservative notice for the Lite source dependency):
+Copyright the Eigen authors. Mozilla Public License 2.0.
+Source dependency published by Paddle:
+https://paddlelite-data.bj.bcebos.com/third_party_libs/eigen-git-mirror-master-9ab917e9db99f5907d086aa73d5f9103-gcc12.zip
+The small CPU artifact's complete build manifest is not supplied by upstream;
+this notice is included conservatively, not as a claim about linked operators.
+
+xxHash 0.6.5 (conservative notice for the Lite source dependency):
+Copyright Yann Collet. BSD 2-Clause License.
+https://github.com/Cyan4973/xxHash/tree/v0.6.5
+
+GNU compiler/OpenMP support in the official CPU binary:
+The binary identifies GCC 4.9.x and contains GNU OpenMP (GOMP) runtime symbols.
+Copyright Free Software Foundation, Inc.
+GNU General Public License version 3, with the GCC Runtime Library Exception 3.1.
+Both full texts are included. The linking exception, not plain GPL alone,
+governs eligible target code linked with GCC runtime support.
+Corresponding public runtime source: https://gcc.gnu.org/releases.html
+and https://github.com/gcc-mirror/gcc/tree/releases/gcc-4.9.4/libgomp .
+The exact upstream binary producer build command/revision is not attested.
+
+Android C++ runtime:
+The app build packages libc++_shared.so from the pinned Android NDK r28c,
+not from the downloaded demo archive. LLVM/Android NDK license notices must
+accompany the built application. The upstream LLVM libc++, libc++abi and
+libunwind license texts (Apache-2.0 with LLVM exceptions, and legacy notices)
+are included in licenses/LLVM-*.txt; their source URLs/digests are recorded
+in licenses.lock.json. Check the final NDK package's notices when building.
+No proprietary accelerator SDK, OpenCV
+shared library, ARM32 binary, GPU archive, Python, or alternate model is bundled.
+
+These third-party terms do not replace or relax the existing FPInk
+internal Microsoft-IP/non-distribution restriction.
