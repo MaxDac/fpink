@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +46,8 @@ import coil3.compose.AsyncImage
 import com.fpink.capture.ui.components.InkColorSwatch
 import com.fpink.capture.ui.containerViewModel
 import com.fpink.core.model.Note
+import com.fpink.core.model.InkColorOrigin
+import com.fpink.core.ai.inkColorName
 import java.io.File
 import kotlin.math.roundToInt
 
@@ -75,11 +78,11 @@ fun NoteDetailScreen(
                 actions = {
                     TextButton(
                         onClick = viewModel::onSave,
-                        enabled = state.isEditing && state.note != null,
+                        enabled = state.isEditing && state.note != null && !state.isSaving && state.colorError == null,
                     ) { Text("Save") }
                     TextButton(
                         onClick = { showDeleteDialog = true },
-                        enabled = state.note != null,
+                        enabled = state.note != null && !state.isSaving,
                     ) { Text("Delete") }
                 },
             )
@@ -104,6 +107,10 @@ fun NoteDetailScreen(
                     note = note,
                     editedText = state.editedText,
                     error = state.error,
+                    editedColorHex = state.editedColorHex,
+                    colorError = state.colorError,
+                    isSaving = state.isSaving,
+                    onColorChanged = viewModel::onColorChanged,
                     onTextChanged = viewModel::onTextChanged,
                     onThumbnailClick = viewModel::onToggleFullImage,
                 )
@@ -120,7 +127,7 @@ fun NoteDetailScreen(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Delete note?") },
-            text = { Text("This note and its photo will be permanently removed.") },
+            text = { Text("This note will be permanently removed. Its source image is kept while another note still uses it.") },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteDialog = false
@@ -139,6 +146,10 @@ private fun NoteDetailContent(
     note: Note,
     editedText: String,
     error: String?,
+    editedColorHex: String,
+    colorError: String?,
+    isSaving: Boolean,
+    onColorChanged: (String) -> Unit,
     onTextChanged: (String) -> Unit,
     onThumbnailClick: () -> Unit,
 ) {
@@ -166,10 +177,46 @@ private fun NoteDetailContent(
             value = editedText,
             onValueChange = onTextChanged,
             label = { Text("Transcription") },
+            enabled = !isSaving,
             modifier = Modifier.fillMaxWidth(),
         )
 
         MetadataRow(note = note)
+        Text(
+            when (note.inkColorOrigin) {
+                InkColorOrigin.DETECTED -> "Ink colour measured locally."
+                InkColorOrigin.DEFAULTED -> "Black was used because the ink colour could not be measured reliably. You can change it."
+                InkColorOrigin.USER_SELECTED -> "Ink colour selected by you."
+                null -> "Colour provenance was not recorded for this older note."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text("Edit this note's ink colour", style = MaterialTheme.typography.titleSmall)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            listOf("#000000", "#2447A7", "#147D45", "#B42532", "#6B318C", "#8A4B28", "#00858B", "#E8C64A").forEach { hex ->
+                TextButton(onClick = { onColorChanged(hex) }, enabled = !isSaving) {
+                    InkColorSwatch(hex, size = 20.dp)
+                    Text(inkColorName(hex), modifier = Modifier.padding(start = 6.dp))
+                }
+            }
+        }
+        OutlinedTextField(
+            value = editedColorHex,
+            onValueChange = onColorChanged,
+            label = { Text("Ink colour HEX (#RRGGBB)") },
+            enabled = !isSaving,
+            singleLine = true,
+            isError = colorError != null,
+            supportingText = {
+                Text(colorError ?: normalizeInkHex(editedColorHex)?.let { inkColorName(it) }.orEmpty())
+            },
+            leadingIcon = { InkColorSwatch(normalizeInkHex(editedColorHex), size = 24.dp) },
+            modifier = Modifier.fillMaxWidth(),
+        )
 
         note.modelNotes?.takeIf { it.isNotBlank() }?.let { notes ->
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {

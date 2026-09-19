@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "demoSource": "https://github.com/PaddlePaddle/Paddle-Lite-Demo/tree/71c8499765fab203335f2d159ea8d51e0d1914c2",
+  "liteReleaseSource": "https://github.com/PaddlePaddle/Paddle-Lite/tree/28fe23f222de1865e01f0ab41d2494a1222be4f0",
+  "detectorModelCard": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det/tree/0d63e78e2b680928f6b1747d76a08db6e645efb7",
+  "recognizerModelCard": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec/tree/682f20538d8c086cb2128e5cfac775e6c4904e85",
+  "archives": [
+    {
+      "name": "det.tar.gz",
+      "url": "https://paddlelite-demo.bj.bcebos.com/paddle-x/ocr/models/PP-OCRv5_mobile_det.tar.gz",
+      "bytes": 4556735,
+      "sha256": "18be2328b19936bb8bbef48ffeb3f5214e58c26acd47bb64681f2f52dc7b8fa4",
+      "files": [
+        {
+          "member": "PP-OCRv5_mobile_det.nb",
+          "destination": "src/main/assets/paddle/PP-OCRv5_mobile_det.nb",
+          "bytes": 5001214,
+          "sha256": "bee84fdb3d7c5f312a797da81f2dd44c89088c08e1f58a51044a823cddfbd90c"
+        }
+      ]
+    },
+    {
+      "name": "rec.tar.gz",
+      "url": "https://paddlelite-demo.bj.bcebos.com/paddle-x/ocr/models/PP-OCRv5_mobile_rec.tar.gz",
+      "bytes": 14077259,
+      "sha256": "6385dad9a2272b0180b9f44f49c08feed5ffa777a4f8658e25d9db39636ab2b3",
+      "files": [
+        {
+          "member": "PP-OCRv5_mobile_rec.nb",
+          "destination": "src/main/assets/paddle/PP-OCRv5_mobile_rec.nb",
+          "bytes": 16718470,
+          "sha256": "9d073b3ee01deee358bf929dd8952d4d355c9545f4a93d8070605581b4c21c0c"
+        }
+      ]
+    },
+    {
+      "name": "labels.tar.gz",
+      "url": "https://paddlelite-demo.bj.bcebos.com/demo/ocr/labels/labels.tar.gz",
+      "bytes": 63096,
+      "sha256": "deaf9d44b671ee4edb3a2e1747844624e211d1a24ef641e8336147fa046edb8a",
+      "files": [
+        {
+          "member": "ppocr_keys_ocrv5.txt",
+          "destination": "src/main/assets/paddle/ppocr_keys_ocrv5.txt",
+          "bytes": 74011,
+          "sha256": "17665d27ed39f0deb82007859992d626d3105d0ee4578c120b7c72138dc04d05"
+        }
+      ]
+    },
+    {
+      "name": "lite.tar.gz",
+      "url": "https://paddlelite-demo.bj.bcebos.com/paddle-x/libs/android/paddle_lite_libs_v2_14_rc.tar.gz",
+      "bytes": 4136050,
+      "sha256": "0e9f6aa10668929deeaa691d6a14be56f8e8967f5d28c406d4fd444ba88f93d5",
+      "files": [
+        {
+          "member": "cxx/libs/arm64-v8a/libpaddle_light_api_shared.so",
+          "destination": "native/arm64-v8a/libpaddle_light_api_shared.so",
+          "bytes": 3729624,
+          "sha256": "6558bf52fee978db21a550bb023378f865d145672751cccf84d0e797df60b369",
+          "normalization": {
+            "script": "scripts/normalize-runtime.ps1",
+            "operation": "ELF64 .dynsym.sh_info: 3 -> 10 at file offset 3728260; all PT_LOAD bytes unchanged",
+            "bytes": 3729624,
+            "sha256": "3966a5d0ac2569ca63ca9cbd84093d5d23026eb85fa64e7a3062fa8aba89a9b6"
+          }
+        },
+        {
+          "member": "cxx/include/paddle_api.h",
+          "destination": "src/main/cpp/third_party/paddle_lite/paddle_api.h",
+          "bytes": 26516,
+          "sha256": "96fa8917b2c020f708a6510cb40ff7d4c8da3c97dc7b348b0e458c8da5099d68"
+        },
+        {
+          "member": "cxx/include/paddle_place.h",
+          "destination": "src/main/cpp/third_party/paddle_lite/paddle_place.h",
+          "bytes": 7867,
+          "sha256": "a1dd6330943ef44836031f4f51dcb5b435378253e8ca5fa7671cec617b72dc6c"
+        }
+      ]
+    }
+  ]
+}

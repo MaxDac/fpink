@@ -4,6 +4,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.createSavedStateHandle
+import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.fpink.capture.AppContainer
 import com.fpink.capture.FPInkApp
@@ -27,6 +30,22 @@ inline fun <reified VM : ViewModel> containerViewModel(
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 @Suppress("UNCHECKED_CAST")
                 return factory(container) as T
+            }
+
+        },
+    )
+}
+
+@Composable
+inline fun <reified VM : ViewModel> savedContainerViewModel(
+    crossinline factory: (AppContainer, SavedStateHandle) -> VM,
+): VM {
+    val container = appContainer()
+    return viewModel(
+        factory = object : ViewModelProvider.Factory {
+            override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
+                @Suppress("UNCHECKED_CAST")
+                return factory(container, extras.createSavedStateHandle()) as T
             }
         },
     )

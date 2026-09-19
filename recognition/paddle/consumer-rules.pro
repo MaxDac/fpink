@@ -1,0 +1,3 @@
+-keep class com.fpink.recognition.paddle.NativeBridge { *; }
+-keep class com.fpink.recognition.paddle.NativeLine { *; }
+-keep class com.fpink.recognition.paddle.NativeCancellation { *; }
