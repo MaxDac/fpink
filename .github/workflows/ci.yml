@@ -28,6 +28,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Test release tooling
+        run: python3 -m unittest discover -s scripts/tests -v
+
       - name: Set up JDK 17
         uses: actions/setup-java@v6
         with:

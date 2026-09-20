@@ -24,6 +24,10 @@ The runtime must be explicitly included through the module's `native` JNI-librar
 source directory; successful linking alone does not include it in an APK.
 The app's `verifyDebugRecognitionPackage` and `verifyReleaseRecognitionPackage`
 tasks guard this requirement for both build types.
+The app excludes the prebuilt `libpaddle_light_api_shared.so` from symbol stripping
+so its packaged bytes retain the reviewed, normalized artifact hash. The release
+pipeline verifies that hash, model/dictionary hashes and bundled license hashes
+against the actual APK; app-built JNI and NDK libraries keep normal stripping.
 
 Six native tests passed on an Android 11 x86_64 emulator running the actual ARM64
 libraries through `libndk_translation.so`. They cover HELLO/geometry, blank output,
@@ -47,7 +51,9 @@ benchmark or evidence that the model's 90% confidence means 90% word accuracy.
 
 ## Exact build inputs
 
-* Android library, minSdk **26**, compileSdk **36**, Java/Kotlin bytecode **17**.
+* Android library, minSdk **26**, compileSdk **37**, Java/Kotlin bytecode **17**.
+  The app also compiles against API 37 for current dependency requirements;
+  its targetSdk remains **36**, so this does not opt into new runtime behavior.
 * NDK **28.2.13676358** (r28c), CMake **3.22.1**, C++17.
 * **Offline PaddleOCR supports only `arm64-v8a`.** No ARM32, x86, or x86_64
   Paddle runtime is included. Other app dependencies retain those ABIs, so this
@@ -270,5 +276,7 @@ test failed because `g++` was missing; it is not shipped in the app.
    accuracy and physical-device performance still need measurement.
 
 Licenses/notices are bundled under `src/main/assets/paddle/licenses` and in
-`NOTICE.txt`. This does not change FPInk's existing internal-IP/non-distribution
-restriction or authorize publication.
+`NOTICE.txt`. FPInk's original code is licensed under GPL-3.0-only; see the root
+`LICENSE` and `README.md`. Third-party runtime, models, headers and notices retain
+their respective licenses. See `docs/RELEASING.md` for the remaining F-Droid
+source-build and provenance requirements.

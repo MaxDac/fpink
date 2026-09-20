@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.fpink.recognition.paddle"
-    compileSdk = 36
+    compileSdk = 37
     ndkVersion = "28.2.13676358"
 
     defaultConfig {

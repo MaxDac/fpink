@@ -1,4 +1,5 @@
 import com.android.build.api.artifact.SingleArtifact
+import java.util.Properties
 import java.util.zip.ZipFile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -7,16 +8,39 @@ plugins {
     alias(libs.plugins.compose.compiler)
 }
 
+val baseVersion = Properties().apply {
+    rootProject.file("version.properties").inputStream().use { load(it) }
+}
+val releaseVersionName = providers.gradleProperty("releaseVersionName").orNull
+val releaseVersionCode = providers.gradleProperty("releaseVersionCode").orNull
+require((releaseVersionName == null) == (releaseVersionCode == null)) {
+    "Set both -PreleaseVersionName and -PreleaseVersionCode, or neither."
+}
+require(!providers.gradleProperty("requireReleaseVersion").isPresent || releaseVersionName != null) {
+    "Publishing requires explicit -PreleaseVersionName and -PreleaseVersionCode."
+}
+val resolvedVersionName = releaseVersionName ?: baseVersion.getProperty("versionName")
+require(resolvedVersionName != null && Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)").matches(resolvedVersionName)) {
+    "versionName must be a stable X.Y.Z version without leading zeros."
+}
+val versionCodeText = releaseVersionCode ?: baseVersion.getProperty("versionCode")
+val resolvedVersionCode = versionCodeText?.toIntOrNull()
+require(versionCodeText != null && Regex("[1-9][0-9]*").matches(versionCodeText) &&
+    resolvedVersionCode != null && resolvedVersionCode in 1..2_100_000_000) {
+    "versionCode must be an integer between 1 and 2100000000."
+}
+
 android {
     namespace = "com.fpink.capture"
-    compileSdk = 36
+    compileSdk = 37
+    buildToolsVersion = "36.0.0"
 
     defaultConfig {
         applicationId = "com.fpink.capture"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = resolvedVersionCode
+        versionName = resolvedVersionName
         testInstrumentationRunner = "com.fpink.capture.acceptance.AcceptanceTestRunner"
     }
 
@@ -27,6 +51,11 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    packaging {
+        // Preserve the reviewed runtime bytes for APK provenance verification.
+        jniLibs.keepDebugSymbols += "**/libpaddle_light_api_shared.so"
     }
 }
 
