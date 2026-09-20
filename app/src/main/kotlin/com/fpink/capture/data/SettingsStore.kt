@@ -56,7 +56,7 @@ data class StoredRecognitionSettings(
 class SettingsStore internal constructor(
     private val store: DataStore<Preferences>,
     private val cipher: CredentialCipher,
-) {
+) : ThemeSettings {
     constructor(context: Context) : this(context.applicationContext.recognitionDataStore, CredentialCipher())
 
     init {
@@ -70,6 +70,15 @@ class SettingsStore internal constructor(
         val PROVIDER = stringPreferencesKey("recognition_provider")
         val ENDPOINT = stringPreferencesKey("document_intelligence_endpoint")
         val KEY = stringPreferencesKey("document_intelligence_encrypted_key")
+        val THEME = stringPreferencesKey("appearance_theme")
+    }
+
+    override val themeMode: Flow<ThemeMode> = store.data.map {
+        ThemeMode.fromStored(it[Keys.THEME])
+    }
+
+    override suspend fun saveThemeMode(mode: ThemeMode) {
+        store.edit { it[Keys.THEME] = mode.storedValue }
     }
 
     val storedSettings: Flow<StoredRecognitionSettings> = store.data.map { preferences ->

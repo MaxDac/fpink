@@ -14,7 +14,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -27,6 +26,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.fpink.capture.data.RecognitionJobState
 import com.fpink.capture.ui.savedContainerViewModel
+import com.fpink.capture.R
+import com.fpink.capture.ui.components.ActionIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,7 +71,7 @@ fun ProcessingScreen(
                         OutlinedButton(onClick = { viewModel.discard(onDiscard) }) { Text("Discard") }
                         if (current.retryable) Button(onClick = viewModel::retry) { Text("Retry same job") }
                     }
-                    TextButton(onClick = onSettings) { Text("Open Settings") }
+                    ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettings)
                     Text("Retries keep this job's original provider and resource. To use changed settings, discard and choose the image again.")
                 }
                 is RecognitionJobState.Complete -> CircularProgressIndicator()
