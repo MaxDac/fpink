@@ -34,6 +34,7 @@ Desktop.ini
 # Secrets — NEVER commit these
 # ──────────────────────────────────────────────
 *.jks
+*.p12
 *.keystore
 *.pfx
 *.pem

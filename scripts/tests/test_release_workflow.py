@@ -27,6 +27,7 @@ class WorkflowTests(unittest.TestCase):
         self.addCleanup(os.chdir, self.previous_cwd)
         self.env = {
             "VERSION_NAME": "0.1.0", "VERSION_CODE": "2", "TAG": "v0.1.0",
+            "PRERELEASE": "false",
             "PREVIOUS_TAG": "", "GITHUB_SHA": SHA, "GITHUB_REPOSITORY": "owner/repo",
             "RUNNER_TEMP": str(self.root), "ANDROID_HOME": str(self.root / "sdk"),
             "GITHUB_STEP_SUMMARY": str(self.root / "summary.txt"),
@@ -45,12 +46,21 @@ class WorkflowTests(unittest.TestCase):
             "schemaVersion": 1, "applicationId": "com.fpink.capture",
             "versionName": "0.1.0", "versionCode": 2, "tag": "v0.1.0", "sourceSha": SHA,
             "previousSigningCertificateSha256": None,
+            "isPrerelease": False,
         }
         self.save_metadata()
         self.calls = []
         self.tags = []
         self.releases = []
         self.tamper_download = False
+        self.remote_prerelease = False
+
+    def select_preview(self):
+        version = "0.1.0-preview.2"
+        os.environ.update(VERSION_NAME=version, TAG="v" + version, PRERELEASE="true")
+        self.metadata.update(versionName=version, tag="v" + version, isPrerelease=True)
+        self.remote_prerelease = True
+        self.save_metadata()
 
     def save_metadata(self):
         Path("incoming/release-metadata.json").write_text(json.dumps(self.metadata))
@@ -65,7 +75,7 @@ class WorkflowTests(unittest.TestCase):
         self.calls.append(args)
         if "verify" in args:
             return f"Signer #1 certificate SHA-256 digest: {CERTIFICATE}\n"
-        return "package: name='com.fpink.capture' versionCode='2' versionName='0.1.0'\n"
+        return f"package: name='com.fpink.capture' versionCode='2' versionName='{self.metadata['versionName']}'\n"
 
     def sign(self):
         with patch("subprocess.run", side_effect=self.signing_run), \
@@ -77,7 +87,8 @@ class WorkflowTests(unittest.TestCase):
         if args[1:2] == ["api"] and "--paginate" in args:
             return json.dumps([self.tags if "/tags?" in args[-1] else self.releases])
         if args[1:3] == ["release", "view"]:
-            return json.dumps({"isDraft": True, "assets": [{"name": p.name} for p in Path("release-assets").iterdir()]})
+            return json.dumps({"isDraft": True, "isPrerelease": self.remote_prerelease,
+                               "assets": [{"name": p.name} for p in Path("release-assets").iterdir()]})
         if args[1:3] == ["release", "download"]:
             directory = Path(args[args.index("--dir") + 1])
             for p in Path("release-assets").iterdir():
@@ -94,6 +105,10 @@ class WorkflowTests(unittest.TestCase):
         for event in ("push:", "pull_request:", "schedule:", "workflow_run:"):
             self.assertNotIn(event, triggers)
         self.assertIn("default: false", triggers)
+        self.assertIn("default: prerelease", triggers)
+        self.assertIn("- stable", triggers)
+        self.assertIn('RELEASE_TYPE: ${{ inputs.release_type }}', WORKFLOW)
+        self.assertIn('--release-type "$RELEASE_TYPE"', WORKFLOW)
         build, publish = WORKFLOW.split("\n  publish:\n")
         self.assertNotIn("contents: write", build)
         self.assertNotIn("actions/checkout@", publish)
@@ -149,6 +164,52 @@ class WorkflowTests(unittest.TestCase):
         self.assertLess(verbs.index(["release", "download"]), verbs.index(["release", "edit"]))
         self.assertIn("--draft", next(args for args in self.calls if args[1:3] == ["release", "create"]))
         self.assertIn("--draft=false", self.calls[-1])
+        self.assertIn("--prerelease=false", self.calls[-1])
+        self.assertIn("--latest=true", self.calls[-1])
+
+    def test_preview_is_signed_and_published_with_prerelease_flag(self):
+        self.select_preview()
+        self.sign()
+        manifest = json.loads(Path("release-assets/release-manifest.json").read_text())
+        self.assertEqual(manifest["versionName"], "0.1.0-preview.2")
+        self.assertEqual(manifest["apk"], "FPInk-0.1.0-preview.2.apk")
+        self.assertNotIn("isPrerelease", manifest)
+        self.calls.clear()
+        self.publish()
+        create = next(args for args in self.calls if args[1:3] == ["release", "create"])
+        self.assertIn("--prerelease", create)
+        self.assertIn("--latest=false", create)
+        self.assertIn("--prerelease=true", self.calls[-1])
+        self.assertIn("--latest=false", self.calls[-1])
+        self.assertIn("Pre-release: not production-ready.", Path("release-notes.txt").read_text())
+
+    def test_preview_draft_cannot_be_published_with_wrong_label(self):
+        self.select_preview()
+        self.sign()
+        self.calls.clear()
+        self.remote_prerelease = False
+        with self.assertRaisesRegex(RuntimeError, "Draft type"):
+            self.publish()
+        self.assertFalse(any(args[1:3] == ["release", "edit"] for args in self.calls))
+
+    def test_signing_rejects_release_type_mismatches(self):
+        self.select_preview()
+        self.metadata["isPrerelease"] = False
+        self.save_metadata()
+        with self.assertRaisesRegex(RuntimeError, "metadata type mismatch"):
+            self.sign()
+        self.assertEqual(self.calls, [])
+
+    def test_signing_rejects_prerelease_leading_zeros(self):
+        self.select_preview()
+        os.environ["VERSION_NAME"] = "0.1.0-preview.02"
+        with self.assertRaisesRegex(RuntimeError, "Invalid prerelease identifier"):
+            self.sign()
+
+    def test_signing_rejects_unrecognized_release_type(self):
+        os.environ["PRERELEASE"] = "yes"
+        with self.assertRaisesRegex(RuntimeError, "Invalid release type"):
+            self.sign()
 
     def test_collision_never_writes(self):
         for tags, releases in ([{"name": "v0.1.0"}], []), ([], [{"tag_name": "v0.1.0"}]):

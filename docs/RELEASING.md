@@ -15,7 +15,9 @@ or pull-request trigger.
    `main`, and enable required reviewers where your GitHub plan supports them.
    The workflow fails unless this environment supplies the variable
    `RELEASE_PUBLICATION_APPROVED` with the exact value `true`.
-3. Arrange a persistent Android release keystore. Back up the keystore, alias and
+3. Arrange a persistent Android release keystore (PKCS12 `.p12` is recommended;
+   existing JKS stores also work). Use the same store/key password for PKCS12.
+   Back up the keystore, alias and
    passwords securely outside GitHub before publishing. Never use the debug key,
    generate a new key per release, or commit the keystore.
 4. Set these **environment secrets**, not workflow inputs:
@@ -32,6 +34,8 @@ or pull-request trigger.
    Upper/lowercase and colon-separated fingerprints are accepted. The workflow
    verifies the APK against it and against previous release manifests. Key
    rotation is deliberately unsupported until a migration strategy is designed.
+   Both this setting and `RELEASE_PUBLICATION_APPROVED` must be **environment
+   variables**, not secrets; the four signing entries above remain secrets.
 6. Merge the workflow into `main`. GitHub only exposes manual dispatch when the
    workflow exists on the repository's default branch.
 
@@ -43,11 +47,18 @@ approval, not something a routine CI run should create.
 
 In **Actions > Release > Run workflow**, choose `main`.
 
-- Leave **version** blank for the next minor release. The first release is
-  `0.1.0`; after `0.4.2`, the automatic version is `0.5.0`.
-- Enter a stable `X.Y.Z` value to select a different patch/minor/major release.
-  It must be newer than the latest stable release and at least the source
-  baseline. Leading zeros, prerelease suffixes and build metadata are rejected.
+- Select **release_type**: `prerelease` (the default) or `stable`. Pre-releases
+  are marked non-production-ready on GitHub and never replace the Latest release.
+- Leave **version** blank for automatic selection. A stable release starts at
+  `0.1.0`, then uses the next minor (after `0.4.2`, `0.5.0`), or the highest
+  pending preview's base version if that is newer.
+- An automatic pre-release uses that same base with `-preview.1`, or advances
+  the highest existing prerelease suffix for the base (`preview.9` becomes
+  `preview.10`; `rc.1` becomes `rc.2`; `beta` becomes `beta.1`).
+- An explicit version must match the selected type: `X.Y.Z` for stable or a
+  SemVer prerelease such as `X.Y.Z-preview.2` / `X.Y.Z-rc.1`. It must be newer
+  than all published versions, with a base at least the source baseline. Numeric
+  identifiers with leading zeros and `+build` metadata are rejected.
 - Leave **publish** unchecked for a build-only rehearsal. It produces an
   **unsigned, non-installable APK artifact**, uses no signing secrets, and creates
   no tag or release. This is the default.
@@ -58,8 +69,9 @@ In **Actions > Release > Run workflow**, choose `main`.
 Equivalent commands:
 
 ```text
-gh workflow run release.yml --ref main -f version=0.1.0 -F publish=false
-gh workflow run release.yml --ref main -f version=0.1.0 -F publish=true
+gh workflow run release.yml --ref main -f release_type=prerelease -F publish=false
+gh workflow run release.yml --ref main -f release_type=prerelease -f version=0.1.0-preview.2 -F publish=true
+gh workflow run release.yml --ref main -f release_type=stable -f version=0.1.0 -F publish=true
 ```
 
 The release build is tied to the dispatch commit, not to a moving branch.
@@ -72,19 +84,51 @@ multiple dispatches queue, so confirm that the intended run actually started.
 `version.properties` holds local-build defaults. Release name/code overrides
 are supplied together through Gradle properties; the workflow requires them
 explicitly. The Android code is one greater than the maximum baseline/published
-code, starting at `2`, with a maximum of `2100000000`. It is not a workflow run
-number and does not reset for a new major version.
+code across both stable and pre-release APKs, starting at `2`, with a maximum of
+`2100000000`. It is not a workflow run number and does not reset for a new major
+version or when a preview becomes stable. The signing certificate must also
+remain the same across both release types.
 
 Every published release must contain a valid `release-manifest.json`. Discovery
 is paginated and versions are compared numerically. Missing manifests, invalid
 history, changed tag targets, inconsistent certificates or an existing target
-tag/draft fail closed. Do not manually publish releases outside this scheme.
+tag/draft fail closed. Do not manually publish APK releases outside this scheme.
+
+### Existing source-only previews
+
+A source-only preview must be explicitly recorded with this alternate manifest
+shape, have GitHub's pre-release flag set, and have no other uploaded assets:
+
+```json
+{
+  "schemaVersion": 1,
+  "applicationId": "com.fpink.capture",
+  "versionName": "0.1.0-preview.1",
+  "tag": "v0.1.0-preview.1",
+  "sourceSha": "fc2d3973579e1a7a254b70a05538d4bbee5b9aa6",
+  "sourceOnly": true
+}
+```
+
+This records the initial source-only preview, not an APK version or a signing
+certificate. Its tag is verified against GitHub, the local tag and source
+ancestry, and remains reserved. With only this preview published, the next
+automatic pre-release is `0.1.0-preview.2` with Android code `2`; the first stable
+version is `0.1.0`. Do not overwrite the existing preview/tag.
+
+GitHub's automatic source archives are not uploaded assets. An empty asset list
+alone is **not** evidence of a source-only release: missing manifests still fail
+so a damaged APK release cannot silently reset version/signing history. Only
+backfill this metadata after confirming that no APK was ever distributed for
+that tag; never use it to bypass a missing APK manifest.
+
+### APK assets
 
 The GitHub Release contains:
 
 | File | Purpose |
 |---|---|
-| `FPInk-X.Y.Z.apk` | Signed release APK |
+| `FPInk-<version>.apk` | Signed release APK, including any prerelease suffix |
 | `release-manifest.json` | Schema version, application ID, version name/code, source SHA, tag, APK name/hash and certificate SHA-256 |
 | `SHA256SUMS` | SHA-256 checksums for the APK, manifest and license |
 | `LICENSE` | GPL version 3 text for FPInk's original code |
@@ -117,10 +161,10 @@ On Windows, configure `ANDROID_HOME` to your SDK and quote the `-P` arguments:
 ```powershell
 python -m unittest discover -s scripts\tests -v
 .\gradlew.bat --no-daemon test :app:lintRelease :app:assembleRelease :app:verifyReleaseRecognitionPackage `
-    '-PrequireReleaseVersion=true' '-PreleaseVersionName=0.1.0' '-PreleaseVersionCode=2'
+    '-PrequireReleaseVersion=true' '-PreleaseVersionName=0.1.0-preview.2' '-PreleaseVersionCode=2'
 python scripts\verify_release_apk.py `
     --apk app\build\outputs\apk\release\app-release-unsigned.apk `
-    --version-name 0.1.0 --version-code 2 `
+    --version-name 0.1.0-preview.2 --version-code 2 `
     --build-tools "$env:ANDROID_HOME\build-tools\36.0.0"
 ```
 
