@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.fpink.capture.data.CredentialCipher
 import com.fpink.capture.data.SettingsStore
+import com.fpink.capture.data.ThemeMode
 import com.fpink.core.ai.RecognitionError
 import com.fpink.core.ai.RecognitionProviderId
 import java.security.KeyStore
@@ -26,6 +27,26 @@ class SettingsAcceptanceTest {
     private val encryptedKey = stringPreferencesKey("document_intelligence_encrypted_key")
     private val endpoint = "https://acceptance-fixture.cognitiveservices.azure.com"
     private val syntheticKey = "local-only-synthetic-credential-never-sent"
+
+    @Test fun appearancePersistsIndependentlyOfEncryptedRecognitionSettings() = runBlocking {
+        AcceptanceStorage().use { fixture ->
+            assertEquals(ThemeMode.SYSTEM, fixture.settings.themeMode.first())
+            fixture.settings.save(RecognitionProviderId.AZURE, endpoint, replacementKey = syntheticKey)
+            val ciphertext = fixture.preferences.data.first()[encryptedKey]
+            for (mode in ThemeMode.entries) {
+                fixture.settings.saveThemeMode(mode)
+                val reopened = SettingsStore(fixture.preferences, CredentialCipher(fixture.alias))
+                assertEquals(mode, reopened.themeMode.first())
+                assertEquals(mode.storedValue, fixture.preferences.data.first()[stringPreferencesKey("appearance_theme")])
+                assertEquals(ciphertext, fixture.preferences.data.first()[encryptedKey])
+                assertEquals(endpoint, reopened.recognitionSettings.first().azure.endpoint)
+                assertEquals(syntheticKey, reopened.recognitionSettings.first().azure.apiKey)
+                assertEquals(RecognitionProviderId.AZURE, reopened.recognitionSettings.first().provider)
+            }
+            fixture.settings.save(RecognitionProviderId.PADDLE, endpoint, removeKey = true)
+            assertEquals(ThemeMode.DARK, fixture.settings.themeMode.first())
+        }
+    }
 
     @Test fun androidKeystoreCiphertextIsRandomizedNonPlaintextAndRoundTripsAfterStoreRecreation() = runBlocking {
         AcceptanceStorage().use { fixture ->
