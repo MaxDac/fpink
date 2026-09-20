@@ -1,6 +1,8 @@
 package com.fpink.capture.ui.notes
 
-import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,22 +13,36 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.selection.triStateToggleable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -61,6 +77,20 @@ fun NotesListScreen(
             onResultShown()
         }
     }
+    val deletedMessage = state.deletedCount?.let { pluralStringResource(R.plurals.notes_deleted, it, it) }
+    LaunchedEffect(deletedMessage) {
+        deletedMessage?.let {
+            snackbar.showSnackbar(it)
+            viewModel.onDeletionResultShown()
+        }
+    }
+
+    BackHandler(enabled = state.isSelecting || state.isDeleting) {
+        if (!state.isDeleting) {
+            if (state.pendingDeletionIds.isNotEmpty()) viewModel.cancelDeletion()
+            else viewModel.clearSelection()
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(lifecycleOwner) {
@@ -73,34 +103,136 @@ fun NotesListScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("FPInk") },
+                title = {
+                    Text(
+                        if (state.isSelecting) {
+                            pluralStringResource(R.plurals.notes_selected, state.selectedIds.size, state.selectedIds.size)
+                        } else {
+                            "FPInk"
+                        },
+                    )
+                },
+                navigationIcon = {
+                    if (state.isSelecting) {
+                        ActionIconButton(
+                            R.drawable.ic_back, R.string.clear_note_selection,
+                            enabled = !state.isDeleting, onClick = viewModel::clearSelection,
+                        )
+                    }
+                },
                 actions = {
-                    ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
+                    if (state.isSelecting) {
+                        ActionIconButton(
+                            R.drawable.ic_delete, R.string.delete_selected_notes,
+                            enabled = state.canChangeSelection, onClick = viewModel::requestDeletion,
+                        )
+                    } else if (!state.isDeleting) {
+                        ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
+                    }
                 },
             )
         },
         floatingActionButton = {
-            ActionFloatingButton(R.drawable.ic_add, R.string.add_notes, onClick = onCaptureClick)
+            if (!state.isSelecting && !state.isDeleting) {
+                ActionFloatingButton(R.drawable.ic_add, R.string.add_notes, onClick = onCaptureClick)
+            }
         },
     ) { innerPadding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentAlignment = Alignment.Center,
         ) {
-            when {
-                state.isLoading -> CircularProgressIndicator()
-                state.error != null -> Text(
-                    text = state.error!!,
-                    color = MaterialTheme.colorScheme.error,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(32.dp),
+            state.deletionError?.let { error ->
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(
+                        stringResource(R.string.notes_delete_error, error),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    TextButton(onClick = viewModel::dismissDeletionError) {
+                        Text(stringResource(R.string.dismiss))
+                    }
+                }
+            }
+            if (state.isSelecting) {
+                SelectAllRow(
+                    allSelected = state.allSelected,
+                    enabled = state.canChangeSelection,
+                    onClick = viewModel::toggleSelectAll,
                 )
-                state.notes.isEmpty() -> EmptyState(onCaptureClick = onCaptureClick)
-                else -> NotesList(notes = state.notes, onNoteClick = onNoteClick)
+            }
+            if (state.isDeleting) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(stringResource(R.string.deleting_notes), Modifier.padding(16.dp))
+            }
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                val error = state.error
+                when {
+                    state.isLoading -> CircularProgressIndicator()
+                    error != null -> Column(
+                        modifier = Modifier.padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            text = when (error) {
+                                is NotesListError.Storage -> stringResource(R.string.notes_load_error, error.detail)
+                                NotesListError.Interrupted -> stringResource(R.string.notes_operation_interrupted)
+                            },
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                        )
+                        TextButton(onClick = viewModel::refresh, enabled = !state.isDeleting) {
+                            Text(stringResource(R.string.retry))
+                        }
+                    }
+                    state.notes.isEmpty() && state.isDeleting -> CircularProgressIndicator()
+                    state.notes.isEmpty() -> EmptyState(onCaptureClick = onCaptureClick)
+                    else -> NotesList(
+                        notes = state.notes,
+                        selectedIds = state.selectedIds,
+                        enabled = state.canChangeSelection,
+                        onNoteClick = { id ->
+                            if (state.isSelecting) viewModel.toggleSelection(id) else onNoteClick(id)
+                        },
+                        onNoteLongClick = viewModel::select,
+                    )
+                }
             }
         }
+    }
+
+    if (state.pendingDeletionIds.isNotEmpty()) {
+        val count = state.pendingDeletionIds.size
+        AlertDialog(
+            onDismissRequest = viewModel::cancelDeletion,
+            title = { Text(pluralStringResource(R.plurals.delete_notes_confirmation, count, count)) },
+            text = { Text(pluralStringResource(R.plurals.delete_notes_warning, count)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDeletion, enabled = state.canInteract) {
+                    Text(stringResource(R.string.delete_notes_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelDeletion) { Text(stringResource(R.string.cancel)) }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SelectAllRow(allSelected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val checkedState = if (allSelected) ToggleableState.On else ToggleableState.Indeterminate
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .triStateToggleable(state = checkedState, enabled = enabled, role = Role.Checkbox, onClick = onClick)
+            .sizeIn(minHeight = 48.dp)
+            .padding(horizontal = 24.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        TriStateCheckbox(state = checkedState, onClick = null, enabled = enabled)
+        Text(stringResource(R.string.select_all_notes))
     }
 }
 
@@ -122,7 +254,10 @@ private fun EmptyState(onCaptureClick: () -> Unit) {
 @Composable
 private fun NotesList(
     notes: List<Note>,
+    selectedIds: Set<String>,
+    enabled: Boolean,
     onNoteClick: (String) -> Unit,
+    onNoteLongClick: (String) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -130,7 +265,14 @@ private fun NotesList(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(notes, key = { it.id }) { note ->
-            NoteRow(note = note, onClick = { onNoteClick(note.id) })
+            NoteRow(
+                note = note,
+                selectionMode = selectedIds.isNotEmpty(),
+                selected = note.id in selectedIds,
+                enabled = enabled,
+                onClick = { onNoteClick(note.id) },
+                onLongClick = { onNoteLongClick(note.id) },
+            )
         }
     }
 }
@@ -144,18 +286,44 @@ private fun Note.formattedDate(): String =
 @Composable
 private fun NoteRow(
     note: Note,
+    selectionMode: Boolean,
+    selected: Boolean,
+    enabled: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
+            .background(
+                if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+                MaterialTheme.shapes.small,
+            )
+            .combinedClickable(
+                enabled = enabled,
+                role = if (selectionMode) Role.Checkbox else Role.Button,
+                onClickLabel = stringResource(
+                    if (!selectionMode) R.string.open_note
+                    else if (selected) R.string.deselect_note
+                    else R.string.select_note,
+                ),
+                onLongClickLabel = stringResource(R.string.select_note),
+                onLongClick = onLongClick,
+                onClick = onClick,
+            )
+            .semantics {
+                if (selectionMode) toggleableState = if (selected) ToggleableState.On else ToggleableState.Off
+            }
+            .sizeIn(minHeight = 48.dp)
+            .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        if (selectionMode) {
+            Checkbox(checked = selected, onCheckedChange = null, enabled = enabled)
+        }
         InkColorSwatch(colorHex = note.inkColorHex)
-        Column(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = note.text.lines().firstOrNull()?.ifBlank { "Untitled" } ?: "Untitled",
                 style = MaterialTheme.typography.bodyLarge,

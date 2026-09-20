@@ -18,4 +18,33 @@
     <string name="appearance_write_error">Could not save appearance. Your last saved choice was restored. Select an option to try again.</string>
     <string name="recognition_settings">Recognition settings</string>
     <string name="retry">Retry</string>
+    <string name="open_note">Open note</string>
+    <string name="select_note">Select note</string>
+    <string name="deselect_note">Deselect note</string>
+    <string name="select_all_notes">Select all</string>
+    <string name="clear_note_selection">Clear selection</string>
+    <string name="delete_selected_notes">Delete selected</string>
+    <string name="delete_notes_confirm">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="dismiss">Dismiss</string>
+    <string name="deleting_notes">Deleting notes…</string>
+    <string name="notes_delete_error">Deletion stopped: %1$s. Review the remaining selection before trying again.</string>
+    <string name="notes_load_error">Could not refresh notes: %1$s. Retry before making further changes.</string>
+    <string name="notes_operation_interrupted">The operation was interrupted. Retry to refresh notes before making further changes.</string>
+    <plurals name="notes_selected">
+        <item quantity="one">%d note selected</item>
+        <item quantity="other">%d notes selected</item>
+    </plurals>
+    <plurals name="notes_deleted">
+        <item quantity="one">%d note deleted.</item>
+        <item quantity="other">%d notes deleted.</item>
+    </plurals>
+    <plurals name="delete_notes_confirmation">
+        <item quantity="one">Delete %d note?</item>
+        <item quantity="other">Delete %d notes?</item>
+    </plurals>
+    <plurals name="delete_notes_warning">
+        <item quantity="one">This note will be permanently removed. Its source image is kept while another note still uses it.</item>
+        <item quantity="other">These notes will be permanently removed. Source images are kept while another note still uses them.</item>
+    </plurals>
 </resources>
