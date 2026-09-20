@@ -124,6 +124,21 @@ The app reads `ContentResolver` streams immediately into private storage; later
 processing never depends on a transient external URI grant. Camera permission is
 requested only on the camera path, and camera hardware is optional.
 
+Capture uses ordinary unlocked activity recreation, respecting Android's
+auto-rotate setting and supported orientations. Short-wide windows place the
+preview or staged image beside scrollable controls and information when both
+panes fit, reserving more control width for larger fonts. Portrait and narrower
+windows use the vertical layout with bounded, scrollable information/action areas.
+The selected camera mode is saved independently of the staged source ID, and a
+restored staged image always takes precedence over reopening the camera.
+CameraX use cases initialize from the attached preview's display. A display
+listener updates capture rotation while that view is attached and its lifecycle
+is started, including 180-degree changes without activity recreation; it ignores
+other displays and unregisters on stop, detach or disposal. CameraX owns camera
+activation through lifecycle binding and PreviewView owns preview transforms.
+Import normalizes captured EXIF orientation once into upright PNG pixels; the UI
+does not rotate the preview or prepared image manually.
+
 Navigation carries an internal job/source ID, not image bytes or an external
 filesystem path. Staging and lifecycle state retain that identity across retries.
 Cancellation first persists a secret-free tombstone outside the image staging

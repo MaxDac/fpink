@@ -40,7 +40,7 @@ class CaptureViewModel(
     settings: SettingsStore,
     private val savedState: SavedStateHandle,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(CaptureUiState())
+    private val _uiState = MutableStateFlow(CaptureUiState(cameraChosen = savedState.get<Boolean>("cameraChosen") == true))
     val uiState = _uiState.asStateFlow()
     private var operation: Job? = null
     private var cleared = false
@@ -89,9 +89,19 @@ class CaptureViewModel(
         }
     }
 
-    fun chooseCamera() = _uiState.update { it.copy(cameraChosen = true, error = null) }
-    fun chooseOtherSource() = _uiState.update { it.copy(cameraChosen = false, busy = false) }
-    fun captureStarted() = _uiState.update { it.copy(busy = true, error = null) }
+    fun chooseCamera() {
+        savedState["cameraChosen"] = true
+        _uiState.update { it.copy(cameraChosen = true, error = null) }
+    }
+    fun chooseOtherSource() {
+        savedState["cameraChosen"] = false
+        _uiState.update { it.copy(cameraChosen = false, busy = false) }
+    }
+    fun captureStarted(): Boolean {
+        if (_uiState.value.busy || _uiState.value.previewFile != null) return false
+        _uiState.update { it.copy(busy = true, error = null) }
+        return true
+    }
     fun error(message: String) = _uiState.update { it.copy(error = message, busy = false) }
     fun pickerCancelled() = error("No image selected. You can choose an image or take a photo.")
     fun newCameraFile(): File = images.newCameraFile()
@@ -135,6 +145,7 @@ class CaptureViewModel(
             try {
                 _uiState.value.sourceId?.let { images.discard(it) }
                 savedState.remove<String>("sourceId")
+                savedState["cameraChosen"] = false
                 _uiState.update { it.copy(sourceId = null, previewFile = null, cameraChosen = false, error = null) }
             } catch (_: Exception) {
                 error("Could not remove the previous staged image. Check free storage and retry.")
