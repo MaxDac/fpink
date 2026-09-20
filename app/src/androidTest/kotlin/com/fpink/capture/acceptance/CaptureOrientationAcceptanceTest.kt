@@ -145,16 +145,21 @@ class CaptureOrientationAcceptanceTest {
         compose.runOnIdle {
             val handle = SavedStateHandle()
             val original = restoredModel(handle)
+            assertTrue(original.consumeCameraEntry(true))
             original.chooseCamera()
             assertTrue(original.captureStarted())
             assertFalse(original.captureStarted())
             val restoredHandle = snapshot(handle)
             val restored = restoredModel(restoredHandle)
             assertTrue(restored.uiState.value.cameraChosen)
+            assertFalse(restored.consumeCameraEntry(true))
             assertFalse(restored.uiState.value.busy)
             assertEquals(null, restored.uiState.value.sourceId)
             restored.chooseOtherSource()
-            assertFalse(restoredModel(snapshot(restoredHandle)).uiState.value.cameraChosen)
+            val chooser = restoredModel(snapshot(restoredHandle))
+            assertFalse(chooser.uiState.value.cameraChosen)
+            assertFalse(chooser.consumeCameraEntry(true))
+            assertTrue(chooser.canChooseCamera())
         }
         assertTrue(File(storage.context.cacheDir, "camera-captures").listFiles().orEmpty().isEmpty())
     }

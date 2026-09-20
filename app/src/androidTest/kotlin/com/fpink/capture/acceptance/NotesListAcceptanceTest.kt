@@ -78,6 +78,7 @@ class NotesListAcceptanceTest {
     private val models = ViewModelStore()
     private val openedNotes = mutableListOf<String>()
     private var captureClicks = 0
+    private var cameraClicks = 0
     private var settingsClicks = 0
     private var navigationBacks = 0
     private var themeMode by mutableStateOf(ThemeMode.LIGHT)
@@ -109,9 +110,11 @@ class NotesListAcceptanceTest {
         compose.onNodeWithText("Second line of legacy-0").assertDoesNotExist()
         icon(R.string.settings).assertMinimumTouchTarget().performClick()
         icon(R.string.add_notes).assertMinimumTouchTarget().performClick()
+        icon(R.string.take_photo).assertMinimumTouchTarget().performClick()
         compose.runOnIdle {
             assertEquals(1, settingsClicks)
             assertEquals(1, captureClicks)
+            assertEquals(1, cameraClicks)
         }
         assertNormalToolbar()
     }
@@ -457,6 +460,7 @@ class NotesListAcceptanceTest {
             notes.forEach { row(it).assertIsNotEnabled() }
             icon(R.string.settings).assertDoesNotExist()
             icon(R.string.add_notes).assertDoesNotExist()
+            icon(R.string.take_photo).assertDoesNotExist()
 
             row(notes[0]).performTouchInput { click() }
             row(notes[2]).performTouchInput { longClick() }
@@ -472,6 +476,7 @@ class NotesListAcceptanceTest {
                 assertTrue(openedNotes.isEmpty())
                 assertEquals(0, navigationBacks)
                 assertEquals(0, captureClicks)
+                assertEquals(0, cameraClicks)
                 assertEquals(0, settingsClicks)
             }
             assertEquals(listOf(intentPath(notes[0].id)), controlled.intentWrites.toList())
@@ -502,6 +507,7 @@ class NotesListAcceptanceTest {
                 BackHandler { navigationBacks++ }
                 NotesListScreen(
                     onCaptureClick = { captureClicks++ },
+                    onCameraClick = { cameraClicks++ },
                     onNoteClick = { openedNotes += it },
                     onSettingsClick = { settingsClicks++ },
                     viewModel = viewModel,
@@ -555,6 +561,7 @@ class NotesListAcceptanceTest {
     private fun assertNormalToolbar() {
         icon(R.string.settings).assertIsDisplayed().assertIsEnabled()
         icon(R.string.add_notes).assertIsDisplayed().assertIsEnabled()
+        icon(R.string.take_photo).assertIsDisplayed().assertIsEnabled()
         icon(R.string.clear_note_selection).assertDoesNotExist()
         icon(R.string.delete_selected_notes).assertDoesNotExist()
         selectAll().assertDoesNotExist()
@@ -568,6 +575,7 @@ class NotesListAcceptanceTest {
         icon(R.string.delete_selected_notes).assertMinimumTouchTarget().assertIsEnabled()
         icon(R.string.settings).assertDoesNotExist()
         icon(R.string.add_notes).assertDoesNotExist()
+        icon(R.string.take_photo).assertDoesNotExist()
     }
 
     private fun requestDeletion(count: Int) {

@@ -89,7 +89,18 @@ class CaptureViewModel(
         }
     }
 
+    fun consumeCameraEntry(requested: Boolean): Boolean {
+        if (savedState.get<Boolean>("cameraEntryConsumed") == true) return false
+        savedState["cameraEntryConsumed"] = true
+        return requested && canChooseCamera() && _uiState.value.error == null
+    }
+
+    fun canChooseCamera(): Boolean = _uiState.value.let {
+        !it.busy && it.sourceId == null && it.previewFile == null && !it.cameraChosen && it.confirmedSourceId == null
+    }
+
     fun chooseCamera() {
+        if (!canChooseCamera()) return
         savedState["cameraChosen"] = true
         _uiState.update { it.copy(cameraChosen = true, error = null) }
     }

@@ -9,11 +9,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.triStateToggleable
@@ -63,6 +68,7 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun NotesListScreen(
     onCaptureClick: () -> Unit,
+    onCameraClick: () -> Unit,
     onNoteClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
     resultMessage: String? = null,
@@ -132,9 +138,18 @@ fun NotesListScreen(
                 },
             )
         },
-        floatingActionButton = {
+        bottomBar = {
             if (!state.isSelecting && !state.isDeleting) {
-                ActionFloatingButton(R.drawable.ic_add, R.string.add_notes, onClick = onCaptureClick)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    ActionFloatingButton(R.drawable.ic_add, R.string.add_notes, onClick = onCaptureClick)
+                    ActionFloatingButton(R.drawable.ic_camera, R.string.take_photo, onClick = onCameraClick)
+                }
             }
         },
     ) { innerPadding ->
