@@ -107,8 +107,9 @@ and releases are never overwritten.
 ## Build and validate locally
 
 Use JDK **17** (the release workflow pins Temurin **17.0.18+8**), Android SDK
-platform **36**, build tools **36.0.0**, NDK **28.2.13676358**, CMake **3.22.1**,
+platform **37**, build tools **36.0.0**, NDK **28.2.13676358**, CMake **3.22.1**,
 Python 3 and PowerShell 7 (`pwsh`, also available on GitHub's Ubuntu runners).
+The SDK manager package for this platform is `platforms;android-37.0`.
 The checked-in wrapper pins Gradle.
 
 On Windows, configure `ANDROID_HOME` to your SDK and quote the `-P` arguments:

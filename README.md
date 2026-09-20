@@ -6,7 +6,7 @@ Azure recognition is optional and explicitly selected.
 
 ## Build and releases
 
-Use JDK 17, Android SDK 36, NDK `28.2.13676358`, and CMake `3.22.1`.
+Use JDK 17, Android SDK 37, NDK `28.2.13676358`, and CMake `3.22.1`.
 Run `.\gradlew.bat build` on Windows or `./gradlew build` on Linux.
 The offline recognizer currently requires an ARM64 device.
 

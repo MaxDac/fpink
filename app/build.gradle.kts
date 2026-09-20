@@ -32,7 +32,7 @@ require(versionCodeText != null && Regex("[1-9][0-9]*").matches(versionCodeText)
 
 android {
     namespace = "com.fpink.capture"
-    compileSdk = 36
+    compileSdk = 37
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
@@ -120,7 +120,7 @@ tasks.withType<Test> {
 }
 
 androidComponents {
-    onVariants(selector().all()) { variant ->
+    onVariants { variant ->
         val apkDirectory = variant.artifacts.get(SingleArtifact.APK)
         val verifyPackage = tasks.register("verify${variant.name.replaceFirstChar { it.uppercase() }}RecognitionPackage") {
             group = "verification"

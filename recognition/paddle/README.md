@@ -51,7 +51,9 @@ benchmark or evidence that the model's 90% confidence means 90% word accuracy.
 
 ## Exact build inputs
 
-* Android library, minSdk **26**, compileSdk **36**, Java/Kotlin bytecode **17**.
+* Android library, minSdk **26**, compileSdk **37**, Java/Kotlin bytecode **17**.
+  The app also compiles against API 37 for current dependency requirements;
+  its targetSdk remains **36**, so this does not opt into new runtime behavior.
 * NDK **28.2.13676358** (r28c), CMake **3.22.1**, C++17.
 * **Offline PaddleOCR supports only `arm64-v8a`.** No ARM32, x86, or x86_64
   Paddle runtime is included. Other app dependencies retain those ABIs, so this
@@ -73,6 +75,14 @@ benchmark or evidence that the model's 90% confidence means 90% word accuracy.
 The parent build includes `:recognition:paddle` and makes the app depend on it.
 `preBuild` verifies pinned model, dictionary, native-library, and header hashes;
 it fails rather than downloading or silently accepting changed binaries.
+The AGP Variant API adds `native` to every library variant's JNI sources,
+avoiding the legacy source-set API. CI checks both app packages and compiles
+the app and library instrumentation APKs; device execution remains separate.
+
+Use `JAVA_HOME` (or your IDE's Gradle JDK setting) to select a local JDK; do not
+commit a machine-specific `org.gradle.java.home` path. CI selects JDK 17 and runs
+the full Gradle `build` and `test` tasks on Linux, including artifact and APK
+package verification, using the checked-in Paddle assets.
 
 ```powershell
 # From the repository root: verification is entirely local.

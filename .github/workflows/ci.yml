@@ -41,6 +41,9 @@ jobs:
       - name: Test
         run: ./gradlew test
 
+      - name: Build instrumentation APKs
+        run: ./gradlew :app:assembleDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
+
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7
