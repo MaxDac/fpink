@@ -137,6 +137,25 @@ The app reads `ContentResolver` streams immediately into private storage; later
 processing never depends on a transient external URI grant. Camera permission is
 requested only on the camera path, and camera hardware is optional.
 
+The notes list reserves an inset-aware bottom row for Add notes (start/left in
+LTR) and Take photo (end/right in LTR), keeping list rows and snackbars above
+both actions. Both are hidden during note selection or deletion, preserving the
+bulk-selection workflow. Add notes, including the empty-state action, opens the source
+chooser without requesting permission. Take photo uses an explicit `openCamera`
+navigation argument to enter the same capture screen's in-app CameraX preview;
+it neither opens a gallery nor fires the shutter. Rapid notes-list activations
+cannot stack capture destinations.
+
+The capture view model consumes that entry request once using SavedStateHandle,
+before hardware/permission checks. A staged image, busy operation or restoration
+error takes precedence. Recomposition, recreation, Settings return, denial and
+choosing another source/image cannot replay the request. Explicit camera actions
+share the same hardware/permission path; permission is rechecked on resume
+without requesting it again. Permission loss during busy camera work is reconciled
+once idle, preserving a staged preview or the operation's error and allowing an
+explicit retry. Denial, missing hardware or an unavailable camera
+leave visible errors and the gallery/file alternatives usable.
+
 Navigation carries an internal job/source ID, not image bytes or an external
 filesystem path. Staging and lifecycle state retain that identity across retries.
 Cancellation first persists a secret-free tombstone outside the image staging
