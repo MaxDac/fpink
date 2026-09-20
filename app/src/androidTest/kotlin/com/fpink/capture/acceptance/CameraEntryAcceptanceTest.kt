@@ -266,6 +266,28 @@ class CameraEntryAcceptanceTest {
         compose.runOnIdle { assertTrue(launches.isEmpty()) }
     }
 
+    @Test fun unavailablePermissionDuringBusyCameraReconcilesBeforeExplicitRetry() {
+        assumeCameraPermissionNotGranted()
+        val current = createModel()
+        compose.runOnUiThread {
+            current.chooseCamera()
+            current.captureStarted()
+        }
+        showCapture()
+        compose.runOnIdle {
+            assertTrue(current.uiState.value.busy)
+            assertTrue(current.uiState.value.cameraChosen)
+            assertTrue(launches.isEmpty())
+            current.error("The camera could not save the photo. Try again or choose an image.")
+        }
+        compose.waitUntil(10_000) { !current.uiState.value.cameraChosen }
+        compose.onNodeWithText("The camera could not save the photo. Try again or choose an image.").assertIsDisplayed()
+        assertAlternatives()
+        compose.runOnIdle { assertTrue(launches.isEmpty()) }
+        compose.onNodeWithContentDescription("Take photo").performClick()
+        compose.runOnIdle { assertEquals(1, launches.size) }
+    }
+
     @Test fun missingCameraShowsErrorAndAlternativesWithoutAnyLauncher() {
         assumeFalse("Runs on camera-less devices", compose.activity.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
         createModel()

@@ -137,7 +137,9 @@ before hardware/permission checks. A staged image, busy operation or restoration
 error takes precedence. Recomposition, recreation, Settings return, denial and
 choosing another source/image cannot replay the request. Explicit camera actions
 share the same hardware/permission path; permission is rechecked on resume
-without requesting it again. Denial, missing hardware or an unavailable camera
+without requesting it again. Permission loss during busy camera work is reconciled
+once idle, preserving a staged preview or the operation's error and allowing an
+explicit retry. Denial, missing hardware or an unavailable camera
 leave visible errors and the gallery/file alternatives usable.
 
 Navigation carries an internal job/source ID, not image bytes or an external

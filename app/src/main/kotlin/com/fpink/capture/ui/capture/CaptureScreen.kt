@@ -111,10 +111,12 @@ fun CaptureScreen(
     }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasPermission = cameraPermissionGranted()
+    }
+    LaunchedEffect(viewModel, hasPermission, state.cameraChosen, state.busy, state.previewFile) {
         val current = viewModel.uiState.value
         if (!hasPermission && current.cameraChosen && !current.busy && current.previewFile == null) {
             viewModel.chooseOtherSource()
-            viewModel.error(CAMERA_PERMISSION_DENIED)
+            if (current.error == null) viewModel.error(CAMERA_PERMISSION_DENIED)
         }
     }
     val chooser = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
