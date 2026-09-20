@@ -158,8 +158,9 @@ native inference and page sizes, chooser grants, EXIF decoding, Keystore,
 lifecycle and camera behavior. Model download size is not measured APK size, and
 passing synthetic tests is not a cursive-recognition quality claim.
 
-The app's `verifyDebugRecognitionPackage` task inspects the installable APK, not
-just linker outputs. It prevents a successfully linked JNI wrapper from shipping
+The app's `verifyDebugRecognitionPackage` and `verifyReleaseRecognitionPackage`
+tasks inspect the installable APKs, not just linker outputs. They prevent a
+successfully linked JNI wrapper from shipping
 without its required Paddle runtime or model assets. The native module explicitly
 packages its pinned runtime through the `native` JNI-library source directory.
 
