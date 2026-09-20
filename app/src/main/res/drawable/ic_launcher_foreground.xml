@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Match docs/design/launcher-icon.svg; the entire nib fits the 66dp safe circle. -->
+    <group
+        android:rotation="45"
+        android:scaleX="1.14"
+        android:scaleY="1.14"
+        android:translateX="52.5"
+        android:translateY="55.5">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M -11 -27 H 11 V -17 C 11 -10 15 -5 19 -1 L 1 25.526316 V -1.171573 A 3 3 0 1 0 -1 -1.171573 V 25.526316 L -19 -1 C -15 -5 -11 -10 -11 -17 Z" />
+    </group>
+</vector>

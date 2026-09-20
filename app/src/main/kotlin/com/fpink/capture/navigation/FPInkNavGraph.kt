@@ -11,6 +11,8 @@ import com.fpink.capture.ui.detail.NoteDetailScreen
 import com.fpink.capture.ui.notes.NotesListScreen
 import com.fpink.capture.ui.processing.ProcessingScreen
 import com.fpink.capture.ui.settings.SettingsScreen
+import com.fpink.capture.data.ThemeMode
+import com.fpink.capture.ui.theme.ThemeUiState
 
 object Routes {
     const val NOTES_LIST = "notes_list"
@@ -24,7 +26,11 @@ object Routes {
 }
 
 @Composable
-fun FPInkNavGraph(navController: NavHostController) {
+fun FPInkNavGraph(
+    navController: NavHostController,
+    appearance: ThemeUiState,
+    onThemeSelected: (ThemeMode) -> Unit,
+) {
     NavHost(navController = navController, startDestination = Routes.NOTES_LIST) {
         composable(Routes.NOTES_LIST) { entry ->
             val result by entry.savedStateHandle.getStateFlow<String?>("createdNotesMessage", null).collectAsStateWithLifecycle()
@@ -71,6 +77,8 @@ fun FPInkNavGraph(navController: NavHostController) {
         composable(Routes.SETTINGS) {
             SettingsScreen(
                 onBack = { navController.popBackStack() },
+                appearance = appearance,
+                onThemeSelected = onThemeSelected,
             )
         }
     }

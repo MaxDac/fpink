@@ -29,7 +29,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -48,6 +47,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.fpink.capture.ui.savedContainerViewModel
+import com.fpink.capture.R
+import com.fpink.capture.ui.components.ActionIconButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,8 +102,12 @@ fun CaptureScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Add notes") },
-                navigationIcon = { TextButton(onClick = { viewModel.leave(onBack) }) { Text("Back") } },
-                actions = { TextButton(onClick = onSettings, enabled = !state.busy) { Text("Settings") } },
+                navigationIcon = {
+                    ActionIconButton(R.drawable.ic_back, R.string.back, onClick = { viewModel.leave(onBack) })
+                },
+                actions = {
+                    ActionIconButton(R.drawable.ic_settings, R.string.settings, enabled = !state.busy, onClick = onSettings)
+                },
             )
         },
     ) { padding ->
@@ -143,7 +148,10 @@ fun CaptureScreen(
                     OutlinedButton(onClick = viewModel::chooseOtherSource, enabled = !state.busy) { Text("Choose another source") }
                 }
                 else -> {
-                    Button(
+                    ActionIconButton(
+                        R.drawable.ic_camera,
+                        R.string.take_photo,
+                        filled = true,
                         enabled = !state.busy,
                         onClick = {
                             if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
@@ -155,7 +163,7 @@ fun CaptureScreen(
                                 permission.launch(Manifest.permission.CAMERA)
                             }
                         },
-                    ) { Text("Take photo") }
+                    )
                     Button(onClick = { chooseImage(false) }, enabled = !state.busy) { Text("Choose image") }
                     OutlinedButton(onClick = { chooseImage(true) }, enabled = !state.busy) { Text("Browse files") }
                     Text("Compatible third-party gallery and file apps are supported. Gallery access does not require camera or storage permission.")
@@ -208,7 +216,10 @@ private fun CameraPreview(viewModel: CaptureViewModel, busy: Boolean, modifier: 
     }
     Box(modifier) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-        Button(
+        ActionIconButton(
+            R.drawable.ic_camera,
+            R.string.take_photo,
+            filled = true,
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
             enabled = ready && !busy,
             onClick = {
@@ -231,6 +242,6 @@ private fun CameraPreview(viewModel: CaptureViewModel, busy: Boolean, modifier: 
                     viewModel.error("Could not start a capture. Check camera access and available storage.")
                 }
             },
-        ) { Text("Take photo") }
+        )
     }
 }

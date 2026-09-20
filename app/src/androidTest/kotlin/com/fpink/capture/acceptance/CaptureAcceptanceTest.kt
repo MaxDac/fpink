@@ -18,6 +18,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.core.app.ActivityOptionsCompat
 import androidx.core.content.ContextCompat
@@ -144,7 +145,7 @@ class CaptureAcceptanceTest {
             ContextCompat.checkSelfPermission(compose.activity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
         assumeTrue("Camera-less devices are covered by the optional manifest contract",
             compose.activity.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
-        compose.onNodeWithText("Take photo").performClick()
+        compose.onNodeWithContentDescription("Take photo").performClick()
         compose.runOnIdle {
             assertEquals(1, launches.size)
             val (request, intent) = launches.single()
