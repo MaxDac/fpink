@@ -117,6 +117,19 @@ does not upload or recognize its image again after all its notes were deleted.
 Filesystem durability still requires device validation rather than only
 in-memory repository tests.
 
+The notes-list ViewModel owns stable-ID selection and the confirmation snapshot.
+Long-press enters selection mode; clearing the last selection exits it. Select all
+includes off-screen loaded notes but does not automatically include later arrivals.
+Selection survives configuration changes, not process death.
+
+Confirmed list deletion invokes the existing per-note delete operation sequentially
+and stops at the first failure; it is not an all-or-nothing transaction. Refreshes
+are coalesced and cannot overlap deletion. Reconciliation prunes selection only
+after a successful repository list, because a failed delete may already have
+committed. Unresolved cleanup/load failures block further destructive actions and
+expose Retry without automatically deleting untouched notes. Repository recovery
+still finishes previously committed deletion intents after interruption.
+
 ## Input, lifecycle and settings
 
 Gallery uses a compatible image chooser, not an exclusive default-gallery API.
