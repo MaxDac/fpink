@@ -33,6 +33,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -147,10 +148,13 @@ class CaptureReviewActionsAcceptanceTest {
 
     @Test fun busyReviewCannotDiscardOrConfirmItsStagedImage() {
         val staged = showReview()
-        compose.runOnIdle { viewModel.captureStarted() }
-        compose.onNodeWithText(chooseAnother).assertIsNotEnabled().performClick()
-        compose.onNodeWithText(useImage).assertIsNotEnabled().performClick()
+        val invalidImage = requireNotNull(storage).images.newCameraFile().apply {
+            writeText("Not an image")
+        }
         compose.runOnIdle {
+            // A staged image rejects new camera starts; exercise a real pending import instead.
+            viewModel.importCamera(invalidImage)
+            assertTrue(viewModel.uiState.value.busy)
             viewModel.chooseAnother()
             viewModel.confirm()
             assertEquals(staged.sourceId, viewModel.uiState.value.sourceId)
@@ -158,6 +162,12 @@ class CaptureReviewActionsAcceptanceTest {
             assertTrue(staged.file.isFile)
             assertTrue(confirmed.isEmpty())
             assertTrue(launches.isEmpty())
+        }
+        compose.waitUntil(10_000) { !viewModel.uiState.value.busy }
+        compose.runOnIdle {
+            assertEquals(staged.sourceId, viewModel.uiState.value.sourceId)
+            assertTrue(staged.file.isFile)
+            assertTrue(confirmed.isEmpty())
         }
     }
 
@@ -198,7 +208,7 @@ class CaptureReviewActionsAcceptanceTest {
             compose.waitUntil(10_000) { viewModel.uiState.value.error != null }
             compose.onNodeWithText(
                 "Could not remove the previous staged image. Check free storage and retry.",
-            ).assertIsDisplayed()
+            ).performScrollTo().assertIsDisplayed()
             compose.onNodeWithText(chooseAnother).assertIsEnabled()
             compose.runOnIdle {
                 assertEquals(staged.sourceId, viewModel.uiState.value.sourceId)

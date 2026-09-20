@@ -232,6 +232,7 @@ class CameraEntryAcceptanceTest {
             assertFalse(current.canChooseCamera())
             current.chooseCamera()
             assertFalse(current.uiState.value.cameraChosen)
+            assertFalse(saved.get<Boolean>("cameraChosen") == true)
         }
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("choose another", substring = true, ignoreCase = true).performClick()

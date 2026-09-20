@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.view.Surface
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,11 +16,17 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainWidth
@@ -56,6 +62,7 @@ import coil3.compose.AsyncImage
 import com.fpink.capture.ui.savedContainerViewModel
 import com.fpink.capture.R
 import com.fpink.capture.ui.components.ActionIconButton
+import java.io.File
 
 private const val CAMERA_PERMISSION_DENIED =
     "Camera access was denied. Choose image or Browse files still works; camera access can be enabled in Android Settings."
@@ -161,50 +168,108 @@ fun CaptureScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text(state.providerLabel, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                "One image, up to 24 MB. Images are normalized to PNG and downsampled to at most 4 megapixels / 3072 pixels per side. Photograph small handwriting closely; keep the page sharp and well lit.",
-                style = MaterialTheme.typography.bodySmall,
+        val contentModifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+        if (state.previewFile != null || state.cameraChosen && hasPermission) {
+            CaptureImageLayout(
+                modifier = contentModifier,
+                information = { CaptureInformation(state) },
+                image = { modifier ->
+                    if (state.previewFile != null) {
+                        AsyncImage(
+                            model = state.previewFile,
+                            contentDescription = "Prepared image to recognize",
+                            modifier = modifier,
+                        )
+                    } else {
+                        CameraPreview(viewModel, state.busy, modifier)
+                    }
+                },
+                actions = { compact ->
+                    if (state.previewFile != null) {
+                        if (!compact) {
+                            Text("Each recognized paragraph becomes a separate local note. Ink colour is measured on this device.")
+                        }
+                        CaptureReviewActions(
+                            busy = state.busy,
+                            providerAvailable = state.providerAvailable,
+                            onChooseAnother = viewModel::chooseAnother,
+                            onConfirm = viewModel::confirm,
+                        )
+                    } else {
+                        OutlinedButton(onClick = viewModel::chooseOtherSource, enabled = !state.busy) { Text("Choose another source") }
+                    }
+                    if (state.busy) CircularProgressIndicator()
+                    if (compact && state.previewFile != null) {
+                        Text("Each recognized paragraph becomes a separate local note. Ink colour is measured on this device.")
+                    }
+                },
             )
-            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            state.settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            when {
-                state.previewFile != null -> {
-                    AsyncImage(
-                        model = state.previewFile,
-                        contentDescription = "Prepared image to recognize",
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                    )
-                    Text("Each recognized paragraph becomes a separate local note. Ink colour is measured on this device.")
-                    CaptureReviewActions(
-                        busy = state.busy,
-                        providerAvailable = state.providerAvailable,
-                        onChooseAnother = viewModel::chooseAnother,
-                        onConfirm = viewModel::confirm,
-                    )
-                }
-                state.cameraChosen && hasPermission -> {
-                    CameraPreview(viewModel, state.busy, Modifier.weight(1f).fillMaxWidth())
-                    OutlinedButton(onClick = viewModel::chooseOtherSource, enabled = !state.busy) { Text("Choose another source") }
-                }
-                else -> {
-                    ActionIconButton(
-                        R.drawable.ic_camera,
-                        R.string.take_photo,
-                        filled = true,
-                        enabled = !state.busy && !requestingPermission,
-                        onClick = ::requestCamera,
-                    )
-                    Button(onClick = { chooseImage(false) }, enabled = !state.busy) { Text("Choose image") }
-                    OutlinedButton(onClick = { chooseImage(true) }, enabled = !state.busy) { Text("Browse files") }
-                    Text("Compatible third-party gallery and file apps are supported. Gallery access does not require camera or storage permission.")
+        } else {
+            Column(
+                modifier = contentModifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CaptureInformation(state)
+                ActionIconButton(
+                    R.drawable.ic_camera,
+                    R.string.take_photo,
+                    filled = true,
+                    enabled = !state.busy && !requestingPermission,
+                    onClick = ::requestCamera,
+                )
+                Button(onClick = { chooseImage(false) }, enabled = !state.busy) { Text("Choose image") }
+                OutlinedButton(onClick = { chooseImage(true) }, enabled = !state.busy) { Text("Browse files") }
+                Text("Compatible third-party gallery and file apps are supported. Gallery access does not require camera or storage permission.")
+                if (state.busy) CircularProgressIndicator()
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptureInformation(state: CaptureUiState) {
+    Text(state.providerLabel, style = MaterialTheme.typography.bodyMedium)
+    Text(
+        "One image, up to 24 MB. Images are normalized to PNG and downsampled to at most 4 megapixels / 3072 pixels per side. Photograph small handwriting closely; keep the page sharp and well lit.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    state.settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+@Composable
+internal fun CaptureImageLayout(
+    modifier: Modifier = Modifier,
+    information: @Composable () -> Unit,
+    image: @Composable (Modifier) -> Unit,
+    actions: @Composable (compact: Boolean) -> Unit,
+) {
+    BoxWithConstraints(modifier) {
+        val panelHeight = maxHeight * 0.3f
+        val controlsWidth = maxOf(maxWidth * 0.4f, 200.dp * LocalDensity.current.fontScale)
+        if (maxWidth > maxHeight && maxWidth - controlsWidth >= 132.dp) {
+            Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                image(Modifier.weight(1f).fillMaxHeight())
+                Column(
+                    Modifier.width(controlsWidth).fillMaxHeight().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    actions(true)
+                    information()
                 }
             }
-            if (state.busy) CircularProgressIndicator()
+        } else {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = panelHeight).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) { information() }
+                image(Modifier.weight(1f).fillMaxWidth())
+                Column(
+                    Modifier.fillMaxWidth().heightIn(max = panelHeight).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) { actions(false) }
+            }
         }
     }
 }
@@ -257,38 +322,61 @@ private fun CameraPreview(viewModel: CaptureViewModel, busy: Boolean, modifier: 
     val lifecycleOwner = LocalLifecycleOwner.current
     val executor = remember(context) { ContextCompat.getMainExecutor(context) }
     val previewView = remember(context) { PreviewView(context) }
-    val capture = remember { ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY).build() }
-    var ready by remember { mutableStateOf(false) }
+    var capture by remember(previewView, lifecycleOwner) { mutableStateOf<ImageCapture?>(null) }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(previewView, lifecycleOwner, viewModel) {
         val future = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         var preview: Preview? = null
         var disposed = false
-        future.addListener({
-            if (!disposed) {
+        fun cameraUnavailable() {
+            viewModel.chooseOtherSource()
+            viewModel.error("The camera is unavailable. You can still choose an image.")
+        }
+        val rotation = CameraDisplayRotation(previewView, lifecycleOwner.lifecycle) { targetRotation ->
+            val current = provider
+            val boundCapture = capture
+            if (boundCapture != null) {
+                boundCapture.targetRotation = targetRotation
+            } else if (current != null && !disposed) {
                 try {
-                    val current = future.get()
-                    provider = current
                     val selector = when {
                         current.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> CameraSelector.DEFAULT_BACK_CAMERA
                         current.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> CameraSelector.DEFAULT_FRONT_CAMERA
                         else -> error("No usable camera")
                     }
-                    val cameraPreview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                    val cameraPreview = Preview.Builder().setTargetRotation(targetRotation).build()
+                        .also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                    val imageCapture = ImageCapture.Builder()
+                        .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                        .setTargetRotation(targetRotation)
+                        .build()
                     preview = cameraPreview
-                    current.bindToLifecycle(lifecycleOwner, selector, cameraPreview, capture)
-                    ready = true
+                    current.bindToLifecycle(lifecycleOwner, selector, cameraPreview, imageCapture)
+                    capture = imageCapture
                 } catch (_: Exception) {
-                    viewModel.chooseOtherSource()
-                    viewModel.error("The camera is unavailable. You can still choose an image.")
+                    cameraUnavailable()
+                }
+            }
+        }
+        future.addListener({
+            if (!disposed) {
+                try {
+                    provider = future.get()
+                    rotation.updateRotation()
+                } catch (_: Exception) {
+                    cameraUnavailable()
                 }
             }
         }, executor)
         onDispose {
             disposed = true
-            ready = false
-            preview?.let { provider?.unbind(it, capture) }
+            rotation.close()
+            val boundCapture = capture
+            capture = null
+            preview?.let { cameraPreview ->
+                provider?.unbind(*listOfNotNull(cameraPreview, boundCapture).toTypedArray())
+            }
         }
     }
     Box(modifier) {
@@ -298,13 +386,15 @@ private fun CameraPreview(viewModel: CaptureViewModel, busy: Boolean, modifier: 
             R.string.take_photo,
             filled = true,
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-            enabled = ready && !busy,
-            onClick = {
+            enabled = capture != null && !busy,
+            onClick = click@{
+                val imageCapture = capture ?: return@click
+                if (!viewModel.captureStarted()) return@click
+                var pendingFile: File? = null
                 try {
-                    val file = viewModel.newCameraFile()
-                    viewModel.captureStarted()
-                    capture.targetRotation = previewView.display?.rotation ?: Surface.ROTATION_0
-                    capture.takePicture(
+                    val file = viewModel.newCameraFile().also { pendingFile = it }
+                    imageCapture.targetRotation = requireNotNull(previewView.display).rotation
+                    imageCapture.takePicture(
                         ImageCapture.OutputFileOptions.Builder(file).build(),
                         executor,
                         object : ImageCapture.OnImageSavedCallback {
@@ -316,6 +406,7 @@ private fun CameraPreview(viewModel: CaptureViewModel, busy: Boolean, modifier: 
                         },
                     )
                 } catch (_: Exception) {
+                    pendingFile?.let(viewModel::deleteCameraFile)
                     viewModel.error("Could not start a capture. Check camera access and available storage.")
                 }
             },
