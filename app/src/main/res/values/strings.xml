@@ -4,6 +4,8 @@
     <string name="back">Back</string>
     <string name="add_notes">Add notes</string>
     <string name="take_photo">Take photo</string>
+    <string name="choose_another">Choose another</string>
+    <string name="use_image">Use image</string>
     <string name="delete_note">Delete note</string>
     <string name="appearance">Appearance</string>
     <string name="appearance_help">Applies immediately and saves separately from recognition settings. System follows your device appearance.</string>
