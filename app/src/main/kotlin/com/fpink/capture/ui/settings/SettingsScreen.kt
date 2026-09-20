@@ -21,17 +21,24 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fpink.capture.ui.containerViewModel
+import com.fpink.capture.R
+import com.fpink.capture.data.ThemeMode
+import com.fpink.capture.ui.components.ActionIconButton
+import com.fpink.capture.ui.theme.ThemeUiState
 import com.fpink.core.ai.RecognitionProviderId
 import com.fpink.recognition.paddle.PaddleOcrProvider
 
@@ -39,6 +46,8 @@ import com.fpink.recognition.paddle.PaddleOcrProvider
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    appearance: ThemeUiState,
+    onThemeSelected: (ThemeMode) -> Unit,
     viewModel: SettingsViewModel = containerViewModel {
         SettingsViewModel(it.settingsStore, it::testAzureConnection) { PaddleOcrProvider.readiness(it.appContext) }
     },
@@ -54,8 +63,8 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Recognition settings") },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                title = { Text(stringResource(R.string.settings)) },
+                navigationIcon = { ActionIconButton(R.drawable.ic_back, R.string.back, onClick = onBack) },
             )
         },
     ) { padding ->
@@ -63,6 +72,9 @@ fun SettingsScreen(
             modifier = Modifier.padding(padding).padding(16.dp).fillMaxWidth().verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            AppearanceSettings(appearance, onThemeSelected)
+            HorizontalDivider()
+            Text(stringResource(R.string.recognition_settings), style = MaterialTheme.typography.titleMedium)
             Text("Choose the provider explicitly. There is no automatic failover. Notes and ink-colour processing stay on this device.")
             RecognitionProviderId.entries.forEach { provider ->
                 Row(verticalAlignment = Alignment.CenterVertically) {

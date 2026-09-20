@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 108 108" role="img" aria-labelledby="icon-title icon-description">
+  <title id="icon-title">FPInk fountain pen icon draft</title>
+  <desc id="icon-description">An original white fountain pen nib pointing from upper-right to lower-left on a provisional indigo background. The breathing hole and slit are transparent parts of the nib silhouette.</desc>
+  <rect id="background" width="108" height="108" fill="#4F46E5"/>
+  <g id="nib" fill="#FFFFFF" transform="translate(52.5 55.5) rotate(45) scale(1.14)">
+    <path id="nib-outline" d="M -11 -27 H 11 V -17 C 11 -10 15 -5 19 -1 L 1 25.526316 V -1.171573 A 3 3 0 1 0 -1 -1.171573 V 25.526316 L -19 -1 C -15 -5 -11 -10 -11 -17 Z"/>
+  </g>
+</svg>

@@ -44,6 +44,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.fpink.capture.ui.components.InkColorSwatch
+import com.fpink.capture.R
+import com.fpink.capture.ui.components.ActionIconButton
 import com.fpink.capture.ui.containerViewModel
 import com.fpink.core.model.Note
 import com.fpink.core.model.InkColorOrigin
@@ -73,17 +75,19 @@ fun NoteDetailScreen(
             TopAppBar(
                 title = { Text("Note Detail") },
                 navigationIcon = {
-                    TextButton(onClick = onBack) { Text("Back") }
+                    ActionIconButton(R.drawable.ic_back, R.string.back, onClick = onBack)
                 },
                 actions = {
                     TextButton(
                         onClick = viewModel::onSave,
                         enabled = state.isEditing && state.note != null && !state.isSaving && state.colorError == null,
                     ) { Text("Save") }
-                    TextButton(
+                    ActionIconButton(
+                        R.drawable.ic_delete,
+                        R.string.delete_note,
                         onClick = { showDeleteDialog = true },
                         enabled = state.note != null && !state.isSaving,
-                    ) { Text("Delete") }
+                    )
                 },
             )
         },
