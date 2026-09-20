@@ -69,6 +69,11 @@ The parent build includes `:recognition:paddle` and makes the app depend on it.
 `preBuild` verifies pinned model, dictionary, native-library, and header hashes;
 it fails rather than downloading or silently accepting changed binaries.
 
+Use `JAVA_HOME` (or your IDE's Gradle JDK setting) to select a local JDK; do not
+commit a machine-specific `org.gradle.java.home` path. CI selects JDK 17 and runs
+the full Gradle `build` and `test` tasks on Linux, including artifact and APK
+package verification, using the checked-in Paddle assets.
+
 ```powershell
 # From the repository root: verification is entirely local.
 & recognition\paddle\scripts\prepare.ps1 -VerifyOnly
