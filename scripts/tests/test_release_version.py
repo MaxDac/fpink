@@ -118,8 +118,16 @@ class ResolverTests(unittest.TestCase):
         self.local_tags[tag] = sha
         return release, manifest
 
-    def resolve(self, requested=None, source=SOURCE_SHA, repository="example/fpink"):
-        return resolver.resolve_version(repository, source, requested)
+    def resolve(self, requested=None, source=SOURCE_SHA, repository="example/fpink", release_type="stable"):
+        return resolver.resolve_version(repository, source, requested, release_type=release_type)
+
+    def add_source_preview(self, version="0.1.0-preview.1", sha=OLD_SHA):
+        release, _ = self.add_release(version, prerelease=True, sha=sha)
+        self.manifests[release["assets"][0]["id"]] = {
+            "schemaVersion": 1, "applicationId": "com.fpink.capture",
+            "versionName": version, "tag": f"v{version}", "sourceSha": sha, "sourceOnly": True,
+        }
+        return release
 
     def downloads(self):
         return [
@@ -138,11 +146,16 @@ class ResolverTests(unittest.TestCase):
             "sourceSha": SOURCE_SHA,
             "previousTag": None,
             "previousSigningCertificateSha256": None,
+            "isPrerelease": False,
         })
         self.assertEqual(self.downloads(), [])
 
     def test_initial_explicit_version(self):
         self.assertEqual(self.resolve("1.0.0")["versionName"], "1.0.0")
+
+    def test_blank_dispatch_input_selects_automatic_version(self):
+        self.assertEqual(self.resolve("")["versionName"], "0.1.0")
+        self.assertEqual(self.resolve("", release_type="prerelease")["versionName"], "0.1.0-preview.1")
 
     def test_default_next_minor_resets_patch(self):
         self.add_release("2.3.99", code=42)
@@ -199,13 +212,13 @@ class ResolverTests(unittest.TestCase):
 
     def test_requested_version_rejects_non_stable_or_injection_inputs(self):
         for value in (
-            "", "v0.1.0", "01.1.0", "0.01.0", "0.1.00", "0.1", "0.1.0.1",
+            "v0.1.0", "01.1.0", "0.01.0", "0.1.00", "0.1", "0.1.0.1",
             "0.1.0-rc.1", "0.1.0+build", " 0.1.0", "0.1.0 ", "0.1.0\n",
             "0.1.0\nfoo=bar", "$(whoami)", "0.1.0; echo unsafe", "０.1.0",
             "-1.0.0", "0.1.0\r\n", "1.2.3/../../other",
         ):
             with self.subTest(value=value):
-                with self.assertRaisesRegex(resolver.ReleaseVersionError, "stable X.Y.Z"):
+                with self.assertRaisesRegex(resolver.ReleaseVersionError, "X.Y.Z|release type"):
                     self.resolve(value)
         self.command_mock.assert_not_called()
 
@@ -253,17 +266,174 @@ class ResolverTests(unittest.TestCase):
         self.assertIsNone(metadata["previousSigningCertificateSha256"])
         self.assertEqual(self.downloads(), [])
 
-    def test_published_prerelease_downloaded_but_explicitly_unsupported(self):
+    def test_published_prerelease_contributes_code_and_signer(self):
         self.add_release()
         self.add_release("0.2.0-rc.1", code=99, prerelease=True)
-        with self.assertRaisesRegex(resolver.ReleaseVersionError, "stable-only"):
-            self.resolve()
+        result = self.resolve()
+        self.assertEqual(result["versionName"], "0.2.0")
+        self.assertEqual(result["versionCode"], 100)
+        self.assertEqual(result["previousSigningCertificateSha256"], "e" * 64)
+        self.assertFalse(result["isPrerelease"])
         self.assertEqual(len(self.downloads()), 2)
 
-    def test_prerelease_name_cannot_bypass_stable_only_with_false_flag(self):
+    def test_published_prerelease_name_requires_prerelease_flag(self):
         self.add_release("0.2.0-rc.1")
-        with self.assertRaisesRegex(resolver.ReleaseVersionError, "stable X.Y.Z"):
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "flag does not match"):
             self.resolve()
+
+    def test_stable_name_cannot_be_labeled_prerelease(self):
+        self.add_release(prerelease=True)
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "flag does not match"):
+            self.resolve()
+
+    def test_source_only_preview_reserves_tag_without_code_or_signer(self):
+        self.add_source_preview()
+        result = self.resolve(release_type="prerelease")
+        self.assertEqual(result["versionName"], "0.1.0-preview.2")
+        self.assertEqual(result["versionCode"], 2)
+        self.assertEqual(result["previousTag"], "v0.1.0-preview.1")
+        self.assertIsNone(result["previousSigningCertificateSha256"])
+        self.assertTrue(result["isPrerelease"])
+        self.assertEqual(len(self.downloads()), 1)
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "collides"):
+            self.resolve("0.1.0-preview.1", release_type="prerelease")
+
+    def test_stable_release_can_follow_source_only_preview(self):
+        self.add_source_preview()
+        result = self.resolve()
+        self.assertEqual(result["versionName"], "0.1.0")
+        self.assertEqual(result["versionCode"], 2)
+
+    def test_source_only_preview_still_requires_verified_ancestral_tag(self):
+        self.add_source_preview()
+        self.ancestor_status[OLD_SHA] = 1
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "not an ancestor"):
+            self.resolve(release_type="prerelease")
+
+    def test_source_only_preview_requires_matching_local_tag(self):
+        self.add_source_preview()
+        self.local_tags["v0.1.0-preview.1"] = OTHER_SHA
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "actual tag commit"):
+            self.resolve(release_type="prerelease")
+
+    def test_source_only_preview_requires_remote_tag(self):
+        self.add_source_preview()
+        self.tag_pages = [[]]
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "missing its GitHub tag"):
+            self.resolve()
+
+    def test_source_only_preview_requires_valid_version_suffix(self):
+        for version in ("0.1.0", "0.1.0-preview.01", "0.1.0+build", "nightly"):
+            with self.subTest(version=version):
+                self.release_pages, self.tag_pages = [[]], [[]]
+                self.add_source_preview(version)
+                with self.assertRaises(resolver.ReleaseVersionError):
+                    self.resolve()
+
+    def test_any_uploaded_preview_asset_requires_a_manifest(self):
+        release = self.add_source_preview()
+        for name in ("FPInk-0.1.0-preview.1.apk", "notes.txt", "SHA256SUMS"):
+            with self.subTest(name=name):
+                release["assets"] = [{"id": 999, "name": name}]
+                with self.assertRaisesRegex(resolver.ReleaseVersionError, "exactly one release-manifest"):
+                    self.resolve(release_type="prerelease")
+
+    def test_empty_preview_without_explicit_manifest_is_rejected(self):
+        release = self.add_source_preview()
+        release["assets"] = []
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "exactly one release-manifest"):
+            self.resolve(release_type="prerelease")
+
+    def test_source_only_manifest_cannot_hide_apk_or_code(self):
+        release = self.add_source_preview()
+        release["assets"].append({"id": 999, "name": "FPInk-0.1.0-preview.1.apk"})
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "cannot contain assets"):
+            self.resolve()
+        release["assets"].pop()
+        self.manifests[100]["versionCode"] = 2
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "fields"):
+            self.resolve()
+
+    def test_source_only_manifest_requires_literal_true(self):
+        self.add_source_preview()
+        for value in (False, "true", 1, None):
+            with self.subTest(value=value):
+                self.manifests[100]["sourceOnly"] = value
+                with self.assertRaisesRegex(resolver.ReleaseVersionError, "fields"):
+                    self.resolve()
+
+    def test_automatic_preview_after_stable_release(self):
+        self.add_release("1.2.3", code=8)
+        result = self.resolve(release_type="prerelease")
+        self.assertEqual(result["versionName"], "1.3.0-preview.1")
+        self.assertEqual(result["versionCode"], 9)
+
+    def test_automatic_preview_sequence_is_numeric(self):
+        self.add_release("0.1.0-preview.9", code=2, prerelease=True)
+        self.add_release("0.1.0-preview.10", code=3, prerelease=True, page=1)
+        result = self.resolve(release_type="prerelease")
+        self.assertEqual(result["versionName"], "0.1.0-preview.11")
+        self.assertEqual(result["versionCode"], 4)
+
+    def test_newest_preview_channel_is_advanced(self):
+        self.add_source_preview()
+        self.add_release("0.1.0-rc.1", code=2, prerelease=True)
+        result = self.resolve(release_type="prerelease")
+        self.assertEqual(result["versionName"], "0.1.0-rc.2")
+        self.assertEqual(result["versionCode"], 3)
+
+    def test_non_numeric_preview_suffix_gets_sequence(self):
+        self.add_source_preview("0.1.0-beta")
+        self.assertEqual(self.resolve(release_type="prerelease")["versionName"], "0.1.0-beta.1")
+
+    def test_ahead_preview_is_not_downgraded_by_automatic_selection(self):
+        self.add_release("0.1.0", code=2)
+        self.add_release("1.0.0-rc.3", code=3, prerelease=True)
+        self.assertEqual(self.resolve(release_type="prerelease")["versionName"], "1.0.0-rc.4")
+        self.assertEqual(self.resolve()["versionName"], "1.0.0")
+
+    def test_final_release_increments_code_after_signed_preview(self):
+        self.add_release("0.1.0-preview.2", code=2, prerelease=True)
+        result = self.resolve()
+        self.assertEqual(result["versionName"], "0.1.0")
+        self.assertEqual(result["versionCode"], 3)
+        self.assertEqual(result["previousSigningCertificateSha256"], "e" * 64)
+
+    def test_manual_preview_version(self):
+        result = self.resolve("1.0.0-beta.1", release_type="prerelease")
+        self.assertEqual(result["versionName"], "1.0.0-beta.1")
+        self.assertTrue(result["isPrerelease"])
+
+    def test_preview_rejects_stable_version_override(self):
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "release type"):
+            self.resolve("1.0.0", release_type="prerelease")
+        self.command_mock.assert_not_called()
+
+    def test_preview_version_must_be_newer_than_stable(self):
+        self.add_release("0.1.0")
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "highest published stable"):
+            self.resolve("0.1.0-preview.1", release_type="prerelease")
+
+    def test_preview_version_must_be_newer_than_previous_preview(self):
+        self.add_source_preview("0.1.0-preview.10")
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "highest published version"):
+            self.resolve("0.1.0-preview.9", release_type="prerelease")
+
+    def test_preview_cannot_reset_signer_or_reuse_code(self):
+        self.add_release("0.1.0", code=2)
+        _, manifest = self.add_release("0.2.0-preview.1", code=3, prerelease=True)
+        manifest["signingCertificateSha256"] = "f" * 64
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "rotation is unsupported"):
+            self.resolve(release_type="prerelease")
+        manifest["signingCertificateSha256"] = "e" * 64
+        manifest["versionCode"] = 2
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "duplicate version or versionCode"):
+            self.resolve(release_type="prerelease")
+
+    def test_invalid_release_type_fails_before_network(self):
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "Release type"):
+            self.resolve(release_type="production")
+        self.command_mock.assert_not_called()
 
     def test_missing_manifest_in_any_published_release_is_fatal(self):
         self.add_release("1.0.0", code=3)
@@ -474,6 +644,7 @@ class ResolverTests(unittest.TestCase):
             "versionName=0.1.0\nversionCode=1\nextra=2",
             "versionName:0.1.0\nversionCode=1",
             "versionName=0.01.0\nversionCode=1",
+            "versionName=0.1.0-preview.1\nversionCode=1",
             "versionName=0.1.0\nversionCode=0",
             "versionName=0.1.0\nversionCode=01",
             "versionName=0.1.0\nversionCode=true",
@@ -540,6 +711,21 @@ class ResolverTests(unittest.TestCase):
             self.resolve()
 
 
+class VersionTests(unittest.TestCase):
+    def test_semver_precedence(self):
+        values = ["1.0.0-1", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta",
+                  "1.0.0-beta", "1.0.0-beta.2", "1.0.0-beta.11", "1.0.0-rc.1", "1.0.0", "1.0.1"]
+        parsed = [resolver.Version.parse(value) for value in values]
+        self.assertEqual(sorted(reversed(parsed)), parsed)
+        self.assertEqual([str(version) for version in parsed], values)
+
+    def test_invalid_prerelease_identifiers(self):
+        for value in ("0.1.0-preview.01", "0.1.0-", "0.1.0-rc..1", "0.1.0-rc_1",
+                      "0.1.0-rc.1+build", "0.1.0-rc.1\n", "0.1.0-rc.１"):
+            with self.subTest(value=value), self.assertRaises(resolver.ReleaseVersionError):
+                resolver.Version.parse(value)
+
+
 class OutputTests(unittest.TestCase):
     def setUp(self):
         self.metadata = {
@@ -551,6 +737,7 @@ class OutputTests(unittest.TestCase):
             "sourceSha": SOURCE_SHA,
             "previousTag": None,
             "previousSigningCertificateSha256": None,
+            "isPrerelease": False,
         }
 
     def test_json_and_github_output_and_summary(self):
@@ -574,7 +761,7 @@ class OutputTests(unittest.TestCase):
         self.assertEqual(
             "".join(call.args[0] for call in output().write.call_args_list),
             f"version_name=0.1.0\nversion_code=2\ntag=v0.1.0\n"
-            f"source_sha={SOURCE_SHA}\nprevious_tag=\n",
+            f"source_sha={SOURCE_SHA}\nprevious_tag=\nprerelease=false\n",
         )
         summary_text = "".join(call.args[0] for call in summary().write.call_args_list)
         self.assertIn("`0.1.0`", summary_text)
@@ -610,8 +797,19 @@ class OutputTests(unittest.TestCase):
                 patch.object(resolver, "write_outputs") as write, \
                 patch.object(resolver.sys, "stdout", new_callable=io.StringIO):
             self.assertEqual(resolver.main(arguments), 0)
-        resolve.assert_called_once_with("example/fpink", SOURCE_SHA, "0.1.0")
+        resolve.assert_called_once_with("example/fpink", SOURCE_SHA, "0.1.0", release_type="stable")
         write.assert_called_once_with(self.metadata, Path("resolved.json"))
+
+    def test_cli_prerelease_contract(self):
+        with patch.object(resolver, "resolve_version", return_value=self.metadata) as resolve, \
+                patch.object(resolver, "write_outputs"), \
+                patch.object(resolver.sys, "stdout", new_callable=io.StringIO):
+            self.assertEqual(resolver.main([
+                "--repository", "example/fpink", "--source-sha", SOURCE_SHA,
+                "--requested-version", "", "--release-type", "prerelease",
+                "--output", "resolved.json",
+            ]), 0)
+        resolve.assert_called_once_with("example/fpink", SOURCE_SHA, "", release_type="prerelease")
 
     def test_cli_failure_never_writes_metadata(self):
         with patch.object(resolver, "resolve_version", side_effect=resolver.ReleaseVersionError("bad history")), \

@@ -3,8 +3,16 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
+      release_type:
+        description: "Publish a non-production pre-release or a stable release"
+        required: true
+        default: prerelease
+        type: choice
+        options:
+          - prerelease
+          - stable
       version:
-        description: "Stable X.Y.Z; leave blank for the next minor (first release: 0.1.0)"
+        description: "X.Y.Z or X.Y.Z-preview.N; leave blank to select the next version"
         required: false
         type: string
       publish:
@@ -33,6 +41,7 @@ jobs:
       version_code: ${{ steps.version.outputs.version_code }}
       tag: ${{ steps.version.outputs.tag }}
       previous_tag: ${{ steps.version.outputs.previous_tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - name: Require the main branch
         run: |
@@ -52,10 +61,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_VERSION: ${{ inputs.version }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
         run: |
           python3 scripts/release_version.py \
             --repository "$GITHUB_REPOSITORY" --source-sha "$GITHUB_SHA" \
-            --requested-version "$REQUESTED_VERSION" --output release-metadata.json
+            --requested-version "$REQUESTED_VERSION" --release-type "$RELEASE_TYPE" \
+            --output release-metadata.json
 
       - name: Test release tooling
         run: python3 -m unittest discover -s scripts/tests -v
@@ -113,6 +124,7 @@ jobs:
       VERSION_CODE: ${{ needs.build.outputs.version_code }}
       TAG: ${{ needs.build.outputs.tag }}
       PREVIOUS_TAG: ${{ needs.build.outputs.previous_tag }}
+      PRERELEASE: ${{ needs.build.outputs.prerelease }}
     steps:
       - name: Require publication approval
         env:
@@ -158,13 +170,19 @@ jobs:
           version = os.environ["VERSION_NAME"]
           code = os.environ["VERSION_CODE"]
           tag = os.environ["TAG"]
-          require(re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version), "Invalid version")
+          require(re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?", version), "Invalid version")
+          suffix = version.partition("-")[2].split(".")
+          require(not any(p.isdigit() and len(p) > 1 and p.startswith("0") for p in suffix), "Invalid prerelease identifier")
+          require(os.environ["PRERELEASE"] in ("true", "false"), "Invalid release type")
+          prerelease = os.environ["PRERELEASE"] == "true"
+          require(prerelease == ("-" in version), "Release type must match version suffix")
           require(re.fullmatch(r"[1-9][0-9]*", code) and int(code) <= 2100000000, "Invalid version code")
           require(tag == "v" + version, "Invalid tag")
           metadata = json.loads(pathlib.Path("incoming/release-metadata.json").read_text())
           expected = {"schemaVersion": 1, "applicationId": "com.fpink.capture", "versionName": version,
                       "versionCode": int(code), "tag": tag, "sourceSha": os.environ["GITHUB_SHA"]}
           require(all(metadata.get(k) == v for k, v in expected.items()), "Release metadata mismatch")
+          require(metadata.get("isPrerelease") is prerelease, "Release metadata type mismatch")
           for name in ("KEYSTORE_BASE64", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD", "EXPECTED_CERTIFICATE"):
               require(bool(os.environ.get(name)), "Missing signing configuration: " + name)
           certificate = os.environ["EXPECTED_CERTIFICATE"].replace(":", "").lower()
@@ -215,6 +233,11 @@ jobs:
 
           repo, tag = os.environ["GITHUB_REPOSITORY"], os.environ["TAG"]
           version, sha = os.environ["VERSION_NAME"], os.environ["GITHUB_SHA"]
+          if os.environ["PRERELEASE"] not in ("true", "false"):
+              raise RuntimeError("Invalid release type")
+          prerelease = os.environ["PRERELEASE"] == "true"
+          if prerelease != ("-" in version):
+              raise RuntimeError("Release type does not match version suffix")
           if any(t["name"] == tag for t in pages(f"repos/{repo}/tags?per_page=100")):
               raise RuntimeError("Tag already exists; inspect the previous run. Never overwrite a release.")
           if any(r["tag_name"] == tag for r in pages(f"repos/{repo}/releases?per_page=100")):
@@ -224,6 +247,7 @@ jobs:
           paths = [assets / manifest["apk"], assets / "SHA256SUMS", assets / "release-manifest.json", assets / "LICENSE"]
           notes = pathlib.Path("release-notes.txt")
           notes.write_text(
+              ("Pre-release: not production-ready.\n\n" if prerelease else "") +
               f"Signed APK for Android 8.0+. Version code: {manifest['versionCode']}.\n\n"
               "Offline PaddleOCR requires ARM64. Physical ARM64/16 KB-device qualification and representative "
               "handwriting-quality testing remain separate from CI; see the recognition documentation.\n\n"
@@ -238,18 +262,21 @@ jobs:
           gh("api", "--method", "POST", f"repos/{repo}/git/refs", "-f", f"ref=refs/tags/{tag}", "-f", f"sha={sha}")
           args = ["release", "create", tag, "--repo", repo, "--verify-tag", "--draft",
                   "--title", f"FPInk {version}", "--notes-file", str(notes), "--generate-notes"]
+          if prerelease:
+              args += ["--prerelease", "--latest=false"]
           if os.environ["PREVIOUS_TAG"]:
               args += ["--notes-start-tag", os.environ["PREVIOUS_TAG"]]
           gh(*args, *(str(p) for p in paths))
-          release = json.loads(gh("release", "view", tag, "--repo", repo, "--json", "isDraft,assets"))
-          if not release["isDraft"] or {a["name"] for a in release["assets"]} != {p.name for p in paths}:
-              raise RuntimeError("Draft asset set mismatch; leaving it unpublished for inspection.")
+          release = json.loads(gh("release", "view", tag, "--repo", repo, "--json", "isDraft,isPrerelease,assets"))
+          if not release["isDraft"] or release["isPrerelease"] is not prerelease or {a["name"] for a in release["assets"]} != {p.name for p in paths}:
+              raise RuntimeError("Draft type or asset set mismatch; leaving it unpublished for inspection.")
           with tempfile.TemporaryDirectory(prefix="fpink-release-check-") as temp:
               gh("release", "download", tag, "--repo", repo, "--dir", temp)
               for path in paths:
                   if hashlib.sha256(path.read_bytes()).digest() != hashlib.sha256((pathlib.Path(temp) / path.name).read_bytes()).digest():
                       raise RuntimeError("Uploaded asset checksum mismatch; draft remains unpublished.")
-          gh("release", "edit", tag, "--repo", repo, "--draft=false", "--latest")
+          gh("release", "edit", tag, "--repo", repo, "--draft=false",
+             f"--prerelease={str(prerelease).lower()}", f"--latest={str(not prerelease).lower()}")
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
               summary.write(f"\nPublished [FPInk {version}](https://github.com/{repo}/releases/tag/{tag}).\n")
           PY

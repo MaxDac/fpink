@@ -19,9 +19,16 @@ require((releaseVersionName == null) == (releaseVersionCode == null)) {
 require(!providers.gradleProperty("requireReleaseVersion").isPresent || releaseVersionName != null) {
     "Publishing requires explicit -PreleaseVersionName and -PreleaseVersionCode."
 }
-val resolvedVersionName = releaseVersionName ?: baseVersion.getProperty("versionName")
-require(resolvedVersionName != null && Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)").matches(resolvedVersionName)) {
-    "versionName must be a stable X.Y.Z version without leading zeros."
+val resolvedVersionName = requireNotNull(releaseVersionName ?: baseVersion.getProperty("versionName")) {
+    "version.properties must define versionName."
+}
+require(Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?").matches(resolvedVersionName)) {
+    "versionName must be X.Y.Z or X.Y.Z-prerelease, without leading zeros or build metadata."
+}
+require(resolvedVersionName.substringAfter('-', "").split('.').none {
+    it.matches(Regex("[0-9]+")) && it.length > 1 && it.startsWith("0")
+}) {
+    "Numeric prerelease identifiers cannot have leading zeros."
 }
 val versionCodeText = releaseVersionCode ?: baseVersion.getProperty("versionCode")
 val resolvedVersionCode = versionCodeText?.toIntOrNull()

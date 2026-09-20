@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Resolve a manual stable release without creating tags or publishing artifacts.
+"""Resolve a manual stable release or prerelease without publishing artifacts.
 
-Published prereleases are deliberately unsupported: every published release must
-have a stable vX.Y.Z tag and a complete schema-1 release-manifest.json asset.
+Published APK releases require a complete schema-1 release-manifest.json asset.
+Prereleases with an explicit source-only manifest reserve their tags, but do
+not establish version codes or signing certificates. Missing manifests fail.
 Drafts reserve their tag names but do not contribute version codes.
 All published manifests must use the same signing certificate; rotation is not
 supported. Resolved metadata exposes its lowercase SHA-256 fingerprint as
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from functools import total_ordering
 import json
 import os
 from pathlib import Path
@@ -25,12 +27,18 @@ from typing import Optional
 APPLICATION_ID = "com.fpink.capture"
 MAX_VERSION_CODE = 2_100_000_000
 ROOT = Path(__file__).resolve().parent.parent
-STABLE_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+VERSION = re.compile(
+    r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+)
 FULL_SHA = re.compile(r"[0-9a-fA-F]{40}")
 DIGEST = re.compile(r"[0-9a-fA-F]{64}")
 MANIFEST_FIELDS = {
     "schemaVersion", "applicationId", "versionName", "versionCode", "tag",
     "sourceSha", "apk", "sha256", "signingCertificateSha256",
+}
+SOURCE_MANIFEST_FIELDS = {
+    "schemaVersion", "applicationId", "versionName", "tag", "sourceSha", "sourceOnly",
 }
 
 
@@ -38,26 +46,67 @@ class ReleaseVersionError(Exception):
     """Invalid release input, incomplete history, or an unsuccessful command."""
 
 
-@dataclass(frozen=True, order=True)
+@total_ordering
+@dataclass(frozen=True)
 class Version:
     major: int
     minor: int
     patch: int
+    prerelease: tuple[str, ...] = ()
 
     @classmethod
     def parse(cls, value: object, context: str = "version") -> Version:
-        match = STABLE_VERSION.fullmatch(value) if isinstance(value, str) else None
+        match = VERSION.fullmatch(value) if isinstance(value, str) else None
         if match is None:
             raise ReleaseVersionError(
-                f"{context} must be a stable X.Y.Z version without leading zeros"
+                f"{context} must be X.Y.Z or X.Y.Z-prerelease, without leading zeros or build metadata"
             )
+        suffix = tuple(match[4].split(".")) if match[4] else ()
         try:
-            return cls(*(int(part) for part in match.groups()))
+            for part in suffix:
+                if part.isdigit():
+                    if len(part) > 1 and part.startswith("0"):
+                        raise ReleaseVersionError(f"{context} has a numeric prerelease identifier with leading zeros")
+                    int(part)
+            return cls(*(int(match[index]) for index in (1, 2, 3)), suffix)
         except ValueError as error:
             raise ReleaseVersionError(f"{context} contains an oversized integer") from error
 
+    @property
+    def base(self) -> Version:
+        return Version(self.major, self.minor, self.patch)
+
+    def __lt__(self, other):
+        if not isinstance(other, Version):
+            return NotImplemented
+        own_base = (self.major, self.minor, self.patch)
+        other_base = (other.major, other.minor, other.patch)
+        if own_base != other_base:
+            return own_base < other_base
+        if not self.prerelease or not other.prerelease:
+            return bool(self.prerelease) and not other.prerelease
+        for own, theirs in zip(self.prerelease, other.prerelease):
+            if own == theirs:
+                continue
+            if own.isdigit() and theirs.isdigit():
+                return int(own) < int(theirs)
+            if own.isdigit() != theirs.isdigit():
+                return own.isdigit()
+            return own < theirs
+        return len(self.prerelease) < len(other.prerelease)
+
+    def next_preview(self) -> Version:
+        if not self.prerelease:
+            suffix = ("preview", "1")
+        elif self.prerelease[-1].isdigit():
+            suffix = (*self.prerelease[:-1], str(int(self.prerelease[-1]) + 1))
+        else:
+            suffix = (*self.prerelease, "1")
+        return Version(self.major, self.minor, self.patch, suffix)
+
     def __str__(self) -> str:
-        return f"{self.major}.{self.minor}.{self.patch}"
+        suffix = "-" + ".".join(self.prerelease) if self.prerelease else ""
+        return f"{self.major}.{self.minor}.{self.patch}{suffix}"
 
 
 def valid_sha(value: object, context: str) -> str:
@@ -130,6 +179,8 @@ def load_baseline(path: Path):
     if set(properties) != {"versionName", "versionCode"}:
         raise ReleaseVersionError("Source baseline requires versionName and versionCode")
     version = Version.parse(properties["versionName"], "Source baseline versionName")
+    if version.prerelease:
+        raise ReleaseVersionError("Source baseline versionName must be a stable X.Y.Z version")
     code_text = properties["versionCode"]
     if re.fullmatch(r"[1-9][0-9]*", code_text) is None:
         raise ReleaseVersionError("Source baseline versionCode must be a positive integer")
@@ -159,7 +210,7 @@ class GitRepository:
             )
 
     def tag_commit(self, tag: str) -> str:
-        # Only validated stable tags reach this method; peel annotated tags too.
+        # Only validated version tags reach this method; peel annotated tags too.
         result = run_command(
             ["git", "rev-parse", "--verify", f"refs/tags/{tag}^{{commit}}"], self.root
         )
@@ -225,8 +276,8 @@ class GitHubClient:
         return read_json(result.stdout, f"Manifest for {tag}")
 
 
-def validate_manifest(manifest, release_tag: str):
-    if not isinstance(manifest, dict) or set(manifest) != MANIFEST_FIELDS:
+def validate_identity(manifest, release_tag: str, fields):
+    if not isinstance(manifest, dict) or set(manifest) != fields:
         raise ReleaseVersionError(f"Manifest for {release_tag} has missing or unexpected fields")
     if type(manifest["schemaVersion"]) is not int or manifest["schemaVersion"] != 1:
         raise ReleaseVersionError(f"Manifest for {release_tag} requires schemaVersion 1")
@@ -235,8 +286,13 @@ def validate_manifest(manifest, release_tag: str):
     version = Version.parse(manifest["versionName"], f"Manifest for {release_tag} versionName")
     if manifest["tag"] != f"v{version}" or manifest["tag"] != release_tag:
         raise ReleaseVersionError(f"Manifest for {release_tag} tag does not match its version/release")
-    code = valid_code(manifest["versionCode"], f"Manifest for {release_tag} versionCode")
     source_sha = valid_sha(manifest["sourceSha"], f"Manifest for {release_tag} sourceSha")
+    return version, source_sha
+
+
+def validate_manifest(manifest, release_tag: str):
+    version, source_sha = validate_identity(manifest, release_tag, MANIFEST_FIELDS)
+    code = valid_code(manifest["versionCode"], f"Manifest for {release_tag} versionCode")
     if manifest["apk"] != f"FPInk-{version}.apk":
         raise ReleaseVersionError(f"Manifest for {release_tag} has an invalid APK filename")
     for field in ("sha256", "signingCertificateSha256"):
@@ -248,13 +304,17 @@ def validate_manifest(manifest, release_tag: str):
 
 def resolve_version(
     repository: str, source_sha: str, requested_version: Optional[str] = None,
-    root: Path = ROOT,
+    root: Path = ROOT, release_type: str = "stable",
 ):
+    if release_type not in {"stable", "prerelease"}:
+        raise ReleaseVersionError("Release type must be stable or prerelease")
     source_sha = valid_sha(source_sha, "--source-sha")
     requested = (
         Version.parse(requested_version, "--requested-version")
-        if requested_version is not None else None
+        if requested_version not in (None, "") else None
     )
+    if requested is not None and bool(requested.prerelease) != (release_type == "prerelease"):
+        raise ReleaseVersionError("Requested version suffix must match the selected release type")
     github = GitHubClient(repository, root)
     git = GitRepository(root)
     git.validate_source(source_sha)
@@ -276,6 +336,16 @@ def resolve_version(
     release_ids = set()
     release_tags = set()
     published = []
+    source_previews = set()
+
+    def verify_tag(tag, expected_sha):
+        if tag not in tag_commits:
+            raise ReleaseVersionError(f"Published release {tag} is missing its GitHub tag")
+        historic_sha = tag_commits[tag]
+        if expected_sha != historic_sha or historic_sha != git.tag_commit(tag):
+            raise ReleaseVersionError(f"Published release {tag} sourceSha does not match its actual tag commit")
+        git.require_ancestor(historic_sha, source_sha, tag)
+
     for release in releases:
         release_id = release.get("id")
         tag = release.get("tag_name")
@@ -291,18 +361,26 @@ def resolve_version(
         release_tags.add(tag)
         reserved_tags.add(tag)
         if not release["draft"]:
-            published.append((release, github.manifest(release)))
+            manifest = github.manifest(release)
+            if isinstance(manifest, dict) and manifest.get("sourceOnly") is True:
+                preview, historic_sha = validate_identity(manifest, tag, SOURCE_MANIFEST_FIELDS)
+                if not release["prerelease"] or not preview.prerelease:
+                    raise ReleaseVersionError("A source-only preview requires a prerelease flag and version suffix")
+                if len(release["assets"]) != 1:
+                    raise ReleaseVersionError("A source-only preview cannot contain assets other than its manifest")
+                verify_tag(tag, historic_sha)
+                source_previews.add(preview)
+                continue
+            published.append((release, manifest))
 
     versions = set()
     codes = set()
     previous_signing_certificate = None
     for release, manifest in published:
         tag = release["tag_name"]
-        if release["prerelease"]:
-            raise ReleaseVersionError(
-                f"Published prerelease {tag} is unsupported; this pipeline is stable-only"
-            )
         version, code, historic_sha, signing_certificate = validate_manifest(manifest, tag)
+        if release["prerelease"] != bool(version.prerelease):
+            raise ReleaseVersionError(f"Published release {tag} prerelease flag does not match its version suffix")
         if previous_signing_certificate is not None and signing_certificate != previous_signing_certificate:
             raise ReleaseVersionError(
                 f"Published release {tag} has a different signing certificate; "
@@ -311,28 +389,35 @@ def resolve_version(
         previous_signing_certificate = signing_certificate
         if version in versions or code in codes:
             raise ReleaseVersionError(f"Published release {tag} has a duplicate version or versionCode")
-        if tag not in tag_commits:
-            raise ReleaseVersionError(f"Published release {tag} is missing its GitHub tag")
-        if historic_sha != tag_commits[tag] or historic_sha != git.tag_commit(tag):
-            raise ReleaseVersionError(f"Published release {tag} sourceSha does not match its actual tag commit")
-        git.require_ancestor(historic_sha, source_sha, tag)
+        verify_tag(tag, historic_sha)
         versions.add(version)
         codes.add(code)
 
-    highest = max(versions) if versions else None
+    all_versions = versions | source_previews
+    stable_versions = {version for version in versions if not version.prerelease}
+    highest_stable = max(stable_versions) if stable_versions else None
+    highest = max(all_versions) if all_versions else None
     if requested is not None:
         version = requested
-    elif highest is None:
-        version = baseline_version
     else:
-        version = Version(highest.major, highest.minor + 1, 0)
-    if version < baseline_version:
+        version = (
+            Version(highest_stable.major, highest_stable.minor + 1, 0)
+            if highest_stable is not None else baseline_version
+        )
+        if highest is not None and highest.prerelease and highest.base > version:
+            version = highest.base
+        if release_type == "prerelease":
+            matching = [v for v in all_versions if v.prerelease and v.base == version]
+            version = (max(matching) if matching else version).next_preview()
+    if version.base < baseline_version:
         raise ReleaseVersionError("Resolved version is below the source baseline")
     tag = f"v{version}"
     if tag in reserved_tags or str(version) in reserved_tags:
         raise ReleaseVersionError(f"Resolved version {version} collides with an existing tag or release")
-    if highest is not None and version <= highest:
+    if highest_stable is not None and version <= highest_stable:
         raise ReleaseVersionError("Resolved version must be greater than the highest published stable version")
+    if highest is not None and version <= highest:
+        raise ReleaseVersionError("Resolved version must be greater than the highest published version")
     code = max({baseline_code} | codes) + 1
     valid_code(code, "Next versionCode")
     return {
@@ -344,6 +429,7 @@ def resolve_version(
         "sourceSha": source_sha,
         "previousTag": f"v{highest}" if highest is not None else None,
         "previousSigningCertificateSha256": previous_signing_certificate,
+        "isPrerelease": bool(version.prerelease),
     }
 
 
@@ -358,6 +444,7 @@ def write_outputs(metadata, path: Path):
             "tag": metadata["tag"],
             "source_sha": metadata["sourceSha"],
             "previous_tag": metadata["previousTag"] or "",
+            "prerelease": str(metadata["isPrerelease"]).lower(),
         }
         with open(output_path, "a", encoding="utf-8", newline="\n") as output:
             for key, value in outputs.items():
@@ -366,7 +453,7 @@ def write_outputs(metadata, path: Path):
     if summary_path:
         with open(summary_path, "a", encoding="utf-8", newline="\n") as summary:
             summary.write(
-                "## Resolved stable release\n\n"
+                f"## Resolved {'pre-release' if metadata['isPrerelease'] else 'stable release'}\n\n"
                 f"- Version: `{metadata['versionName']}` (code `{metadata['versionCode']}`)\n"
                 f"- Tag: `{metadata['tag']}`\n"
                 f"- Source: `{metadata['sourceSha']}`\n"
@@ -378,12 +465,14 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository", required=True, help="GitHub OWNER/REPO")
     parser.add_argument("--source-sha", required=True, help="Full SHA of the checked-out source commit")
-    parser.add_argument("--requested-version", help="Optional stable X.Y.Z version (no v prefix)")
+    parser.add_argument("--requested-version", help="Optional version, matching the release type (no v prefix)")
+    parser.add_argument("--release-type", choices=("stable", "prerelease"), default="stable")
     parser.add_argument("--output", required=True, type=Path, help="Resolved metadata JSON path")
     arguments = parser.parse_args(argv)
     try:
         metadata = resolve_version(
-            arguments.repository, arguments.source_sha, arguments.requested_version
+            arguments.repository, arguments.source_sha, arguments.requested_version,
+            release_type=arguments.release_type,
         )
         write_outputs(metadata, arguments.output)
     except (ReleaseVersionError, OSError, UnicodeError) as error:
