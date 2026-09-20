@@ -81,8 +81,12 @@ the app and library instrumentation APKs; device execution remains separate.
 
 Use `JAVA_HOME` (or your IDE's Gradle JDK setting) to select a local JDK; do not
 commit a machine-specific `org.gradle.java.home` path. CI selects JDK 17 and runs
-the full Gradle `build` and `test` tasks on Linux, including artifact and APK
-package verification, using the checked-in Paddle assets.
+Gradle `build` plus both instrumentation APK assembly tasks on Linux. `build`
+already runs JVM unit tests, lint, artifact verification and both APK package
+checks, using the checked-in Paddle assets. A separate CI job runs the host C++
+unit tests. See [CI setup and required checks](../../docs/CI.md) for commands,
+reports and instructions to block merges until both jobs pass. Instrumentation
+APKs are compiled, not executed in CI.
 
 ```powershell
 # From the repository root: verification is entirely local.
@@ -99,9 +103,12 @@ package verification, using the checked-in Paddle assets.
 .\gradlew.bat :recognition:paddle:assembleDebug :recognition:paddle:assembleDebugAndroidTest
 .\gradlew.bat :recognition:paddle:connectedDebugAndroidTest
 
-# Optional native algorithm tests with an existing Windows clang++/g++:
+# Host-native algorithm tests (also run by CI), with an existing clang++/g++:
 & recognition\paddle\scripts\test-geometry.ps1 -Cxx '<path-to-clang++.exe>'
 ```
+
+The host test script also works with PowerShell on Linux: pass `-Cxx g++` or
+the path to a compatible compiler. It does not load the Android Paddle runtime.
 
 No Git Bash, Python, desktop Paddle, model optimizer, model conversion, account,
 questionnaire, download service, accelerator SDK, or OpenCV is required at runtime.

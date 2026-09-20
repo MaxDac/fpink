@@ -5,16 +5,28 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  merge_group:
+    types: [checks_requested]
+    branches: [main]
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build and JVM unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Test release tooling
         run: python3 -m unittest discover -s scripts/tests -v
@@ -28,26 +40,62 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: platform-tools
+          packages: platform-tools platforms;android-36 ndk;28.2.13676358 cmake;3.22.1
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           cache-provider: basic
+          cache-read-only: ${{ github.ref != 'refs/heads/main' || (github.event_name != 'push' && github.event_name != 'workflow_dispatch') }}
 
-      - name: Build
-        run: ./gradlew build
+      - name: Build, run JVM unit tests, and compile instrumentation APKs
+        run: >-
+          ./gradlew --continue --console=plain --stacktrace
+          build :app:assembleDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
 
-      - name: Test
-        run: ./gradlew test
-
-      - name: Build instrumentation APKs
-        run: ./gradlew :app:assembleDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
-
-      - name: Upload test reports
-        if: failure()
+      - name: Upload verification reports
+        if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: test-reports
-          path: "**/build/reports/tests/"
+          name: verification-reports
+          path: |
+            **/build/reports/tests/
+            **/build/test-results/**/TEST-*.xml
+            **/build/reports/lint-results*
+          if-no-files-found: warn
           retention-days: 14
+
+  native-unit-tests:
+    name: Native C++ unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Compile and run native unit tests
+        shell: pwsh
+        run: ./recognition/paddle/scripts/test-geometry.ps1 -Cxx g++
+
+      - name: Verify duplicate compiler PATH resolution
+        shell: pwsh
+        run: |
+          $compiler = (Get-Command -Name g++ -CommandType Application -TotalCount 1 -ErrorAction Stop).Source
+          $fixtureDirectory = Join-Path $env:RUNNER_TEMP 'fpink-duplicate-compiler'
+          New-Item -ItemType Directory -Path $fixtureDirectory | Out-Null
+          $compilerLink = Join-Path $fixtureDirectory 'g++'
+          New-Item -ItemType SymbolicLink -Path $compilerLink -Target $compiler | Out-Null
+          $originalPath = $env:PATH
+          try {
+              $env:PATH = $fixtureDirectory + [IO.Path]::PathSeparator + $originalPath
+              if (@(Get-Command -Name g++ -CommandType Application -ErrorAction Stop).Count -lt 2) {
+                  throw 'Duplicate-PATH regression requires multiple compiler matches'
+              }
+              ./recognition/paddle/scripts/test-geometry.ps1 -Cxx g++
+          } finally {
+              $env:PATH = $originalPath
+              Remove-Item -LiteralPath $compilerLink
+              Remove-Item -LiteralPath $fixtureDirectory
+          }
