@@ -36,6 +36,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +44,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -50,27 +53,68 @@ import com.fpink.capture.ui.savedContainerViewModel
 import com.fpink.capture.R
 import com.fpink.capture.ui.components.ActionIconButton
 
+private const val CAMERA_PERMISSION_DENIED =
+    "Camera access was denied. Choose image or Browse files still works; camera access can be enabled in Android Settings."
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CaptureScreen(
     onImageCaptured: (String) -> Unit,
     onBack: () -> Unit,
     onSettings: () -> Unit,
+    startWithCamera: Boolean = false,
     viewModel: CaptureViewModel = savedContainerViewModel { container, savedState ->
         CaptureViewModel(container.imageImports, container.recognitionCoordinator, container.settingsStore, savedState)
     },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    fun cameraPermissionGranted() =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
     var hasPermission by remember {
-        mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+        mutableStateOf(cameraPermissionGranted())
     }
+    var requestingPermission by rememberSaveable { mutableStateOf(false) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        requestingPermission = false
         hasPermission = granted
-        if (granted) viewModel.chooseCamera()
-        else {
+        if (viewModel.canChooseCamera()) {
+            if (granted) viewModel.chooseCamera()
+            else {
+                viewModel.chooseOtherSource()
+                viewModel.error(CAMERA_PERMISSION_DENIED)
+            }
+        }
+    }
+    fun requestCamera() {
+        if (requestingPermission || !viewModel.canChooseCamera()) return
+        hasPermission = cameraPermissionGranted()
+        if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
+            viewModel.error("This device has no camera. Choose an image instead.")
+        } else if (hasPermission) {
+            viewModel.chooseCamera()
+        } else {
+            requestingPermission = true
+            try {
+                permission.launch(Manifest.permission.CAMERA)
+            } catch (_: ActivityNotFoundException) {
+                requestingPermission = false
+                viewModel.error("Camera access could not be requested. You can still choose an image.")
+            } catch (_: SecurityException) {
+                requestingPermission = false
+                viewModel.error(CAMERA_PERMISSION_DENIED)
+            }
+        }
+    }
+    LaunchedEffect(viewModel) {
+        if (viewModel.consumeCameraEntry(startWithCamera)) requestCamera()
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        hasPermission = cameraPermissionGranted()
+        val current = viewModel.uiState.value
+        if (!hasPermission && current.cameraChosen && !current.busy && current.previewFile == null) {
             viewModel.chooseOtherSource()
-            viewModel.error("Camera access was denied. Choose image or Browse files still works; camera access can be enabled in Android Settings.")
+            viewModel.error(CAMERA_PERMISSION_DENIED)
         }
     }
     val chooser = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -152,17 +196,8 @@ fun CaptureScreen(
                         R.drawable.ic_camera,
                         R.string.take_photo,
                         filled = true,
-                        enabled = !state.busy,
-                        onClick = {
-                            if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
-                                viewModel.error("This device has no camera. Choose an image instead.")
-                            } else if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                                hasPermission = true
-                                viewModel.chooseCamera()
-                            } else {
-                                permission.launch(Manifest.permission.CAMERA)
-                            }
-                        },
+                        enabled = !state.busy && !requestingPermission,
+                        onClick = ::requestCamera,
                     )
                     Button(onClick = { chooseImage(false) }, enabled = !state.busy) { Text("Choose image") }
                     OutlinedButton(onClick = { chooseImage(true) }, enabled = !state.busy) { Text("Browse files") }
