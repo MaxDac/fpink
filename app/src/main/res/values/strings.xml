@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings">Settings</string>
+    <string name="back">Back</string>
+    <string name="add_notes">Add notes</string>
+    <string name="take_photo">Take photo</string>
+    <string name="delete_note">Delete note</string>
+    <string name="appearance">Appearance</string>
+    <string name="appearance_help">Applies immediately and saves separately from recognition settings. System follows your device appearance.</string>
+    <string name="theme_system">System (default)</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="appearance_loading">Loading appearance…</string>
+    <string name="appearance_saving">Saving appearance…</string>
+    <string name="appearance_read_error">Could not load your appearance preference. Retry to open the app without replacing your saved choice.</string>
+    <string name="appearance_write_error">Could not save appearance. Your last saved choice was restored. Select an option to try again.</string>
+    <string name="recognition_settings">Recognition settings</string>
+    <string name="retry">Retry</string>
+</resources>

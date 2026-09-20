@@ -27,6 +27,26 @@ locally stored paragraph notes with editable text and ink colour.
 
 ## Configuration
 
+### Appearance
+
+**Settings > Appearance** offers **System (default)**, **Light**, and **Dark**.
+Selection applies throughout the app immediately and is saved independently of
+**Save settings** for recognition. System follows device appearance changes;
+manual choices ignore them. Changing appearance does not save or discard
+unfinished endpoint, API-key, or provider edits. If saving fails, the last saved
+appearance is restored and Settings displays a retryable error.
+
+The app uses the standard Material light/dark palettes (no dynamic accent
+selection). Photos and note ink colours remain unchanged. Back, Settings, Add
+notes, camera, and Delete actions use icons with accessible names and long-press
+tooltips; ambiguous actions and confirmation choices keep their text.
+
+The launcher uses an original white fountain-pen nib pointing lower-left from an
+upper-right base on indigo, with adaptive and monochrome Android artwork. The
+editable master is kept under `docs/design`.
+
+### Recognition
+
 Choose a recognition provider in **Settings**:
 
 | Provider | Configuration | Language scope | Image handling |
@@ -54,7 +74,7 @@ Missing models, invalid configuration and recognition errors stop the operation.
 
 ## Capture and notes
 
-Use **Take photo**, or **Choose image** to select an image through a compatible
+Use the **Take photo** camera icon, or **Choose image** to select an image through a compatible
 gallery/file application. Gallery import does not need camera permission or broad
 photo-library access. Android can only offer apps that implement its image-picker
 contract; FP-Ink cannot force an incompatible gallery to participate.
@@ -82,7 +102,7 @@ using it is deleted.
 .\gradlew.bat :core:model:test :core:ai:test :core:storage:test :app:testDebugUnitTest
 
 # Install to connected device
-adb install app\build\outputs\apk\debug\app-debug.apk
+adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
 Set `ANDROID_HOME` to your SDK installation. The Paddle module owns its native
@@ -90,6 +110,22 @@ toolchain, artifact checks and build instructions. Do not replace missing assets
 with an empty model or an unrelated OCR checkpoint.
 
 ### Current build and device status
+
+The appearance/icon update passes all 31 app JVM tests and 13 focused
+instrumentation tests on the Pixel 7 API 37 emulator (appearance, settings, and
+capture). Debug build, lint, and the packaged-recognition check pass. UI tests
+explicitly use Espresso 3.7 because the older Compose-transitive version calls
+an InputManager API removed on newer Android versions. Production dependencies
+and SDK levels are unchanged.
+
+Appearance tests cover immediate application, live system configuration,
+manual overrides, system-bar contrast, independent encrypted recognition
+settings, pending form edits, accessible Back targets, defaults, serialized
+rapid selections, recreation, and read/write failures. The app waits for its
+saved preference before drawing content; the platform starting window may
+still follow the device theme before that preference is available.
+
+### Recorded recognition baseline (2026-09-15)
 
 Debug/release APKs and both instrumentation APKs assemble successfully. The
 130 JVM tests, 15 app acceptance tests and six native OCR tests pass. Full lint

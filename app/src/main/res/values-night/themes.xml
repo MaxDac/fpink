@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FPInk" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#141218</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
