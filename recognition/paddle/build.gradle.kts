@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.fpink.recognition.paddle"
-    compileSdk = 36
+    compileSdk = 37
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
@@ -30,10 +30,17 @@ android {
         }
     }
     androidResources { noCompress += "nb" }
-    sourceSets.getByName("main").jniLibs.srcDir("native")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        checkNotNull(variant.sources.jniLibs) {
+            "JNI library sources are unavailable for ${variant.name}"
+        }.addStaticSourceDirectory("native")
     }
 }
 

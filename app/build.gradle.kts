@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.fpink.capture"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.fpink.capture"
@@ -91,7 +91,7 @@ tasks.withType<Test> {
 }
 
 androidComponents {
-    onVariants(selector().withBuildType("debug")) { variant ->
+    onVariants { variant ->
         val apkDirectory = variant.artifacts.get(SingleArtifact.APK)
         val verifyPackage = tasks.register("verify${variant.name.replaceFirstChar { it.uppercase() }}RecognitionPackage") {
             group = "verification"
