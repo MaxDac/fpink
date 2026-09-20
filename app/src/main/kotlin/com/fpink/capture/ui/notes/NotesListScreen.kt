@@ -13,16 +13,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,6 +35,9 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import com.fpink.capture.ui.components.InkColorSwatch
+import com.fpink.capture.R
+import com.fpink.capture.ui.components.ActionFloatingButton
+import com.fpink.capture.ui.components.ActionIconButton
 import com.fpink.capture.ui.containerViewModel
 import com.fpink.core.model.Note
 import java.time.ZoneId
@@ -75,16 +75,12 @@ fun NotesListScreen(
             TopAppBar(
                 title = { Text("FPInk") },
                 actions = {
-                    TextButton(onClick = onSettingsClick) { Text("Settings") }
+                    ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
                 },
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                text = { Text("Add notes") },
-                icon = {},
-                onClick = onCaptureClick,
-            )
+            ActionFloatingButton(R.drawable.ic_add, R.string.add_notes, onClick = onCaptureClick)
         },
     ) { innerPadding ->
         Box(
@@ -119,7 +115,7 @@ private fun EmptyState(onCaptureClick: () -> Unit) {
             text = "Take a photo or choose an image",
             style = MaterialTheme.typography.titleMedium,
         )
-        Button(onClick = onCaptureClick) { Text("Add notes") }
+        ActionIconButton(R.drawable.ic_add, R.string.add_notes, filled = true, onClick = onCaptureClick)
     }
 }
 
