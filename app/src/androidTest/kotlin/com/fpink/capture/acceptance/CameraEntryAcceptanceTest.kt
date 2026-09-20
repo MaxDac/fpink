@@ -326,6 +326,26 @@ class CameraEntryAcceptanceTest {
         }
     }
 
+    @Test fun unavailableCameraKeepsAlternativesUsableWithoutReplayingDirectEntry() {
+        assumeTrue("Requires an externally granted permission",
+            ContextCompat.checkSelfPermission(compose.activity, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
+        assumeTrue(compose.activity.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
+        val current = createModel()
+        val restoration = showCapture()
+        compose.waitUntil(20_000) { current.uiState.value.error != null || previewIsStreaming() }
+        assumeTrue("Only applies when the device reports an unavailable CameraX camera",
+            current.uiState.value.error == "The camera is unavailable. You can still choose an image.")
+        compose.onNodeWithText("The camera is unavailable. You can still choose an image.").assertIsDisplayed()
+        assertAlternatives()
+        restoration.emulateSavedInstanceStateRestore()
+        assertAlternatives()
+        compose.runOnIdle {
+            assertFalse(current.uiState.value.cameraChosen)
+            assertTrue(launches.isEmpty())
+            assertNull(current.uiState.value.sourceId)
+        }
+    }
+
     private fun assertAlternatives() {
         compose.onNodeWithText("Choose image").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Browse files").assertIsDisplayed().assertIsEnabled()
