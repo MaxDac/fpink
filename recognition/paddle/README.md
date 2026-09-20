@@ -22,7 +22,8 @@ The actual app and instrumentation APKs were checked for all three native
 libraries, matching model/dictionary SHA-256 hashes, and 16 KB ZIP/ELF alignment.
 The runtime must be explicitly included through the module's `native` JNI-library
 source directory; successful linking alone does not include it in an APK.
-The app's `verifyDebugRecognitionPackage` task guards this requirement.
+The app's `verifyDebugRecognitionPackage` and `verifyReleaseRecognitionPackage`
+tasks guard this requirement for both build types.
 
 Six native tests passed on an Android 11 x86_64 emulator running the actual ARM64
 libraries through `libndk_translation.so`. They cover HELLO/geometry, blank output,
@@ -68,6 +69,9 @@ benchmark or evidence that the model's 90% confidence means 90% word accuracy.
 The parent build includes `:recognition:paddle` and makes the app depend on it.
 `preBuild` verifies pinned model, dictionary, native-library, and header hashes;
 it fails rather than downloading or silently accepting changed binaries.
+The AGP Variant API adds `native` to every library variant's JNI sources,
+avoiding the legacy source-set API. CI checks both app packages and compiles
+the app and library instrumentation APKs; device execution remains separate.
 
 ```powershell
 # From the repository root: verification is entirely local.

@@ -91,7 +91,7 @@ tasks.withType<Test> {
 }
 
 androidComponents {
-    onVariants(selector().withBuildType("debug")) { variant ->
+    onVariants { variant ->
         val apkDirectory = variant.artifacts.get(SingleArtifact.APK)
         val verifyPackage = tasks.register("verify${variant.name.replaceFirstChar { it.uppercase() }}RecognitionPackage") {
             group = "verification"
