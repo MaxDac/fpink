@@ -52,6 +52,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.fpink.capture.R
 import com.fpink.capture.data.AndroidFileStore
 import com.fpink.capture.data.RecognitionCoordinator
 import com.fpink.capture.navigation.NotesListDestination
@@ -198,7 +199,9 @@ class NotesListActionsAcceptanceTest {
             listingGate = null
         }
         compose.waitUntil(10_000) { notes.uiState.value.error != null && !notes.uiState.value.isLoading }
-        compose.onNodeWithText("Failed to load notes: fixture listing failure").assertIsDisplayed()
+        compose.onNodeWithText(
+            compose.activity.getString(R.string.notes_load_error, "fixture listing failure"),
+        ).assertIsDisplayed()
         assertBottomActions()
         compose.onNodeWithContentDescription("Add notes").performClick()
         compose.onNodeWithContentDescription("Take photo").performClick()

@@ -117,6 +117,19 @@ does not upload or recognize its image again after all its notes were deleted.
 Filesystem durability still requires device validation rather than only
 in-memory repository tests.
 
+The notes-list ViewModel owns stable-ID selection and the confirmation snapshot.
+Long-press enters selection mode; clearing the last selection exits it. Select all
+includes off-screen loaded notes but does not automatically include later arrivals.
+Selection survives configuration changes, not process death.
+
+Confirmed list deletion invokes the existing per-note delete operation sequentially
+and stops at the first failure; it is not an all-or-nothing transaction. Refreshes
+are coalesced and cannot overlap deletion. Reconciliation prunes selection only
+after a successful repository list, because a failed delete may already have
+committed. Unresolved cleanup/load failures block further destructive actions and
+expose Retry without automatically deleting untouched notes. Repository recovery
+still finishes previously committed deletion intents after interruption.
+
 ## Input, lifecycle and settings
 
 Gallery uses a compatible image chooser, not an exclusive default-gallery API.
@@ -126,7 +139,8 @@ requested only on the camera path, and camera hardware is optional.
 
 The notes list reserves an inset-aware bottom row for Add notes (start/left in
 LTR) and Take photo (end/right in LTR), keeping list rows and snackbars above
-both actions. Add notes, including the empty-state action, opens the source
+both actions. Both are hidden during note selection or deletion, preserving the
+bulk-selection workflow. Add notes, including the empty-state action, opens the source
 chooser without requesting permission. Take photo uses an explicit `openCamera`
 navigation argument to enter the same capture screen's in-app CameraX preview;
 it neither opens a gallery nor fires the shutter. Rapid notes-list activations
