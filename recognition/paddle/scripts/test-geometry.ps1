@@ -3,7 +3,7 @@ param([Parameter(Mandatory = $true)][string]$Cxx)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$compiler = (Get-Command -Name $Cxx -CommandType Application -ErrorAction Stop).Source
+$compiler = (Get-Command -Name $Cxx -CommandType Application -TotalCount 1 -ErrorAction Stop).Source
 $sourceDirectory = [IO.Path]::Combine($root, 'src', 'main', 'cpp')
 $testSource = [IO.Path]::Combine($root, 'src', 'test', 'cpp', 'geometry_test.cpp')
 $outputName = if ([IO.Path]::DirectorySeparatorChar -eq '\') { 'geometry_test.exe' } else { 'geometry_test' }

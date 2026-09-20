@@ -13,6 +13,9 @@ Configure **both job names**, not the workflow title `CI`, as required checks:
 | `Build and JVM unit tests` | Debug/release production builds, configured JVM unit tests, Android lint, pinned Paddle assets, both recognition APK package checks, and compilation of both instrumentation APKs |
 | `Native C++ unit tests` | Host C++ geometry, coordinates, BGR sampling and CTC decoding unit tests |
 
+The native job also repeats its suite with an extra compiler symlink in PATH,
+guarding against multiple executable matches being treated as one command.
+
 The jobs run independently on Ubuntu 24.04. The Android job uses JDK 17, the
 checked-in Gradle wrapper, Android API 36, NDK 28.2.13676358 and CMake 3.22.1.
 AGP selects any additional SDK Build Tools it requires.
