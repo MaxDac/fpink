@@ -13,6 +13,7 @@ captures/
 *.dex
 output-metadata.json
 release/
+__pycache__/
 
 # ──────────────────────────────────────────────
 # IDE — IntelliJ / Android Studio

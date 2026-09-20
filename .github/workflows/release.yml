@@ -1,0 +1,255 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable X.Y.Z; leave blank for the next minor (first release: 0.1.0)"
+        required: false
+        type: string
+      publish:
+        description: "Sign and publish a GitHub Release (requires the release environment)"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fpink-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    outputs:
+      version_name: ${{ steps.version.outputs.version_name }}
+      version_code: ${{ steps.version.outputs.version_code }}
+      tag: ${{ steps.version.outputs.tag }}
+      previous_tag: ${{ steps.version.outputs.previous_tag }}
+    steps:
+      - name: Require the main branch
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Release runs must target main."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve release version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          python3 scripts/release_version.py \
+            --repository "$GITHUB_REPOSITORY" --source-sha "$GITHUB_SHA" \
+            --requested-version "$REQUESTED_VERSION" --output release-metadata.json
+
+      - name: Test release tooling
+        run: python3 -m unittest discover -s scripts/tests -v
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: 17.0.18+8
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0 ndk;28.2.13676358 cmake;3.22.1'
+
+      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37 # v6
+        with:
+          cache-provider: basic
+
+      - name: Build and verify release
+        env:
+          VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          VERSION_CODE: ${{ steps.version.outputs.version_code }}
+        run: |
+          ./gradlew --no-daemon test :app:lintRelease :app:assembleRelease :app:verifyReleaseRecognitionPackage \
+            -PrequireReleaseVersion=true "-PreleaseVersionName=$VERSION_NAME" "-PreleaseVersionCode=$VERSION_CODE"
+          python3 scripts/verify_release_apk.py \
+            --apk app/build/outputs/apk/release/app-release-unsigned.apk \
+            --version-name "$VERSION_NAME" --version-code "$VERSION_CODE" \
+            --build-tools "$ANDROID_HOME/build-tools/36.0.0"
+          mkdir release-staging
+          cp app/build/outputs/apk/release/app-release-unsigned.apk release-staging/unsigned.apk
+          cp release-metadata.json LICENSE release-staging/
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unsigned-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-staging/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Explain non-publishing run
+        if: ${{ !inputs.publish }}
+        run: |
+          echo "Build-only run: the unsigned APK artifact is not installable. No signing key was used and no tag or release was created." >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    if: ${{ inputs.publish }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release
+    permissions:
+      contents: write
+    env:
+      VERSION_NAME: ${{ needs.build.outputs.version_name }}
+      VERSION_CODE: ${{ needs.build.outputs.version_code }}
+      TAG: ${{ needs.build.outputs.tag }}
+      PREVIOUS_TAG: ${{ needs.build.outputs.previous_tag }}
+    steps:
+      - name: Require publication approval
+        env:
+          PUBLICATION_APPROVED: ${{ vars.RELEASE_PUBLICATION_APPROVED }}
+        run: |
+          if [[ "$PUBLICATION_APPROVED" != true ]]; then
+            echo "::error::Review licensing and configure RELEASE_PUBLICATION_APPROVED=true in the release environment."
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: unsigned-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: incoming
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
+        with:
+          distribution: temurin
+          java-version: 17.0.18+8
+
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'platform-tools build-tools;36.0.0'
+
+      - name: Sign and verify APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          EXPECTED_CERTIFICATE: ${{ vars.RELEASE_CERTIFICATE_SHA256 }}
+        run: |
+          python3 -I - <<'PY'
+          import base64, hashlib, json, os, pathlib, re, shutil, subprocess, tempfile
+
+          def require(condition, message):
+              if not condition:
+                  raise RuntimeError(message)
+
+          def run(*args):
+              return subprocess.check_output(args, text=True)
+
+          version = os.environ["VERSION_NAME"]
+          code = os.environ["VERSION_CODE"]
+          tag = os.environ["TAG"]
+          require(re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", version), "Invalid version")
+          require(re.fullmatch(r"[1-9][0-9]*", code) and int(code) <= 2100000000, "Invalid version code")
+          require(tag == "v" + version, "Invalid tag")
+          metadata = json.loads(pathlib.Path("incoming/release-metadata.json").read_text())
+          expected = {"schemaVersion": 1, "applicationId": "com.fpink.capture", "versionName": version,
+                      "versionCode": int(code), "tag": tag, "sourceSha": os.environ["GITHUB_SHA"]}
+          require(all(metadata.get(k) == v for k, v in expected.items()), "Release metadata mismatch")
+          for name in ("KEYSTORE_BASE64", "KEYSTORE_PASSWORD", "KEY_ALIAS", "KEY_PASSWORD", "EXPECTED_CERTIFICATE"):
+              require(bool(os.environ.get(name)), "Missing signing configuration: " + name)
+          certificate = os.environ["EXPECTED_CERTIFICATE"].replace(":", "").lower()
+          require(re.fullmatch(r"[0-9a-f]{64}", certificate), "Invalid expected certificate fingerprint")
+          previous = metadata["previousSigningCertificateSha256"]
+          require(previous is None or previous == certificate, "Signing key differs from published releases; rotation is not supported")
+          tools = pathlib.Path(os.environ["ANDROID_HOME"]) / "build-tools/36.0.0"
+          output = pathlib.Path("release-assets")
+          output.mkdir()
+          apk = output / ("FPInk-" + version + ".apk")
+          with tempfile.TemporaryDirectory(prefix="fpink-signing-", dir=os.environ["RUNNER_TEMP"]) as temp:
+              keystore = pathlib.Path(temp) / "release.keystore"
+              keystore.write_bytes(base64.b64decode(os.environ["KEYSTORE_BASE64"], validate=True))
+              keystore.chmod(0o600)
+              aligned = pathlib.Path(temp) / "aligned.apk"
+              subprocess.run([str(tools / "zipalign"), "-P", "16", "-f", "4", "incoming/unsigned.apk", str(aligned)], check=True)
+              subprocess.run([str(tools / "apksigner"), "sign", "--ks", str(keystore),
+                              "--ks-key-alias", os.environ["KEY_ALIAS"], "--ks-pass", "env:KEYSTORE_PASSWORD",
+                              "--key-pass", "env:KEY_PASSWORD", "--out", str(apk), str(aligned)], check=True)
+          verification = run(str(tools / "apksigner"), "verify", "--verbose", "--print-certs", str(apk))
+          signers = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$", verification, re.MULTILINE)
+          require(len(signers) == 1 and signers[0].lower() == certificate, "APK signing certificate mismatch")
+          subprocess.run([str(tools / "zipalign"), "-c", "-P", "16", "4", str(apk)], check=True)
+          badging = run(str(tools / "aapt2"), "dump", "badging", str(apk))
+          package = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging, re.MULTILINE)
+          require(package and package.groups() == ("com.fpink.capture", code, version), "Signed APK identity mismatch")
+          require(not re.search(r"^application-debuggable(?:\s|$)", badging, re.MULTILINE), "Debuggable APK")
+          manifest = {**expected, "apk": apk.name, "sha256": hashlib.sha256(apk.read_bytes()).hexdigest(),
+                      "signingCertificateSha256": certificate}
+          (output / "release-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          shutil.copyfile("incoming/LICENSE", output / "LICENSE")
+          files = (apk, output / "release-manifest.json", output / "LICENSE")
+          (output / "SHA256SUMS").write_text("".join(hashlib.sha256(p.read_bytes()).hexdigest() + "  " + p.name + "\n" for p in files))
+          PY
+
+      - name: Create and publish release without replacing existing versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, tempfile
+
+          def gh(*args):
+              return subprocess.check_output(["gh", *args], text=True)
+
+          def pages(endpoint):
+              return [item for page in json.loads(gh("api", "--paginate", "--slurp", endpoint)) for item in page]
+
+          repo, tag = os.environ["GITHUB_REPOSITORY"], os.environ["TAG"]
+          version, sha = os.environ["VERSION_NAME"], os.environ["GITHUB_SHA"]
+          if any(t["name"] == tag for t in pages(f"repos/{repo}/tags?per_page=100")):
+              raise RuntimeError("Tag already exists; inspect the previous run. Never overwrite a release.")
+          if any(r["tag_name"] == tag for r in pages(f"repos/{repo}/releases?per_page=100")):
+              raise RuntimeError("Release or draft already exists; inspect it before recovery.")
+          assets = pathlib.Path("release-assets")
+          manifest = json.loads((assets / "release-manifest.json").read_text())
+          paths = [assets / manifest["apk"], assets / "SHA256SUMS", assets / "release-manifest.json", assets / "LICENSE"]
+          notes = pathlib.Path("release-notes.txt")
+          notes.write_text(
+              f"Signed APK for Android 8.0+. Version code: {manifest['versionCode']}.\n\n"
+              "Offline PaddleOCR requires ARM64. Physical ARM64/16 KB-device qualification and representative "
+              "handwriting-quality testing remain separate from CI; see the recognition documentation.\n\n"
+              f"License: GPL-3.0-only for FPInk code; third-party components retain their licenses. "
+              f"[Corresponding source](https://github.com/{repo}/archive/refs/tags/{tag}.tar.gz) "
+              f"at commit `{sha}`. Build with `-PreleaseVersionName={version} "
+              f"-PreleaseVersionCode={manifest['versionCode']}`; "
+              f"[build instructions](https://github.com/{repo}/blob/{tag}/docs/RELEASING.md).\n\n"
+              f"Signing certificate SHA-256: `{manifest['signingCertificateSha256']}`.\n"
+          )
+          # Creating a ref is atomic: a concurrent creator fails rather than moving it.
+          gh("api", "--method", "POST", f"repos/{repo}/git/refs", "-f", f"ref=refs/tags/{tag}", "-f", f"sha={sha}")
+          args = ["release", "create", tag, "--repo", repo, "--verify-tag", "--draft",
+                  "--title", f"FPInk {version}", "--notes-file", str(notes), "--generate-notes"]
+          if os.environ["PREVIOUS_TAG"]:
+              args += ["--notes-start-tag", os.environ["PREVIOUS_TAG"]]
+          gh(*args, *(str(p) for p in paths))
+          release = json.loads(gh("release", "view", tag, "--repo", repo, "--json", "isDraft,assets"))
+          if not release["isDraft"] or {a["name"] for a in release["assets"]} != {p.name for p in paths}:
+              raise RuntimeError("Draft asset set mismatch; leaving it unpublished for inspection.")
+          with tempfile.TemporaryDirectory(prefix="fpink-release-check-") as temp:
+              gh("release", "download", tag, "--repo", repo, "--dir", temp)
+              for path in paths:
+                  if hashlib.sha256(path.read_bytes()).digest() != hashlib.sha256((pathlib.Path(temp) / path.name).read_bytes()).digest():
+                      raise RuntimeError("Uploaded asset checksum mismatch; draft remains unpublished.")
+          gh("release", "edit", tag, "--repo", repo, "--draft=false", "--latest")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"\nPublished [FPInk {version}](https://github.com/{repo}/releases/tag/{tag}).\n")
+          PY
