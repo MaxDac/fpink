@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.fpink.capture"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.fpink.capture"

@@ -47,7 +47,9 @@ benchmark or evidence that the model's 90% confidence means 90% word accuracy.
 
 ## Exact build inputs
 
-* Android library, minSdk **26**, compileSdk **36**, Java/Kotlin bytecode **17**.
+* Android library, minSdk **26**, compileSdk **37**, Java/Kotlin bytecode **17**.
+  The app also compiles against API 37 for current dependency requirements;
+  its targetSdk remains **36**, so this does not opt into new runtime behavior.
 * NDK **28.2.13676358** (r28c), CMake **3.22.1**, C++17.
 * **Offline PaddleOCR supports only `arm64-v8a`.** No ARM32, x86, or x86_64
   Paddle runtime is included. Other app dependencies retain those ABIs, so this
