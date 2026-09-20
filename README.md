@@ -4,6 +4,18 @@ An Android app for capturing handwritten fountain-pen notes, recognizing text,
 and preserving detected ink colours. Offline PaddleOCR is the default;
 Azure recognition is optional and explicitly selected.
 
+## Selecting and deleting notes
+
+Press and hold a note in the list to select it. Tap rows or their checkboxes to
+change the selection, or use **Select all** to select every note in the list,
+including those off screen. Clear the last selection or press Back to return to
+opening notes normally.
+
+Choose **Delete selected** and confirm once to permanently delete the selection.
+Shared source images remain until their last note is deleted. If deletion fails,
+the app stops and keeps remaining notes selected after refreshing; review the
+selection before trying again. If refresh fails, use **Retry** first.
+
 ## Build and releases
 
 Use JDK 17, Android SDK 37, NDK `28.2.13676358`, and CMake `3.22.1`.

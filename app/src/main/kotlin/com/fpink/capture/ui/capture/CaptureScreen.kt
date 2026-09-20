@@ -44,8 +44,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -136,14 +140,15 @@ fun CaptureScreen(
                 },
                 actions = { compact ->
                     if (state.previewFile != null) {
-                        if (compact) {
-                            ReviewActions(state, viewModel)
-                        } else {
+                        if (!compact) {
                             Text("Each recognized paragraph becomes a separate local note. Ink colour is measured on this device.")
-                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                ReviewActions(state, viewModel, Modifier.weight(1f))
-                            }
                         }
+                        CaptureReviewActions(
+                            busy = state.busy,
+                            providerAvailable = state.providerAvailable,
+                            onChooseAnother = viewModel::chooseAnother,
+                            onConfirm = viewModel::confirm,
+                        )
                     } else {
                         OutlinedButton(onClick = viewModel::chooseOtherSource, enabled = !state.busy) { Text("Choose another source") }
                     }
@@ -196,16 +201,6 @@ private fun CaptureInformation(state: CaptureUiState) {
 }
 
 @Composable
-private fun ReviewActions(state: CaptureUiState, viewModel: CaptureViewModel, modifier: Modifier = Modifier) {
-    OutlinedButton(onClick = viewModel::chooseAnother, enabled = !state.busy, modifier = modifier) {
-        Text("Retake / choose another")
-    }
-    Button(onClick = viewModel::confirm, enabled = !state.busy && state.providerAvailable, modifier = modifier) {
-        Text("Use image")
-    }
-}
-
-@Composable
 internal fun CaptureImageLayout(
     modifier: Modifier = Modifier,
     information: @Composable () -> Unit,
@@ -237,6 +232,48 @@ internal fun CaptureImageLayout(
                     Modifier.fillMaxWidth().heightIn(max = panelHeight).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) { actions(false) }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun CaptureReviewActions(
+    busy: Boolean,
+    providerAvailable: Boolean,
+    onChooseAnother: () -> Unit,
+    onConfirm: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Layout(
+        modifier = modifier.fillMaxWidth(),
+        content = {
+            OutlinedButton(
+                onClick = onChooseAnother,
+                enabled = !busy,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) { Text(stringResource(R.string.choose_another), softWrap = false) }
+            Button(
+                onClick = onConfirm,
+                enabled = !busy && providerAvailable,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) { Text(stringResource(R.string.use_image), softWrap = false) }
+        },
+    ) { measurables, constraints ->
+        val spacing = 12.dp.roundToPx()
+        // Intrinsic button widths include the current font scale, theme typography and padding.
+        val preferredButtonWidth = measurables.maxOf { it.maxIntrinsicWidth(Constraints.Infinity) }
+        val width = constraints.constrainWidth(preferredButtonWidth * 2 + spacing)
+        val horizontalButtonWidth = ((width - spacing) / 2).coerceAtLeast(0)
+        val stacked = preferredButtonWidth > horizontalButtonWidth
+        val buttonWidth = if (stacked) width else horizontalButtonWidth
+        val buttons = measurables.map { it.measure(Constraints.fixedWidth(buttonWidth)) }
+        val height = if (stacked) buttons.sumOf { it.height } + spacing else buttons.maxOf { it.height }
+        layout(width, height) {
+            var offset = 0
+            buttons.forEach { button ->
+                button.placeRelative(if (stacked) 0 else offset, if (stacked) offset else 0)
+                offset += (if (stacked) button.height else button.width) + spacing
             }
         }
     }

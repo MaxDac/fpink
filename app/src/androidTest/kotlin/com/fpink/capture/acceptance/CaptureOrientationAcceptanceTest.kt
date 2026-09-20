@@ -19,6 +19,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -28,6 +29,8 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.lifecycle.Lifecycle
@@ -41,6 +44,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.fpink.capture.MainActivity
+import com.fpink.capture.R
 import com.fpink.capture.data.AndroidFileStore
 import com.fpink.capture.data.RecognitionCoordinator
 import com.fpink.capture.ui.capture.CameraDisplayRotation
@@ -174,7 +178,7 @@ class CaptureOrientationAcceptanceTest {
             mountScreen()
             compose.onNodeWithContentDescription("Prepared image to recognize").assertIsDisplayed().assertHeightIsAtLeast(100.dp)
             compose.onNodeWithText("Use image").performScrollTo().assertIsDisplayed().assertIsEnabled()
-            compose.onNodeWithText("Retake / choose another").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(compose.activity.getString(R.string.choose_another)).performScrollTo().assertIsDisplayed()
             compose.onNodeWithContentDescription("Take photo").assertDoesNotExist()
             assertEquals(staged.sourceId, viewModel.uiState.value.sourceId)
             assertArrayEquals(bytes, staged.file.readBytes())
@@ -250,8 +254,21 @@ class CaptureOrientationAcceptanceTest {
             }
         }
         compose.onNodeWithContentDescription("Prepared image to recognize").assertIsDisplayed().assertHeightIsAtLeast(100.dp)
-        compose.onNodeWithText("Use image").performScrollTo().assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithText("Retake / choose another").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        for (label in listOf("Use image", compose.activity.getString(R.string.choose_another))) {
+            compose.onNodeWithText(label).performScrollTo().assertIsDisplayed().assertIsEnabled()
+            val text = compose.onNodeWithText(label, useUnmergedTree = true)
+            val layouts = mutableListOf<TextLayoutResult>()
+            text.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { assertTrue(it(layouts)) }
+            val layout = layouts.single()
+            assertEquals(1, layout.lineCount)
+            assertEquals(label.length, layout.getLineEnd(0, visibleEnd = true))
+            assertFalse(layout.isLineEllipsized(0))
+            assertFalse(layout.didOverflowHeight)
+            assertTrue(layout.getLineRight(0) <= layout.size.width)
+            val bounds = text.fetchSemanticsNode().boundsInRoot
+            assertEquals(layout.size.width.toFloat(), bounds.width, 1f)
+            assertEquals(layout.size.height.toFloat(), bounds.height, 1f)
+        }
     }
 
     @Test fun captureErrorAfterRecreationReleasesBusyAndAllowsRetry() {
