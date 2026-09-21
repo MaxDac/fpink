@@ -21,6 +21,7 @@ import com.fpink.capture.ui.containerViewModel
 import com.fpink.capture.ui.processing.ProcessingScreen
 import com.fpink.capture.ui.review.CaptureReviewScreen
 import com.fpink.capture.ui.settings.SettingsScreen
+import com.fpink.capture.ui.settings.ZettelkastenSettingsScreen
 import com.fpink.capture.data.ThemeMode
 import com.fpink.capture.ui.theme.ThemeUiState
 
@@ -34,6 +35,7 @@ object Routes {
     const val CAPTURE_REVIEW = "capture_review/{sourceId}"
     const val NOTE_DETAIL = "note_detail/{noteId}"
     const val SETTINGS = "settings"
+    const val ZETTELKASTEN_SETTINGS = "zettelkasten_settings"
 
     fun processing(sourceId: String) = "processing/$sourceId"
     fun captureReview(sourceId: String) = "capture_review/$sourceId"
@@ -108,7 +110,11 @@ fun FPInkNavGraph(
                 onBack = { navController.popBackStack() },
                 appearance = appearance,
                 onThemeSelected = onThemeSelected,
+                onZettelkastenConfigureClick = { navController.navigate(Routes.ZETTELKASTEN_SETTINGS) },
             )
+        }
+        composable(Routes.ZETTELKASTEN_SETTINGS) {
+            ZettelkastenSettingsScreen(onBack = { navController.popBackStack() })
         }
     }
 }

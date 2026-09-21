@@ -49,6 +49,7 @@
     <string name="notes_share_unavailable">No compatible app is available to share these notes.</string>
     <string name="notes_share_blocked">Android could not open the share menu.</string>
     <string name="delete_selected_notes">Delete selected</string>
+    <string name="zettelkasten_move_selected_notes">Move to Zettelkasten category</string>
     <string name="delete_notes_confirm">Delete</string>
     <string name="cancel">Cancel</string>
     <string name="dismiss">Dismiss</string>

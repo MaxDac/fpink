@@ -28,6 +28,7 @@ data class SettingsUiState(
     val busy: Boolean = false,
     val modelStatus: String = "Checking bundled model readiness…",
     val message: String? = null,
+    val zettelkastenEnabled: Boolean = false,
 ) {
     override fun toString(): String = "SettingsUiState(provider=$provider, replacementKey=[redacted])"
 }
@@ -70,6 +71,7 @@ class SettingsViewModel(
 
     private suspend fun reload() {
         val stored = settingsStore.storedSettings.first()
+        val zettelkastenEnabled = settingsStore.zettelkastenEnabled.first()
         _uiState.update {
             it.copy(
                 provider = stored.settings.provider,
@@ -79,7 +81,21 @@ class SettingsViewModel(
                 keyError = stored.keyError,
                 removeKey = false,
                 loading = false,
+                zettelkastenEnabled = zettelkastenEnabled,
             )
+        }
+    }
+
+    fun setZettelkastenEnabled(enabled: Boolean) {
+        _uiState.update { it.copy(zettelkastenEnabled = enabled) }
+        viewModelScope.launch {
+            try {
+                settingsStore.saveZettelkastenEnabled(enabled)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(zettelkastenEnabled = !enabled, message = "Could not save the beta feature toggle.") }
+            }
         }
     }
 

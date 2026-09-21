@@ -2,7 +2,9 @@ package com.fpink.capture.ui.notes
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fpink.capture.data.SettingsStore
 import com.fpink.core.model.Note
+import com.fpink.core.model.ZettelkastenCategory
 import com.fpink.core.storage.NoteRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -21,11 +23,18 @@ data class NotesListUiState(
     val isDeleting: Boolean = false,
     val deletionError: String? = null,
     val deletedCount: Int? = null,
+    val zettelkastenEnabled: Boolean = false,
+    val isMoving: Boolean = false,
+    val moveError: String? = null,
 ) {
     val isSelecting: Boolean get() = selectedIds.isNotEmpty()
     val allSelected: Boolean get() = notes.isNotEmpty() && notes.all { it.id in selectedIds }
-    val canInteract: Boolean get() = !isLoading && !isDeleting && error == null
+    val canInteract: Boolean get() = !isLoading && !isDeleting && !isMoving && error == null
     val canChangeSelection: Boolean get() = canInteract && pendingDeletionIds.isEmpty()
+
+    /** Notes grouped into the three fixed Zettelkasten sections, in their canonical display order. */
+    val zettelkastenSections: List<Pair<ZettelkastenCategory, List<Note>>>
+        get() = ZettelkastenCategory.entries.map { category -> category to notes.filter { it.zettelkastenCategory == category } }
 }
 
 sealed interface NotesListError {
@@ -35,6 +44,7 @@ sealed interface NotesListError {
 
 class NotesListViewModel(
     private val noteRepository: NoteRepository,
+    private val settingsStore: SettingsStore? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NotesListUiState())
@@ -43,7 +53,15 @@ class NotesListViewModel(
 
     init {
         refresh()
+        settingsStore?.let { store ->
+            viewModelScope.launch {
+                store.zettelkastenEnabled.collect { enabled ->
+                    _uiState.update { it.copy(zettelkastenEnabled = enabled) }
+                }
+            }
+        }
     }
+
 
     fun refresh() {
         // A delete performs its own reconciliation; overlapping lifecycle refreshes
@@ -139,6 +157,42 @@ class NotesListViewModel(
 
     fun onDeletionResultShown() {
         _uiState.update { it.copy(deletedCount = null) }
+    }
+
+    fun moveSelectionTo(category: ZettelkastenCategory) {
+        val state = _uiState.value
+        if (!state.canChangeSelection || !state.isSelecting) return
+        val notesToMove = state.notes.filter { it.id in state.selectedIds && it.zettelkastenCategory != category }
+        if (notesToMove.isEmpty()) {
+            _uiState.update { it.copy(selectedIds = emptySet()) }
+            return
+        }
+        _uiState.update { it.copy(isMoving = true, moveError = null) }
+        operation = viewModelScope.launch {
+            try {
+                var failure: Throwable? = null
+                for (note in notesToMove) {
+                    val result = noteRepository.save(note.copy(zettelkastenCategory = category))
+                    if (result.isFailure) {
+                        failure = result.exceptionOrNull()
+                        break
+                    }
+                }
+                loadNotes()
+                _uiState.update {
+                    it.copy(moveError = failure?.description(), selectedIds = if (failure == null) emptySet() else it.selectedIds)
+                }
+            } catch (cancelled: CancellationException) {
+                _uiState.update { it.copy(error = NotesListError.Interrupted) }
+                throw cancelled
+            } finally {
+                _uiState.update { it.copy(isMoving = false) }
+            }
+        }
+    }
+
+    fun dismissMoveError() {
+        _uiState.update { it.copy(moveError = null) }
     }
 
     private suspend fun loadNotes() {

@@ -75,8 +75,11 @@ import com.fpink.capture.R
 import com.fpink.capture.ui.components.ActionFloatingButton
 import com.fpink.capture.ui.components.ActionIconButton
 import com.fpink.capture.ui.containerViewModel
+import com.fpink.capture.ui.settings.description
+import com.fpink.capture.ui.settings.displayName
 import com.fpink.core.model.Note
 import com.fpink.core.model.NoteExport
+import com.fpink.core.model.ZettelkastenCategory
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -89,7 +92,7 @@ fun NotesListScreen(
     onSettingsClick: () -> Unit,
     resultMessage: String? = null,
     onResultShown: () -> Unit = {},
-    viewModel: NotesListViewModel = containerViewModel { NotesListViewModel(it.noteRepository) },
+    viewModel: NotesListViewModel = containerViewModel { NotesListViewModel(it.noteRepository, it.settingsStore) },
     sourceViewModel: SourceImportViewModel = run {
         val context = LocalContext.current
         containerViewModel { SourceImportViewModel(it.imageImports, AndroidClipboardImageReader(context)) }
@@ -193,8 +196,12 @@ fun NotesListScreen(
     }
 
     var exportMenuOpen by rememberSaveable { mutableStateOf(false) }
+    var moveMenuOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.isSelecting, state.isDeleting) {
-        if (!state.isSelecting || state.isDeleting) exportMenuOpen = false
+        if (!state.isSelecting || state.isDeleting) {
+            exportMenuOpen = false
+            moveMenuOpen = false
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -250,6 +257,28 @@ fun NotesListScreen(
                                 R.drawable.ic_delete, R.string.delete_selected_notes,
                                 enabled = state.canChangeSelection, onClick = viewModel::requestDeletion,
                             )
+                            if (state.zettelkastenEnabled) {
+                                Box {
+                                    ActionIconButton(
+                                        R.drawable.ic_move_to, R.string.zettelkasten_move_selected_notes,
+                                        enabled = state.canChangeSelection, onClick = { moveMenuOpen = true },
+                                    )
+                                    DropdownMenu(
+                                        expanded = moveMenuOpen,
+                                        onDismissRequest = { moveMenuOpen = false },
+                                    ) {
+                                        ZettelkastenCategory.entries.forEach { category ->
+                                            DropdownMenuItem(
+                                                text = { Text("Move to ${category.displayName()}") },
+                                                onClick = {
+                                                    moveMenuOpen = false
+                                                    viewModel.moveSelectionTo(category)
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         } else if (!state.isDeleting) {
                             ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
                         }
@@ -287,6 +316,12 @@ fun NotesListScreen(
                         }
                     }
                 }
+                state.moveError?.let { error ->
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text("Could not move all selected notes: $error", color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = viewModel::dismissMoveError) { Text(stringResource(R.string.dismiss)) }
+                    }
+                }
                 if (state.isSelecting) {
                     SelectAllRow(
                         allSelected = state.allSelected,
@@ -297,6 +332,10 @@ fun NotesListScreen(
                 if (state.isDeleting) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text(stringResource(R.string.deleting_notes), Modifier.padding(16.dp))
+                }
+                if (state.isMoving) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text("Moving notes…", Modifier.padding(16.dp))
                 }
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     val error = state.error
@@ -324,6 +363,8 @@ fun NotesListScreen(
                             notes = state.notes,
                             selectedIds = state.selectedIds,
                             enabled = state.canChangeSelection,
+                            groupByZettelkasten = state.zettelkastenEnabled,
+                            sections = state.zettelkastenSections,
                             onNoteClick = { id ->
                                 if (state.isSelecting) viewModel.toggleSelection(id) else onNoteClick(id)
                             },
@@ -468,6 +509,8 @@ private fun NotesList(
     notes: List<Note>,
     selectedIds: Set<String>,
     enabled: Boolean,
+    groupByZettelkasten: Boolean,
+    sections: List<Pair<ZettelkastenCategory, List<Note>>>,
     onNoteClick: (String) -> Unit,
     onNoteLongClick: (String) -> Unit,
 ) {
@@ -476,15 +519,38 @@ private fun NotesList(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(notes, key = { it.id }) { note ->
-            NoteRow(
-                note = note,
-                selectionMode = selectedIds.isNotEmpty(),
-                selected = note.id in selectedIds,
-                enabled = enabled,
-                onClick = { onNoteClick(note.id) },
-                onLongClick = { onNoteLongClick(note.id) },
-            )
+        if (groupByZettelkasten) {
+            sections.forEach { (category, sectionNotes) ->
+                if (sectionNotes.isEmpty()) return@forEach
+                item(key = "header_${category.name}") {
+                    Text(
+                        text = category.displayName(),
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                    )
+                }
+                items(sectionNotes, key = { it.id }) { note ->
+                    NoteRow(
+                        note = note,
+                        selectionMode = selectedIds.isNotEmpty(),
+                        selected = note.id in selectedIds,
+                        enabled = enabled,
+                        onClick = { onNoteClick(note.id) },
+                        onLongClick = { onNoteLongClick(note.id) },
+                    )
+                }
+            }
+        } else {
+            items(notes, key = { it.id }) { note ->
+                NoteRow(
+                    note = note,
+                    selectionMode = selectedIds.isNotEmpty(),
+                    selected = note.id in selectedIds,
+                    enabled = enabled,
+                    onClick = { onNoteClick(note.id) },
+                    onLongClick = { onNoteLongClick(note.id) },
+                )
+            }
         }
     }
 }

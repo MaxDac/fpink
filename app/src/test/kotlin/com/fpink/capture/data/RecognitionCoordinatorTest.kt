@@ -10,6 +10,7 @@ import com.fpink.core.ai.RecognitionProvider
 import com.fpink.core.ai.RecognitionProviderId
 import com.fpink.core.ai.RecognitionSettings
 import com.fpink.core.model.InkColorOrigin
+import com.fpink.core.model.ZettelkastenCategory
 import com.fpink.core.storage.FileStore
 import com.fpink.core.storage.NoteRepository
 import java.io.IOException
@@ -51,6 +52,28 @@ class RecognitionCoordinatorTest {
         advanceUntilIdle()
         assertEquals(1, fixture.calls)
         assertEquals(2, fixture.repository.list().getOrThrow().size)
+    }
+
+    @Test
+    fun `default colour matching leaves fleeting category when the beta feature is unconfigured`() = runTest {
+        val fixture = Fixture(this)
+        val coordinator = fixture.coordinator()
+        coordinator.confirm(sourceId)
+        coordinator.start(sourceId)
+        advanceUntilIdle()
+        assertTrue(fixture.repository.list().getOrThrow().all { it.zettelkastenCategory == ZettelkastenCategory.FLEETING })
+    }
+
+    @Test
+    fun `notes are auto-assigned to the category matching their detected ink colour`() = runTest {
+        val fixture = Fixture(this).apply {
+            categoryColors = mapOf(ZettelkastenCategory.PERMANENT to listOf("#000000"))
+        }
+        val coordinator = fixture.coordinator()
+        coordinator.confirm(sourceId)
+        coordinator.start(sourceId)
+        advanceUntilIdle()
+        assertTrue(fixture.repository.list().getOrThrow().all { it.zettelkastenCategory == ZettelkastenCategory.PERMANENT })
     }
 
     @Test
@@ -248,6 +271,7 @@ class RecognitionCoordinatorTest {
         val selectedProviders = mutableListOf<RecognitionProviderId>()
         var paragraphs = listOf(draft("Wrapped paragraph stays together."), draft("Second paragraph."))
         var recognize: suspend () -> Result<RecognitionDocument> = { Result.success(document) }
+        var categoryColors: Map<ZettelkastenCategory, List<String>> = emptyMap()
 
         fun coordinator() = RecognitionCoordinator(
             readSettings = { settings },
@@ -273,6 +297,7 @@ class RecognitionCoordinatorTest {
                     }
                 }
             },
+            readZettelkastenCategoryColors = { categoryColors },
             scope = scope,
         )
     }

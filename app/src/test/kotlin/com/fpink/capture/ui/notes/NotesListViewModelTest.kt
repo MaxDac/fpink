@@ -2,6 +2,7 @@ package com.fpink.capture.ui.notes
 
 import androidx.lifecycle.viewModelScope
 import com.fpink.core.model.Note
+import com.fpink.core.model.ZettelkastenCategory
 import com.fpink.core.storage.FileStore
 import com.fpink.core.storage.NoteRepository
 import java.io.IOException
@@ -395,6 +396,66 @@ class NotesListViewModelTest {
         assertEquals(setOf("b", "c"), model.uiState.value.selectedIds)
         assertEquals(listOf("b", "c"), model.uiState.value.notes.map { it.id })
         assertNull(model.uiState.value.error)
+    }
+
+    @Test fun `zettelkasten sections group notes by category in canonical order`() {
+        val notes = listOf(
+            note("a").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT),
+            note("b").copy(zettelkastenCategory = ZettelkastenCategory.FLEETING),
+            note("c").copy(zettelkastenCategory = ZettelkastenCategory.LITERATURE),
+            note("d").copy(zettelkastenCategory = ZettelkastenCategory.FLEETING),
+        )
+        val sections = NotesListUiState(notes = notes).zettelkastenSections
+        assertEquals(
+            listOf(ZettelkastenCategory.FLEETING, ZettelkastenCategory.LITERATURE, ZettelkastenCategory.PERMANENT),
+            sections.map { it.first },
+        )
+        assertEquals(listOf("b", "d"), sections.first { it.first == ZettelkastenCategory.FLEETING }.second.map { it.id })
+        assertEquals(listOf("c"), sections.first { it.first == ZettelkastenCategory.LITERATURE }.second.map { it.id })
+        assertEquals(listOf("a"), sections.first { it.first == ZettelkastenCategory.PERMANENT }.second.map { it.id })
+    }
+
+    @Test fun `moving the selection reassigns the category and clears selection`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b", "c"))
+        val model = model(fixture.repository)
+        runCurrent()
+        model.select("a")
+        model.select("b")
+        model.moveSelectionTo(ZettelkastenCategory.PERMANENT)
+        advanceUntilIdle()
+        assertFalse(model.uiState.value.isSelecting)
+        assertNull(model.uiState.value.moveError)
+        val stored = NoteRepository(fixture.store).list().getOrThrow().associateBy { it.id }
+        assertEquals(ZettelkastenCategory.PERMANENT, stored.getValue("a").zettelkastenCategory)
+        assertEquals(ZettelkastenCategory.PERMANENT, stored.getValue("b").zettelkastenCategory)
+        assertEquals(ZettelkastenCategory.FLEETING, stored.getValue("c").zettelkastenCategory)
+    }
+
+    @Test fun `moving to the already assigned category is a no op that clears the selection`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a"))
+        val model = model(fixture.repository)
+        runCurrent()
+        model.select("a")
+        fixture.store.calls.clear()
+        model.moveSelectionTo(ZettelkastenCategory.FLEETING)
+        advanceUntilIdle()
+        assertFalse(model.uiState.value.isSelecting)
+        assertTrue(fixture.store.calls.none { it.startsWith("write:notes/") })
+    }
+
+    @Test fun `a failed move surfaces an error and preserves the selection for retry`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val model = model(fixture.repository)
+        runCurrent()
+        model.toggleSelectAll()
+        fixture.store.fail = { operation, path -> operation == "write" && path == "notes/b.json" }
+        model.moveSelectionTo(ZettelkastenCategory.LITERATURE)
+        advanceUntilIdle()
+        assertNotNull(model.uiState.value.moveError)
+        assertTrue(model.uiState.value.isSelecting)
+        assertFalse(model.uiState.value.isMoving)
+        model.dismissMoveError()
+        assertNull(model.uiState.value.moveError)
     }
 
     private fun model(repository: NoteRepository): NotesListViewModel =

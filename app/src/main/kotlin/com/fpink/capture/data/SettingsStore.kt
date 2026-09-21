@@ -7,6 +7,7 @@ import android.util.Base64
 import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -14,6 +15,7 @@ import com.fpink.core.ai.AzureReadConfig
 import com.fpink.core.ai.RecognitionError
 import com.fpink.core.ai.RecognitionProviderId
 import com.fpink.core.ai.RecognitionSettings
+import com.fpink.core.model.ZettelkastenCategory
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -71,6 +73,8 @@ class SettingsStore internal constructor(
         val ENDPOINT = stringPreferencesKey("document_intelligence_endpoint")
         val KEY = stringPreferencesKey("document_intelligence_encrypted_key")
         val THEME = stringPreferencesKey("appearance_theme")
+        val ZETTELKASTEN_ENABLED = booleanPreferencesKey("zettelkasten_enabled")
+        val ZETTELKASTEN_CATEGORY_COLORS = stringPreferencesKey("zettelkasten_category_colors")
     }
 
     override val themeMode: Flow<ThemeMode> = store.data.map {
@@ -79,6 +83,31 @@ class SettingsStore internal constructor(
 
     override suspend fun saveThemeMode(mode: ThemeMode) {
         store.edit { it[Keys.THEME] = mode.storedValue }
+    }
+
+    /** Whether the Zettelkasten organisation beta feature is turned on in Settings. */
+    val zettelkastenEnabled: Flow<Boolean> = store.data.map { it[Keys.ZETTELKASTEN_ENABLED] ?: false }
+
+    /** The colours configured for each fixed Zettelkasten category, regardless of [zettelkastenEnabled]. */
+    val zettelkastenCategoryColors: Flow<Map<ZettelkastenCategory, List<String>>> = store.data.map {
+        decodeZettelkastenCategoryColors(it[Keys.ZETTELKASTEN_CATEGORY_COLORS])
+    }
+
+    /**
+     * The colours to use for automatic category matching: empty whenever the beta feature is off,
+     * so a disabled feature never silently recategorizes new captures.
+     */
+    val activeZettelkastenCategoryColors: Flow<Map<ZettelkastenCategory, List<String>>> = store.data.map { preferences ->
+        if (preferences[Keys.ZETTELKASTEN_ENABLED] != true) return@map emptyMap()
+        decodeZettelkastenCategoryColors(preferences[Keys.ZETTELKASTEN_CATEGORY_COLORS])
+    }
+
+    suspend fun saveZettelkastenEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        store.edit { it[Keys.ZETTELKASTEN_ENABLED] = enabled }
+    }
+
+    suspend fun saveZettelkastenCategoryColors(colors: Map<ZettelkastenCategory, List<String>>) = withContext(Dispatchers.IO) {
+        store.edit { it[Keys.ZETTELKASTEN_CATEGORY_COLORS] = encodeZettelkastenCategoryColors(colors) }
     }
 
     val storedSettings: Flow<StoredRecognitionSettings> = store.data.map { preferences ->
