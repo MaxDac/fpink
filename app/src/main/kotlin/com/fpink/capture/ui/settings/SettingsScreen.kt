@@ -49,10 +49,10 @@ fun SettingsScreen(
     onBack: () -> Unit,
     appearance: ThemeUiState,
     onThemeSelected: (ThemeMode) -> Unit,
-    onZettelkastenConfigureClick: () -> Unit = {},
     viewModel: SettingsViewModel = containerViewModel {
         SettingsViewModel(it.settingsStore, it::testAzureConnection) { PaddleOcrProvider.readiness(it.appContext) }
     },
+    onZettelkastenConfigureClick: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
