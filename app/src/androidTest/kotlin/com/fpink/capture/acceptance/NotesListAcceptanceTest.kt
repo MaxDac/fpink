@@ -462,6 +462,7 @@ class NotesListAcceptanceTest {
             text(R.string.deleting_notes).assertIsDisplayed()
             confirmation(2).assertDoesNotExist()
             icon(R.string.clear_note_selection).assertIsNotEnabled()
+            icon(R.string.share_selected_notes).assertIsNotEnabled()
             icon(R.string.delete_selected_notes).assertIsNotEnabled()
             selectAll().assertIsNotEnabled()
             notes.forEach { row(it).assertIsNotEnabled() }
@@ -474,6 +475,7 @@ class NotesListAcceptanceTest {
             touchCheckboxArea(notes[1])
             selectAll().performTouchInput { click() }
             icon(R.string.clear_note_selection).performTouchInput { click() }
+            icon(R.string.share_selected_notes).performTouchInput { click() }
             icon(R.string.delete_selected_notes).performTouchInput { click() }
             pressBack()
             assertSelection(notes[0], notes[1])
@@ -572,6 +574,7 @@ class NotesListAcceptanceTest {
         icon(R.string.add_notes).assertIsDisplayed().assertIsEnabled()
         icon(R.string.take_photo).assertIsDisplayed().assertIsEnabled()
         icon(R.string.clear_note_selection).assertDoesNotExist()
+        icon(R.string.share_selected_notes).assertDoesNotExist()
         icon(R.string.delete_selected_notes).assertDoesNotExist()
         selectAll().assertDoesNotExist()
     }
@@ -581,6 +584,7 @@ class NotesListAcceptanceTest {
             compose.activity.resources.getQuantityString(R.plurals.notes_selected, count, count),
         ).assertIsDisplayed()
         icon(R.string.clear_note_selection).assertMinimumTouchTarget().assertIsEnabled()
+        icon(R.string.share_selected_notes).assertMinimumTouchTarget().assertIsEnabled()
         icon(R.string.delete_selected_notes).assertMinimumTouchTarget().assertIsEnabled()
         icon(R.string.settings).assertDoesNotExist()
         icon(R.string.add_notes).assertDoesNotExist()

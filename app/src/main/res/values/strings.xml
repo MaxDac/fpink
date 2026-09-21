@@ -30,6 +30,13 @@
     <string name="deselect_note">Deselect note</string>
     <string name="select_all_notes">Select all</string>
     <string name="clear_note_selection">Clear selection</string>
+    <string name="share_selected_notes">Share selected</string>
+    <string name="export_notes_json">JSON</string>
+    <string name="export_notes_text">Notes</string>
+    <string name="share_notes_json_chooser">Share notes as JSON</string>
+    <string name="share_notes_text_chooser">Share notes</string>
+    <string name="notes_share_unavailable">No compatible app is available to share these notes.</string>
+    <string name="notes_share_blocked">Android could not open the share menu.</string>
     <string name="delete_selected_notes">Delete selected</string>
     <string name="delete_notes_confirm">Delete</string>
     <string name="cancel">Cancel</string>

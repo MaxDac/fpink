@@ -132,7 +132,10 @@ class NotesListActionsAcceptanceTest {
 
     private fun showNotes() {
         compose.setContent {
-            CompositionLocalProvider(LocalLayoutDirection provides direction) {
+            CompositionLocalProvider(
+                LocalLayoutDirection provides direction,
+                LocalActivityResultRegistryOwner provides registryOwner,
+            ) {
                 MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
                     Box(
                         (if (compact) Modifier.fillMaxWidth().height(280.dp) else Modifier.fillMaxSize())
@@ -149,6 +152,38 @@ class NotesListActionsAcceptanceTest {
             }
         }
         compose.waitUntil(10_000) { !notes.uiState.value.isLoading }
+    }
+
+    @Test fun selectedNotesCanBeSharedAsJsonOrPlainTextWithoutClearingSelection() {
+        seedNotes()
+        showNotes()
+        lateinit var selected: List<Note>
+        compose.runOnIdle {
+            selected = notes.uiState.value.notes.take(2)
+            selected.forEach { notes.select(it.id) }
+        }
+
+        compose.onNodeWithContentDescription("Share selected")
+            .assertIsDisplayed().assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp).performClick()
+        compose.onNodeWithText("JSON").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            val shared = sharedIntent()
+            assertEquals("application/json", shared.type)
+            val payload = shared.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+            assertTrue(payload.indexOf(selected[0].id) < payload.indexOf(selected[1].id))
+            assertTrue(selected.all { it.text in payload })
+            assertFalse(payload.contains("\"imagePath\""))
+            assertEquals(selected.map { it.id }.toSet(), notes.uiState.value.selectedIds)
+        }
+
+        compose.onNodeWithContentDescription("Share selected").performClick()
+        compose.onNodeWithText("Notes").assertIsDisplayed().performClick()
+        compose.runOnIdle {
+            val shared = sharedIntent()
+            assertEquals("text/plain", shared.type)
+            assertEquals(selected.joinToString("\n\n") { it.text }, shared.getStringExtra(Intent.EXTRA_TEXT))
+            assertEquals(selected.map { it.id }.toSet(), notes.uiState.value.selectedIds)
+        }
     }
 
     @Test fun emptyAndBottomAddOpenTheSameSourceMenuAndCameraHasItsOwnAction() {
@@ -331,6 +366,13 @@ class NotesListActionsAcceptanceTest {
     private fun assertSourceMenuClosed() {
         compose.onNodeWithText("Gallery").assertDoesNotExist()
         compose.onNodeWithText("File").assertDoesNotExist()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun sharedIntent(): Intent {
+        val chooser = launches.removeLast()
+        assertEquals(Intent.ACTION_CHOOSER, chooser.action)
+        return requireNotNull(chooser.getParcelableExtra(Intent.EXTRA_INTENT))
     }
 
     private fun waitForNotes(nav: NavHostController) {
