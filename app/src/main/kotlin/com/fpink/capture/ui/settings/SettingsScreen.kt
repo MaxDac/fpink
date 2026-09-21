@@ -18,6 +18,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -51,6 +52,7 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = containerViewModel {
         SettingsViewModel(it.settingsStore, it::testAzureConnection) { PaddleOcrProvider.readiness(it.appContext) }
     },
+    onZettelkastenConfigureClick: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -132,6 +134,29 @@ fun SettingsScreen(
             }
             Text("The explicit access test calls Azure without uploading an image. It does not prove image-analysis permission or available quota.")
             state.message?.let { Text(it) }
+            HorizontalDivider()
+            Text("Beta features", style = MaterialTheme.typography.titleMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Zettelkasten organisation (beta)")
+                    Text(
+                        "Group notes into Fleeting, Literature and Permanent sections, matched automatically by ink colour.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                Switch(
+                    checked = state.zettelkastenEnabled,
+                    onCheckedChange = viewModel::setZettelkastenEnabled,
+                    enabled = !state.loading,
+                )
+            }
+            if (state.zettelkastenEnabled) {
+                TextButton(onClick = onZettelkastenConfigureClick) { Text("Configure Zettelkasten categories") }
+            }
         }
     }
 }

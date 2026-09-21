@@ -7,6 +7,8 @@ import com.fpink.core.ai.RecognitionProvider
 import com.fpink.core.ai.RecognitionProviderId
 import com.fpink.core.ai.RecognitionSettings
 import com.fpink.core.model.Note
+import com.fpink.core.model.ZettelkastenCategory
+import com.fpink.core.model.matchZettelkastenCategory
 import com.fpink.core.storage.NoteRepository
 import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
@@ -50,6 +52,7 @@ class RecognitionCoordinator internal constructor(
     private val repository: NoteRepository,
     private val processor: NoteProcessor,
     private val providerFactory: (RecognitionSettings) -> RecognitionProvider,
+    private val readZettelkastenCategoryColors: suspend () -> Map<ZettelkastenCategory, List<String>> = { emptyMap() },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
     constructor(
@@ -69,6 +72,7 @@ class RecognitionCoordinator internal constructor(
         repository,
         processor,
         providerFactory,
+        { settings.activeZettelkastenCategoryColors.first() },
     )
 
     private class Record {
@@ -137,6 +141,8 @@ class RecognitionCoordinator internal constructor(
                             throw NoTextException()
                         }
                         val capturedAt = Clock.System.now()
+                        // Read once per batch: a mid-batch settings change must not split one job across schemes.
+                        val categoryColors = readZettelkastenCategoryColors()
                         record.batch = image.bytes to paragraphs.mapIndexed { index, paragraph ->
                             Note(
                                 id = "$sourceId-$index",
@@ -152,6 +158,7 @@ class RecognitionCoordinator internal constructor(
                                 recognitionProvider = recognition.provider.name,
                                 recognitionModelVersion = recognition.modelVersion,
                                 inkColorOrigin = paragraph.colorOrigin,
+                                zettelkastenCategory = matchZettelkastenCategory(paragraph.inkColorHex, categoryColors),
                             )
                         }
                     }

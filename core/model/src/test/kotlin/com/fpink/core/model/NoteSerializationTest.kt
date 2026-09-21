@@ -36,32 +36,36 @@ class NoteSerializationTest {
         assertNull(note.recognitionProvider)
         assertNull(note.recognitionModelVersion)
         assertNull(note.inkColorOrigin)
+        assertEquals(ZettelkastenCategory.FLEETING, note.zettelkastenCategory)
     }
 
     @Test
     fun `paragraph metadata and colour provenance survive JSON round trips`() {
         InkColorOrigin.entries.forEach { origin ->
-            val note = Note(
-                id = "source-0",
-                capturedAt = Instant.parse("2026-01-01T12:00:00Z"),
-                imagePath = "images/source.png",
-                text = "Cursive paragraph",
-                inkColorHex = "#000000",
-                inkColorName = "Black",
-                sourceId = "source",
-                paragraphIndex = 0,
-                paragraphPolygon = listOf(
-                    ImagePoint(0.1f, 0.2f),
-                    ImagePoint(0.9f, 0.2f),
-                    ImagePoint(0.9f, 0.4f),
-                    ImagePoint(0.1f, 0.4f),
-                ),
-                recognitionProvider = "PADDLE",
-                recognitionModelVersion = "PP-OCRv5_mobile",
-                inkColorOrigin = origin,
-            )
+            ZettelkastenCategory.entries.forEach { category ->
+                val note = Note(
+                    id = "source-0",
+                    capturedAt = Instant.parse("2026-01-01T12:00:00Z"),
+                    imagePath = "images/source.png",
+                    text = "Cursive paragraph",
+                    inkColorHex = "#000000",
+                    inkColorName = "Black",
+                    sourceId = "source",
+                    paragraphIndex = 0,
+                    paragraphPolygon = listOf(
+                        ImagePoint(0.1f, 0.2f),
+                        ImagePoint(0.9f, 0.2f),
+                        ImagePoint(0.9f, 0.4f),
+                        ImagePoint(0.1f, 0.4f),
+                    ),
+                    recognitionProvider = "PADDLE",
+                    recognitionModelVersion = "PP-OCRv5_mobile",
+                    inkColorOrigin = origin,
+                    zettelkastenCategory = category,
+                )
 
-            assertEquals(note, Json.decodeFromString<Note>(Json.encodeToString(note)))
+                assertEquals(note, Json.decodeFromString<Note>(Json.encodeToString(note)))
+            }
         }
     }
 }

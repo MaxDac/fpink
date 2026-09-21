@@ -6,6 +6,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 val baseVersion = Properties().apply {
@@ -102,6 +103,7 @@ dependencies {
     implementation(libs.camera.view)
 
     implementation(libs.datastore.preferences)
+    implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.okhttp)

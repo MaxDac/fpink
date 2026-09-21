@@ -13,6 +13,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+/**
+ * The app's fixed, standard ink-colour swatches. Reused for manual ink colour selection in the
+ * note detail editor and for assigning colours to Zettelkasten categories.
+ */
+val STANDARD_INK_COLORS = listOf("#000000", "#2447A7", "#147D45", "#B42532", "#6B318C", "#8A4B28", "#00858B", "#E8C64A")
+
 @Composable
 fun InkColorSwatch(
     colorHex: String?,

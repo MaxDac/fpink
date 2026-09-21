@@ -44,6 +44,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.fpink.capture.ui.components.InkColorSwatch
+import com.fpink.capture.ui.components.STANDARD_INK_COLORS
 import com.fpink.capture.R
 import com.fpink.capture.ui.components.ActionIconButton
 import com.fpink.capture.ui.containerViewModel
@@ -201,7 +202,7 @@ private fun NoteDetailContent(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            listOf("#000000", "#2447A7", "#147D45", "#B42532", "#6B318C", "#8A4B28", "#00858B", "#E8C64A").forEach { hex ->
+            STANDARD_INK_COLORS.forEach { hex ->
                 TextButton(onClick = { onColorChanged(hex) }, enabled = !isSaving) {
                     InkColorSwatch(hex, size = 20.dp)
                     Text(inkColorName(hex), modifier = Modifier.padding(start = 6.dp))

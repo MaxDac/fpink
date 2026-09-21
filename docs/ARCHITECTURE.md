@@ -86,6 +86,7 @@ New optional/defaulted fields are:
 | `paragraphPolygon` | Normalized region for this paragraph |
 | `recognitionProvider`, `recognitionModelVersion` | OCR provenance |
 | `inkColorOrigin` | Detected, defaulted or manually selected colour |
+| `zettelkastenCategory` | Fleeting/Literature/Permanent section (beta, defaults to Fleeting) |
 
 Each job has a stable source ID. Sibling note IDs are derived from that source
 and paragraph index; the shared source is `images/{sourceId}.png`. Each paragraph
@@ -143,6 +144,20 @@ after a successful repository list, because a failed delete may already have
 committed. Unresolved cleanup/load failures block further destructive actions and
 expose Retry without automatically deleting untouched notes. Repository recovery
 still finishes previously committed deletion intents after interruption.
+
+Zettelkasten organisation is an opt-in beta feature (Settings toggle,
+`SettingsStore.zettelkastenEnabled`). Its dedicated configuration screen lets the
+user assign one or more colours — from the standard eight-swatch palette or a
+custom hex — to each of the three fixed categories from the Zettelkasten method
+(Fleeting, Literature, Permanent Notes; a colour belongs to at most one category).
+`RecognitionCoordinator` snapshots the active colour scheme once per capture batch
+and calls `core:model`'s `matchZettelkastenCategory` (an OKLab perceptual-distance
+match with a fixed tolerance) to assign each new paragraph's `zettelkastenCategory`;
+an unconfigured or out-of-tolerance colour defaults to Fleeting. Disabling the
+feature clears the active scheme, so new captures stop being auto-categorized
+without touching already-assigned notes. When enabled, the notes list groups notes
+into the three sections and a selection-mode "Move to…" action reassigns the
+selected notes' category through the ordinary `NoteRepository.save` path.
 
 ## Input, lifecycle and settings
 

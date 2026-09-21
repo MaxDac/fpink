@@ -23,4 +23,5 @@ data class Note(
     val recognitionProvider: String? = null,
     val recognitionModelVersion: String? = null,
     val inkColorOrigin: InkColorOrigin? = null,
+    val zettelkastenCategory: ZettelkastenCategory = DEFAULT_ZETTELKASTEN_CATEGORY,
 )
