@@ -33,6 +33,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +76,7 @@ import com.fpink.capture.ui.components.ActionFloatingButton
 import com.fpink.capture.ui.components.ActionIconButton
 import com.fpink.capture.ui.containerViewModel
 import com.fpink.core.model.Note
+import com.fpink.core.model.NoteExport
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
@@ -95,6 +98,7 @@ fun NotesListScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val sourceState by sourceViewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    var shareError by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(resultMessage) {
         resultMessage?.let {
             snackbar.showSnackbar(it)
@@ -112,6 +116,12 @@ fun NotesListScreen(
         sourceState.error?.let {
             snackbar.showSnackbar(it)
             sourceViewModel.dismissError()
+        }
+    }
+    LaunchedEffect(shareError) {
+        shareError?.let {
+            snackbar.showSnackbar(it)
+            shareError = null
         }
     }
     LaunchedEffect(sourceState.readySourceId) {
@@ -142,6 +152,25 @@ fun NotesListScreen(
         if (result.resultCode == Activity.RESULT_OK && uri != null) sourceViewModel.importContent(uri)
         else sourceViewModel.pickerCancelled()
     }
+    val shareLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    val shareUnavailable = stringResource(R.string.notes_share_unavailable)
+    val shareBlocked = stringResource(R.string.notes_share_blocked)
+    val jsonChooserTitle = stringResource(R.string.share_notes_json_chooser)
+    val textChooserTitle = stringResource(R.string.share_notes_text_chooser)
+    fun shareNotes(notes: List<Note>, json: Boolean) {
+        if (notes.isEmpty()) return
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = if (json) "application/json" else "text/plain"
+            putExtra(Intent.EXTRA_TEXT, if (json) NoteExport.asJson(notes) else NoteExport.asText(notes))
+        }
+        try {
+            shareLauncher.launch(Intent.createChooser(intent, if (json) jsonChooserTitle else textChooserTitle))
+        } catch (_: ActivityNotFoundException) {
+            shareError = shareUnavailable
+        } catch (_: SecurityException) {
+            shareError = shareBlocked
+        }
+    }
     fun launchPicker(files: Boolean) {
         val intent = Intent(if (files) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
             type = "image/*"
@@ -161,6 +190,11 @@ fun NotesListScreen(
             sourceViewModel.refreshClipboardAvailability()
             sourceMenuOpen = true
         }
+    }
+
+    var exportMenuOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(state.isSelecting, state.isDeleting) {
+        if (!state.isSelecting || state.isDeleting) exportMenuOpen = false
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -187,6 +221,31 @@ fun NotesListScreen(
                     },
                     actions = {
                         if (state.isSelecting) {
+                            Box {
+                                ActionIconButton(
+                                    R.drawable.ic_share, R.string.share_selected_notes,
+                                    enabled = state.canChangeSelection, onClick = { exportMenuOpen = true },
+                                )
+                                DropdownMenu(
+                                    expanded = exportMenuOpen,
+                                    onDismissRequest = { exportMenuOpen = false },
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.export_notes_json)) },
+                                        onClick = {
+                                            exportMenuOpen = false
+                                            shareNotes(state.notes.filter { it.id in state.selectedIds }, json = true)
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.export_notes_text)) },
+                                        onClick = {
+                                            exportMenuOpen = false
+                                            shareNotes(state.notes.filter { it.id in state.selectedIds }, json = false)
+                                        },
+                                    )
+                                }
+                            }
                             ActionIconButton(
                                 R.drawable.ic_delete, R.string.delete_selected_notes,
                                 enabled = state.canChangeSelection, onClick = viewModel::requestDeletion,
