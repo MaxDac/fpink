@@ -14,6 +14,17 @@
     <string name="retake_photo">Retake</string>
     <string name="choose_source">Choose source</string>
     <string name="delete_note">Delete note</string>
+    <string name="review_captured_notes">Review captured notes</string>
+    <string name="review_captured_notes_help">Correct the generated transcription for each note, then choose Done.</string>
+    <string name="review_note_label">Note %1$d transcription</string>
+    <string name="captured_source_image">Captured source image</string>
+    <string name="done">Done</string>
+    <string name="note_text_required">Transcription text is required.</string>
+    <string name="review_notes_missing">No captured notes were found for this review.</string>
+    <string name="discard_corrections_title">Discard corrections?</string>
+    <string name="discard_corrections_message">The captured notes will remain saved, but your unsaved text corrections will be lost.</string>
+    <string name="discard_changes">Discard changes</string>
+    <string name="keep_reviewing">Keep reviewing</string>
     <string name="appearance">Appearance</string>
     <string name="appearance_help">Applies immediately and saves separately from recognition settings. System follows your device appearance.</string>
     <string name="theme_system">System (default)</string>

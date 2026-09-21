@@ -4,6 +4,14 @@ An Android app for capturing handwritten fountain-pen notes, recognizing text,
 and preserving detected ink colours. Offline PaddleOCR is the default;
 Azure recognition is optional and explicitly selected.
 
+## Correcting captured notes
+
+After a new image is recognized and saved, the app opens a review screen containing
+every generated paragraph note. Correct any transcription in place, then choose
+**Done** to save the changed notes and return to the list. Leaving with unsaved
+corrections asks for confirmation; discarding those corrections does not remove
+the already captured notes.
+
 ## Selecting and deleting notes
 
 Press and hold a note in the list to select it. Tap rows or their checkboxes to
