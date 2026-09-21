@@ -2,6 +2,7 @@ package com.fpink.capture.ui.detail
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.fpink.capture.ui.applyTextEdit
 import com.fpink.core.model.Note
 import com.fpink.core.model.InkColorOrigin
 import com.fpink.core.ai.inkColorName
@@ -136,9 +137,7 @@ internal fun normalizeInkHex(value: String): String? =
 
 internal fun applyNoteEdits(note: Note, text: String, colorHex: String, colorTouched: Boolean): Note {
     val hex = if (colorTouched) requireNotNull(normalizeInkHex(colorHex)) else note.inkColorHex
-    return note.copy(
-        text = text,
-        userEdited = note.userEdited || text != note.text,
+    return applyTextEdit(note, text).copy(
         inkColorHex = hex,
         inkColorName = if (colorTouched) inkColorName(checkNotNull(hex)) else note.inkColorName,
         inkColorOrigin = if (colorTouched) InkColorOrigin.USER_SELECTED else note.inkColorOrigin,

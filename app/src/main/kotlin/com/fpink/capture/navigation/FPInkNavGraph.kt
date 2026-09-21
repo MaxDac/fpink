@@ -19,6 +19,7 @@ import com.fpink.capture.ui.notes.NotesListViewModel
 import com.fpink.capture.ui.notes.SourceImportViewModel
 import com.fpink.capture.ui.containerViewModel
 import com.fpink.capture.ui.processing.ProcessingScreen
+import com.fpink.capture.ui.review.CaptureReviewScreen
 import com.fpink.capture.ui.settings.SettingsScreen
 import com.fpink.capture.data.ThemeMode
 import com.fpink.capture.ui.theme.ThemeUiState
@@ -30,10 +31,12 @@ object Routes {
     const val SOURCE_ID = "sourceId"
     const val CAPTURE_DESTINATION = "$CAPTURE?$CAMERA_ENTRY={$CAMERA_ENTRY}&$SOURCE_ID={$SOURCE_ID}"
     const val PROCESSING = "processing/{sourceId}"
+    const val CAPTURE_REVIEW = "capture_review/{sourceId}"
     const val NOTE_DETAIL = "note_detail/{noteId}"
     const val SETTINGS = "settings"
 
     fun processing(sourceId: String) = "processing/$sourceId"
+    fun captureReview(sourceId: String) = "capture_review/$sourceId"
     fun noteDetail(noteId: String) = "note_detail/$noteId"
 
     /** [sourceId] is set when an image was already staged (e.g. from the notes list's Gallery/File/Paste
@@ -68,20 +71,29 @@ fun FPInkNavGraph(
         }
         composable(Routes.PROCESSING) {
             ProcessingScreen(
-                onComplete = { count, cleanupWarning, previouslySaved ->
-                    val message = when {
-                        previouslySaved && count == 0 ->
-                            "This image was already processed; its notes have been deleted. No notes were recreated."
-                        previouslySaved -> "$count ${if (count == 1) "note" else "notes"} already saved."
-                        else -> "$count ${if (count == 1) "note" else "notes"} created."
-                    }
+                onComplete = { sourceId, count, cleanupWarning, previouslySaved ->
                     navController.getBackStackEntry(Routes.NOTES_LIST).savedStateHandle["createdNotesMessage"] =
-                        message +
-                        if (cleanupWarning) " The staged import could not be cleaned up; saved notes are safe." else ""
-                    navController.popBackStack(Routes.NOTES_LIST, false)
+                        captureCompletionMessage(count, cleanupWarning, previouslySaved)
+                    if (shouldReviewCapture(count, previouslySaved)) {
+                        navController.navigate(Routes.captureReview(sourceId)) {
+                            popUpTo(Routes.NOTES_LIST) { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    } else {
+                        navController.popBackStack(Routes.NOTES_LIST, false)
+                    }
                 },
                 onDiscard = { navController.popBackStack(Routes.NOTES_LIST, false) },
                 onSettings = { navController.navigate(Routes.SETTINGS) },
+            )
+        }
+
+        composable(Routes.CAPTURE_REVIEW) { backStackEntry ->
+            val sourceId = backStackEntry.arguments?.getString("sourceId") ?: ""
+            CaptureReviewScreen(
+                sourceId = sourceId,
+                onComplete = { navController.popBackStack(Routes.NOTES_LIST, false) },
+                onExit = { navController.popBackStack(Routes.NOTES_LIST, false) },
             )
         }
         composable(Routes.NOTE_DETAIL) { backStackEntry ->
@@ -99,6 +111,24 @@ fun FPInkNavGraph(
             )
         }
     }
+}
+
+internal fun shouldReviewCapture(count: Int, previouslySaved: Boolean): Boolean =
+    !previouslySaved && count > 0
+
+internal fun captureCompletionMessage(
+    count: Int,
+    cleanupWarning: Boolean,
+    previouslySaved: Boolean,
+): String {
+    val message = when {
+        previouslySaved && count == 0 ->
+            "This image was already processed; its notes have been deleted. No notes were recreated."
+        previouslySaved -> "$count ${if (count == 1) "note" else "notes"} already saved."
+        else -> "$count ${if (count == 1) "note" else "notes"} created."
+    }
+    return message +
+        if (cleanupWarning) " The staged import could not be cleaned up; saved notes are safe." else ""
 }
 
 @Composable

@@ -30,6 +30,7 @@ CameraX / ACTION_GET_CONTENT chooser
          dominant foreground-ink cluster
     -> ParagraphDraft[]
     -> recoverable NoteRepository.saveBatch
+    -> source-scoped transcription review for newly completed jobs
     -> ordinary independent notes in the list
 ```
 
@@ -123,6 +124,18 @@ Long-press enters selection mode; clearing the last selection exits it. Select a
 includes off-screen loaded notes but does not automatically include later arrivals.
 Selection survives configuration changes, not process death.
 
+New recognition jobs navigate to a source-scoped review destination after their
+batch has committed. The review loads the source's paragraph notes in reading order
+and keeps edited transcription text in ViewModel state. A single Done action saves
+only dirty notes through the ordinary independent-note save operation. Successful
+saves update their local baseline immediately; the first failure stops the sequence,
+keeps only the remaining corrections dirty and allows Done to retry them. The review
+therefore does not claim transactionality or roll back an already persisted edit.
+Blank transcriptions are rejected. Back navigation with dirty text requires explicit
+confirmation; discarding corrections leaves the committed capture unchanged.
+Already-saved/restored jobs and empty batch tombstones bypass review so processing
+recovery cannot repeatedly force the same notes through correction.
+
 Confirmed list deletion invokes the existing per-note delete operation sequentially
 and stops at the first failure; it is not an all-or-nothing transaction. Refreshes
 are coalesced and cannot overlap deletion. Reconciliation prunes selection only
@@ -181,6 +194,10 @@ leave visible errors and the gallery/file alternatives usable.
 
 Navigation carries an internal job/source ID, not image bytes or an external
 filesystem path. Staging and lifecycle state retain that identity across retries.
+Completion replaces the capture/processing stack with the source-scoped review
+route, so Back cannot reopen a finished recognition job. The notes-list result
+message remains pending until review completes or its unsaved corrections are
+explicitly discarded.
 Cancellation first persists a secret-free tombstone outside the image staging
 directory, before waiting for a native kernel to finish. Restored jobs and cached
 retries honour that marker even if image cleanup fails. If marker persistence
