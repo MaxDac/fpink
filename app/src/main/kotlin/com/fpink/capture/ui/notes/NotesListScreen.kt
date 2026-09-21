@@ -53,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -86,7 +87,10 @@ fun NotesListScreen(
     resultMessage: String? = null,
     onResultShown: () -> Unit = {},
     viewModel: NotesListViewModel = containerViewModel { NotesListViewModel(it.noteRepository) },
-    sourceViewModel: SourceImportViewModel = containerViewModel { SourceImportViewModel(it.imageImports) },
+    sourceViewModel: SourceImportViewModel = run {
+        val context = LocalContext.current
+        containerViewModel { SourceImportViewModel(it.imageImports, AndroidClipboardImageReader(context)) }
+    },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val sourceState by sourceViewModel.uiState.collectAsStateWithLifecycle()
@@ -128,6 +132,7 @@ fun NotesListScreen(
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             viewModel.refresh()
+            sourceViewModel.refreshClipboardAvailability()
         }
     }
 
@@ -152,7 +157,10 @@ fun NotesListScreen(
         }
     }
     fun openSourceMenu() {
-        if (!sourceState.busy) sourceMenuOpen = true
+        if (!sourceState.busy) {
+            sourceViewModel.refreshClipboardAvailability()
+            sourceMenuOpen = true
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -287,6 +295,7 @@ fun NotesListScreen(
         if (sourceMenuOpen) {
             SourceMenu(
                 enabled = !sourceState.busy,
+                pasteAvailable = sourceState.clipboardPasteAvailable,
                 onDismiss = { sourceMenuOpen = false },
                 onGalleryClick = {
                     sourceMenuOpen = false
@@ -295,6 +304,10 @@ fun NotesListScreen(
                 onFileClick = {
                     sourceMenuOpen = false
                     launchPicker(files = true)
+                },
+                onPasteClick = {
+                    sourceMenuOpen = false
+                    sourceViewModel.importClipboard()
                 },
             )
         }
@@ -306,9 +319,11 @@ fun NotesListScreen(
 @Composable
 private fun SourceMenu(
     enabled: Boolean,
+    pasteAvailable: Boolean,
     onDismiss: () -> Unit,
     onGalleryClick: () -> Unit,
     onFileClick: () -> Unit,
+    onPasteClick: () -> Unit,
 ) {
     BackHandler(onBack = onDismiss)
     Box(
@@ -336,6 +351,7 @@ private fun SourceMenu(
             Column(Modifier.padding(vertical = 8.dp)) {
                 SourceMenuItem(R.string.gallery_action, enabled, onGalleryClick)
                 SourceMenuItem(R.string.file_action, enabled, onFileClick)
+                if (pasteAvailable) SourceMenuItem(R.string.paste_action, enabled, onPasteClick)
             }
         }
     }
