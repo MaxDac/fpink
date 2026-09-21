@@ -1,9 +1,7 @@
 package com.fpink.capture.ui.capture
 
 import android.Manifest
-import android.app.Activity
 import android.content.ActivityNotFoundException
-import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -65,7 +63,7 @@ import com.fpink.capture.ui.components.ActionIconButton
 import java.io.File
 
 private const val CAMERA_PERMISSION_DENIED =
-    "Camera access was denied. Choose image or Browse files still works; camera access can be enabled in Android Settings."
+    "Camera access was denied. Go back and use Gallery or File instead; camera access can be enabled in Android Settings."
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -101,7 +99,7 @@ fun CaptureScreen(
         if (requestingPermission || !viewModel.canChooseCamera()) return
         hasPermission = cameraPermissionGranted()
         if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
-            viewModel.error("This device has no camera. Choose an image instead.")
+            viewModel.error("This device has no camera. Go back and choose Gallery or File instead.")
         } else if (hasPermission) {
             viewModel.chooseCamera()
         } else {
@@ -110,7 +108,7 @@ fun CaptureScreen(
                 permission.launch(Manifest.permission.CAMERA)
             } catch (_: ActivityNotFoundException) {
                 requestingPermission = false
-                viewModel.error("Camera access could not be requested. You can still choose an image.")
+                viewModel.error("Camera access could not be requested. Go back and choose Gallery or File instead.")
             } catch (_: SecurityException) {
                 requestingPermission = false
                 viewModel.error(CAMERA_PERMISSION_DENIED)
@@ -130,25 +128,6 @@ fun CaptureScreen(
         ) {
             viewModel.chooseOtherSource()
             if (current.error == null) viewModel.error(CAMERA_PERMISSION_DENIED)
-        }
-    }
-    val chooser = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val uri = result.data?.data
-        if (result.resultCode == Activity.RESULT_OK && uri != null) viewModel.importContent(uri)
-        else viewModel.pickerCancelled()
-    }
-    fun chooseImage(files: Boolean) {
-        val intent = Intent(if (files) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
-            type = "image/*"
-            addCategory(Intent.CATEGORY_OPENABLE)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        try {
-            chooser.launch(Intent.createChooser(intent, if (files) "Choose an image file" else "Choose image using"))
-        } catch (_: ActivityNotFoundException) {
-            viewModel.error("No compatible image provider is installed. Try Browse files or install a gallery with an image chooser.")
-        } catch (_: SecurityException) {
-            viewModel.error("Android could not open this image provider. Try Browse files.")
         }
     }
 
@@ -233,9 +212,6 @@ fun CaptureScreen(
                     enabled = !state.busy && !requestingPermission,
                     onClick = ::requestCamera,
                 )
-                Button(onClick = { chooseImage(false) }, enabled = !state.busy) { Text("Choose image") }
-                OutlinedButton(onClick = { chooseImage(true) }, enabled = !state.busy) { Text("Browse files") }
-                Text("Compatible third-party gallery and file apps are supported. Gallery access does not require camera or storage permission.")
                 if (state.busy) CircularProgressIndicator()
             }
         }

@@ -1,8 +1,15 @@
 package com.fpink.capture.ui.notes
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +30,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.triStateToggleable
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,10 +46,14 @@ import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -67,15 +79,17 @@ import java.time.format.DateTimeFormatter
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotesListScreen(
-    onCaptureClick: () -> Unit,
+    onSourceReady: (String) -> Unit,
     onCameraClick: () -> Unit,
     onNoteClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
     resultMessage: String? = null,
     onResultShown: () -> Unit = {},
     viewModel: NotesListViewModel = containerViewModel { NotesListViewModel(it.noteRepository) },
+    sourceViewModel: SourceImportViewModel = containerViewModel { SourceImportViewModel(it.imageImports) },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val sourceState by sourceViewModel.uiState.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(resultMessage) {
         resultMessage?.let {
@@ -88,6 +102,18 @@ fun NotesListScreen(
         deletedMessage?.let {
             snackbar.showSnackbar(it)
             viewModel.onDeletionResultShown()
+        }
+    }
+    LaunchedEffect(sourceState.error) {
+        sourceState.error?.let {
+            snackbar.showSnackbar(it)
+            sourceViewModel.dismissError()
+        }
+    }
+    LaunchedEffect(sourceState.readySourceId) {
+        sourceState.readySourceId?.let {
+            onSourceReady(it)
+            sourceViewModel.consumeReadySourceId()
         }
     }
 
@@ -105,132 +131,228 @@ fun NotesListScreen(
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        if (state.isSelecting) {
-                            pluralStringResource(R.plurals.notes_selected, state.selectedIds.size, state.selectedIds.size)
-                        } else {
-                            "FPInk"
-                        },
-                    )
-                },
-                navigationIcon = {
-                    if (state.isSelecting) {
-                        ActionIconButton(
-                            R.drawable.ic_back, R.string.clear_note_selection,
-                            enabled = !state.isDeleting, onClick = viewModel::clearSelection,
-                        )
-                    }
-                },
-                actions = {
-                    if (state.isSelecting) {
-                        ActionIconButton(
-                            R.drawable.ic_delete, R.string.delete_selected_notes,
-                            enabled = state.canChangeSelection, onClick = viewModel::requestDeletion,
-                        )
-                    } else if (!state.isDeleting) {
-                        ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
-                    }
-                },
-            )
-        },
-        bottomBar = {
-            if (!state.isSelecting && !state.isDeleting) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    ActionFloatingButton(R.drawable.ic_add, R.string.add_notes, onClick = onCaptureClick)
-                    ActionFloatingButton(R.drawable.ic_camera, R.string.take_photo, onClick = onCameraClick)
-                }
-            }
-        },
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
-            state.deletionError?.let { error ->
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                    Text(
-                        stringResource(R.string.notes_delete_error, error),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                    TextButton(onClick = viewModel::dismissDeletionError) {
-                        Text(stringResource(R.string.dismiss))
-                    }
-                }
-            }
-            if (state.isSelecting) {
-                SelectAllRow(
-                    allSelected = state.allSelected,
-                    enabled = state.canChangeSelection,
-                    onClick = viewModel::toggleSelectAll,
-                )
-            }
-            if (state.isDeleting) {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-                Text(stringResource(R.string.deleting_notes), Modifier.padding(16.dp))
-            }
-            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                val error = state.error
-                when {
-                    state.isLoading -> CircularProgressIndicator()
-                    error != null -> Column(
-                        modifier = Modifier.padding(32.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
+    var sourceMenuOpen by rememberSaveable { mutableStateOf(false) }
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val uri = result.data?.data
+        if (result.resultCode == Activity.RESULT_OK && uri != null) sourceViewModel.importContent(uri)
+        else sourceViewModel.pickerCancelled()
+    }
+    fun launchPicker(files: Boolean) {
+        val intent = Intent(if (files) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
+            type = "image/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            picker.launch(Intent.createChooser(intent, if (files) "Choose an image file" else "Choose image using"))
+        } catch (_: ActivityNotFoundException) {
+            sourceViewModel.error("No compatible image provider is installed. Try File or install a gallery with an image chooser.")
+        } catch (_: SecurityException) {
+            sourceViewModel.error("Android could not open this image provider. Try File.")
+        }
+    }
+    fun openSourceMenu() {
+        if (!sourceState.busy) sourceMenuOpen = true
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbar) },
+            topBar = {
+                TopAppBar(
+                    title = {
                         Text(
-                            text = when (error) {
-                                is NotesListError.Storage -> stringResource(R.string.notes_load_error, error.detail)
-                                NotesListError.Interrupted -> stringResource(R.string.notes_operation_interrupted)
+                            if (state.isSelecting) {
+                                pluralStringResource(R.plurals.notes_selected, state.selectedIds.size, state.selectedIds.size)
+                            } else {
+                                "FPInk"
                             },
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center,
                         )
-                        TextButton(onClick = viewModel::refresh, enabled = !state.isDeleting) {
-                            Text(stringResource(R.string.retry))
+                    },
+                    navigationIcon = {
+                        if (state.isSelecting) {
+                            ActionIconButton(
+                                R.drawable.ic_back, R.string.clear_note_selection,
+                                enabled = !state.isDeleting, onClick = viewModel::clearSelection,
+                            )
+                        }
+                    },
+                    actions = {
+                        if (state.isSelecting) {
+                            ActionIconButton(
+                                R.drawable.ic_delete, R.string.delete_selected_notes,
+                                enabled = state.canChangeSelection, onClick = viewModel::requestDeletion,
+                            )
+                        } else if (!state.isDeleting) {
+                            ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
+                        }
+                    },
+                )
+            },
+            bottomBar = {
+                if (!state.isSelecting && !state.isDeleting) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        ActionFloatingButton(R.drawable.ic_add, R.string.add_notes, onClick = ::openSourceMenu)
+                        ActionFloatingButton(R.drawable.ic_camera, R.string.take_photo, onClick = onCameraClick)
+                    }
+                }
+            },
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+            ) {
+                state.deletionError?.let { error ->
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(
+                            stringResource(R.string.notes_delete_error, error),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        TextButton(onClick = viewModel::dismissDeletionError) {
+                            Text(stringResource(R.string.dismiss))
                         }
                     }
-                    state.notes.isEmpty() && state.isDeleting -> CircularProgressIndicator()
-                    state.notes.isEmpty() -> EmptyState(onCaptureClick = onCaptureClick)
-                    else -> NotesList(
-                        notes = state.notes,
-                        selectedIds = state.selectedIds,
+                }
+                if (state.isSelecting) {
+                    SelectAllRow(
+                        allSelected = state.allSelected,
                         enabled = state.canChangeSelection,
-                        onNoteClick = { id ->
-                            if (state.isSelecting) viewModel.toggleSelection(id) else onNoteClick(id)
-                        },
-                        onNoteLongClick = viewModel::select,
+                        onClick = viewModel::toggleSelectAll,
                     )
+                }
+                if (state.isDeleting) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.deleting_notes), Modifier.padding(16.dp))
+                }
+                Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    val error = state.error
+                    when {
+                        state.isLoading -> CircularProgressIndicator()
+                        error != null -> Column(
+                            modifier = Modifier.padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = when (error) {
+                                    is NotesListError.Storage -> stringResource(R.string.notes_load_error, error.detail)
+                                    NotesListError.Interrupted -> stringResource(R.string.notes_operation_interrupted)
+                                },
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center,
+                            )
+                            TextButton(onClick = viewModel::refresh, enabled = !state.isDeleting) {
+                                Text(stringResource(R.string.retry))
+                            }
+                        }
+                        state.notes.isEmpty() && state.isDeleting -> CircularProgressIndicator()
+                        state.notes.isEmpty() -> EmptyState(onCaptureClick = ::openSourceMenu)
+                        else -> NotesList(
+                            notes = state.notes,
+                            selectedIds = state.selectedIds,
+                            enabled = state.canChangeSelection,
+                            onNoteClick = { id ->
+                                if (state.isSelecting) viewModel.toggleSelection(id) else onNoteClick(id)
+                            },
+                            onNoteLongClick = viewModel::select,
+                        )
+                    }
                 }
             }
         }
-    }
 
-    if (state.pendingDeletionIds.isNotEmpty()) {
-        val count = state.pendingDeletionIds.size
-        AlertDialog(
-            onDismissRequest = viewModel::cancelDeletion,
-            title = { Text(pluralStringResource(R.plurals.delete_notes_confirmation, count, count)) },
-            text = { Text(pluralStringResource(R.plurals.delete_notes_warning, count)) },
-            confirmButton = {
-                TextButton(onClick = viewModel::confirmDeletion, enabled = state.canInteract) {
-                    Text(stringResource(R.string.delete_notes_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = viewModel::cancelDeletion) { Text(stringResource(R.string.cancel)) }
-            },
-        )
+        if (state.pendingDeletionIds.isNotEmpty()) {
+            val count = state.pendingDeletionIds.size
+            AlertDialog(
+                onDismissRequest = viewModel::cancelDeletion,
+                title = { Text(pluralStringResource(R.plurals.delete_notes_confirmation, count, count)) },
+                text = { Text(pluralStringResource(R.plurals.delete_notes_warning, count)) },
+                confirmButton = {
+                    TextButton(onClick = viewModel::confirmDeletion, enabled = state.canInteract) {
+                        Text(stringResource(R.string.delete_notes_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = viewModel::cancelDeletion) { Text(stringResource(R.string.cancel)) }
+                },
+            )
+        }
+
+        if (sourceMenuOpen) {
+            SourceMenu(
+                enabled = !sourceState.busy,
+                onDismiss = { sourceMenuOpen = false },
+                onGalleryClick = {
+                    sourceMenuOpen = false
+                    launchPicker(files = false)
+                },
+                onFileClick = {
+                    sourceMenuOpen = false
+                    launchPicker(files = true)
+                },
+            )
+        }
+    }
+}
+
+/** Contextual Gallery/File menu opened by the notes list's Plus actions; shades the rest of the
+ * screen and dismisses on an outside tap or the system Back gesture/button. */
+@Composable
+private fun SourceMenu(
+    enabled: Boolean,
+    onDismiss: () -> Unit,
+    onGalleryClick: () -> Unit,
+    onFileClick: () -> Unit,
+) {
+    BackHandler(onBack = onDismiss)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClickLabel = stringResource(R.string.dismiss_source_menu),
+                role = Role.Button,
+                onClick = onDismiss,
+            )
+            .testTag("sourceMenuScrim"),
+    ) {
+        Card(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .windowInsetsPadding(WindowInsets.safeContent.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                .padding(16.dp)
+                // Swallow taps landing on the card's own background so they never dismiss the menu.
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
+                .testTag("sourceMenu"),
+        ) {
+            Column(Modifier.padding(vertical = 8.dp)) {
+                SourceMenuItem(R.string.gallery_action, enabled, onGalleryClick)
+                SourceMenuItem(R.string.file_action, enabled, onFileClick)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SourceMenuItem(labelRes: Int, enabled: Boolean, onClick: () -> Unit) {
+    val label = stringResource(labelRes)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .sizeIn(minHeight = 48.dp, minWidth = 160.dp)
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 

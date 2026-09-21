@@ -1,6 +1,5 @@
 package com.fpink.capture.acceptance
 
-import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -69,7 +68,6 @@ import org.junit.runner.RunWith
 class CaptureReviewActionsAcceptanceTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private var storage: AcceptanceStorage? = null
-    private var picker: FixturePicker? = null
     private lateinit var viewModel: CaptureViewModel
     private val savedState = SavedStateHandle()
     private val viewModels = ViewModelStore()
@@ -88,13 +86,9 @@ class CaptureReviewActionsAcceptanceTest {
 
     @After fun cleanUp() {
         try {
-            picker?.close()
+            compose.runOnUiThread { viewModels.clear() }
         } finally {
-            try {
-                compose.runOnUiThread { viewModels.clear() }
-            } finally {
-                storage?.close()
-            }
+            storage?.close()
         }
     }
 
@@ -287,7 +281,6 @@ class CaptureReviewActionsAcceptanceTest {
 
     private fun showReview(): StagedImage {
         val testStorage = AcceptanceStorage().also { storage = it }
-        val fixturePicker = FixturePicker(compose.activityRule.scenario).also { picker = it }
         compose.runOnUiThread {
             val coordinator = RecognitionCoordinator(
                 testStorage.images, testStorage.settings, NoteRepository(AndroidFileStore(testStorage.context)),
@@ -306,11 +299,13 @@ class CaptureReviewActionsAcceptanceTest {
             }
         }
         compose.waitUntil(10_000) { viewModel.uiState.value.providerAvailable }
-        val uri = fixturePicker.provide(encodedBitmap(8, 8, Bitmap.CompressFormat.PNG) { _, _ -> Color.WHITE })
-        compose.onNodeWithText("Choose image").performClick()
+        // Staging now happens on the notes list's Gallery/File menu (see SourceMenuAcceptanceTest);
+        // exercise CaptureScreen's review step directly via the camera import path it still owns.
         compose.runOnIdle {
-            registry.dispatchResult(launches.single().first, Activity.RESULT_OK, Intent().setData(uri))
-            launches.clear()
+            val file = testStorage.images.newCameraFile().apply {
+                writeBytes(encodedBitmap(8, 8, Bitmap.CompressFormat.PNG) { _, _ -> Color.WHITE })
+            }
+            viewModel.importCamera(file)
         }
         compose.waitUntil(15_000) { viewModel.uiState.value.previewFile != null && !viewModel.uiState.value.busy }
         compose.onNodeWithText(chooseAnother).assertIsDisplayed()
@@ -319,9 +314,9 @@ class CaptureReviewActionsAcceptanceTest {
 
     private fun assertSourceChoices(staged: StagedImage) {
         compose.waitUntil(10_000) { viewModel.uiState.value.previewFile == null }
-        compose.onNodeWithContentDescription("Take photo").assertIsDisplayed()
-        compose.onNodeWithText("Choose image").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithText("Browse files").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("Take photo").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Choose image").assertDoesNotExist()
+        compose.onNodeWithText("Browse files").assertDoesNotExist()
         compose.onNodeWithText(useImage).assertDoesNotExist()
         compose.onNodeWithText(chooseAnother).assertDoesNotExist()
         compose.runOnIdle {

@@ -61,6 +61,7 @@ import com.fpink.capture.ui.capture.CaptureScreen
 import com.fpink.capture.ui.capture.CaptureViewModel
 import com.fpink.capture.ui.notes.NotesListScreen
 import com.fpink.capture.ui.notes.NotesListViewModel
+import com.fpink.capture.ui.notes.SourceImportViewModel
 import com.fpink.core.ai.DefaultNoteProcessor
 import com.fpink.core.model.Note
 import com.fpink.core.storage.FileStore
@@ -85,6 +86,7 @@ class NotesListActionsAcceptanceTest {
     private lateinit var storage: AcceptanceStorage
     private lateinit var notes: NotesListViewModel
     private lateinit var repository: NoteRepository
+    private lateinit var source: SourceImportViewModel
     private val models = ViewModelStore()
     private var failListing = false
     private var listingGate: CompletableDeferred<Unit>? = null
@@ -92,7 +94,7 @@ class NotesListActionsAcceptanceTest {
     private var compact by mutableStateOf(false)
     private var direction by mutableStateOf(LayoutDirection.Ltr)
     private var result by mutableStateOf<String?>(null)
-    private var adds = 0
+    private var sourceReadyCount = 0
     private var cameras = 0
     private val launches = mutableListOf<Intent>()
     private val registryOwner = object : ActivityResultRegistryOwner {
@@ -117,6 +119,7 @@ class NotesListActionsAcceptanceTest {
         compose.runOnUiThread {
             WindowCompat.setDecorFitsSystemWindows(compose.activity.window, false)
             notes = NotesListViewModel(repository)
+            source = SourceImportViewModel(storage.images)
             models.put("notes", notes)
         }
     }
@@ -136,9 +139,10 @@ class NotesListActionsAcceptanceTest {
                             .testTag("notesBounds"),
                     ) {
                         NotesListScreen(
-                            onCaptureClick = { adds++ }, onCameraClick = { cameras++ },
+                            onSourceReady = { sourceReadyCount++ }, onCameraClick = { cameras++ },
                             onNoteClick = {}, onSettingsClick = {},
-                            resultMessage = result, onResultShown = { result = null }, viewModel = notes,
+                            resultMessage = result, onResultShown = { result = null },
+                            viewModel = notes, sourceViewModel = source,
                         )
                     }
                 }
@@ -147,16 +151,22 @@ class NotesListActionsAcceptanceTest {
         compose.waitUntil(10_000) { !notes.uiState.value.isLoading }
     }
 
-    @Test fun emptyAndBottomAddKeepOriginalBehaviorAndCameraHasItsOwnAction() {
+    @Test fun emptyAndBottomAddOpenTheSameSourceMenuAndCameraHasItsOwnAction() {
         showNotes()
         val addButtons = compose.onAllNodesWithContentDescription("Add notes")
         assertEquals(2, addButtons.fetchSemanticsNodes().size)
         addButtons[0].assertIsDisplayed().assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp).performClick()
+        assertSourceMenuOpen()
+        compose.onNodeWithTag("sourceMenuScrim").performClick()
+        assertSourceMenuClosed()
         addButtons[1].assertIsDisplayed().assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp).performClick()
+        assertSourceMenuOpen()
+        compose.onNodeWithTag("sourceMenuScrim").performClick()
+        assertSourceMenuClosed()
         compose.onNodeWithContentDescription("Take photo")
             .assertIsDisplayed().assertWidthIsAtLeast(48.dp).assertHeightIsAtLeast(48.dp).performClick()
         compose.runOnIdle {
-            assertEquals(2, adds)
+            assertEquals(0, sourceReadyCount)
             assertEquals(1, cameras)
         }
         assertBottomActions()
@@ -204,8 +214,10 @@ class NotesListActionsAcceptanceTest {
         ).assertIsDisplayed()
         assertBottomActions()
         compose.onNodeWithContentDescription("Add notes").performClick()
+        assertSourceMenuOpen()
+        compose.onNodeWithTag("sourceMenuScrim").performClick()
         compose.onNodeWithContentDescription("Take photo").performClick()
-        compose.runOnIdle { assertEquals(1, adds); assertEquals(1, cameras) }
+        compose.runOnIdle { assertEquals(0, sourceReadyCount); assertEquals(1, cameras) }
     }
 
     @Test fun asymmetricNavigationAndGestureInsetsKeepBothActionsInsideSafeBounds() {
@@ -234,7 +246,7 @@ class NotesListActionsAcceptanceTest {
         assertTrue("Actions clear bottom navigation/gestures", camera.bottom <= root.bottom - bottom)
     }
 
-    @Test fun productionNotesCallbacksNavigateToDistinctEntryModesAndRapidTapsCannotStack() {
+    @Test fun productionCameraCallbackNavigatesOnceUnderRapidTapsWhileAddOpensALocalMenu() {
         assumeTrue("Unchanged user permissions: this case intercepts requests only if permission is not granted",
             ContextCompat.checkSelfPermission(compose.activity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
         assumeTrue(compose.activity.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
@@ -245,11 +257,14 @@ class NotesListActionsAcceptanceTest {
                     nav = rememberNavController()
                     NavHost(nav, startDestination = Routes.NOTES_LIST) {
                         composable(Routes.NOTES_LIST) { entry ->
-                            NotesListDestination(nav, entry, notes)
+                            NotesListDestination(nav, entry, notes, source)
                         }
                         composable(
                             Routes.CAPTURE_DESTINATION,
-                            arguments = listOf(navArgument(Routes.CAMERA_ENTRY) { type = NavType.BoolType; defaultValue = false }),
+                            arguments = listOf(
+                                navArgument(Routes.CAMERA_ENTRY) { type = NavType.BoolType; defaultValue = false },
+                                navArgument(Routes.SOURCE_ID) { type = NavType.StringType; nullable = true; defaultValue = null },
+                            ),
                         ) { entry ->
                             val capture = remember(entry) {
                                 val coordinator = RecognitionCoordinator(
@@ -272,16 +287,17 @@ class NotesListActionsAcceptanceTest {
             }
         }
         waitForNotes(nav)
-        // Exercise both real production Add callbacks (empty state and bottom action).
+        // Exercise both real production Add entry points (empty state and bottom action): each
+        // opens the local Gallery/File menu without ever navigating away from the notes list.
         for (index in 0..1) {
             compose.onAllNodesWithContentDescription("Add notes")[index].performClick()
-            compose.onNodeWithText("Choose image").assertIsDisplayed()
+            assertSourceMenuOpen()
             compose.runOnIdle {
-                assertEquals(false, nav.currentBackStackEntry?.arguments?.getBoolean(Routes.CAMERA_ENTRY))
+                assertEquals(Routes.NOTES_LIST, nav.currentBackStackEntry?.destination?.route)
                 assertTrue(launches.isEmpty())
             }
-            compose.onNodeWithContentDescription("Back").performClick()
-            waitForNotes(nav)
+            compose.onNodeWithTag("sourceMenuScrim").performClick()
+            assertSourceMenuClosed()
         }
         val addAction = compose.onAllNodesWithContentDescription("Add notes")[1]
             .fetchSemanticsNode().config[SemanticsActions.OnClick].action!!
@@ -305,6 +321,16 @@ class NotesListActionsAcceptanceTest {
         compose.onNodeWithContentDescription("Back").performClick()
         waitForNotes(nav)
         compose.runOnIdle { assertFalse(nav.popBackStack()) }
+    }
+
+    private fun assertSourceMenuOpen() {
+        compose.onNodeWithText("Gallery").assertIsDisplayed()
+        compose.onNodeWithText("File").assertIsDisplayed()
+    }
+
+    private fun assertSourceMenuClosed() {
+        compose.onNodeWithText("Gallery").assertDoesNotExist()
+        compose.onNodeWithText("File").assertDoesNotExist()
     }
 
     private fun waitForNotes(nav: NavHostController) {
