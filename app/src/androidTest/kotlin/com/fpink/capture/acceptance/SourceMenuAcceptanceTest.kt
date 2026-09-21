@@ -1,10 +1,13 @@
 package com.fpink.capture.acceptance
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.result.ActivityResultRegistry
@@ -20,10 +23,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.core.app.ActivityOptionsCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.fpink.capture.data.AndroidFileStore
 import com.fpink.capture.data.ImageImportStore
+import com.fpink.capture.ui.notes.AndroidClipboardImageReader
 import com.fpink.capture.ui.notes.NotesListScreen
 import com.fpink.capture.ui.notes.NotesListViewModel
 import com.fpink.capture.ui.notes.SourceImportViewModel
@@ -51,6 +56,7 @@ class SourceMenuAcceptanceTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private lateinit var storage: AcceptanceStorage
     private lateinit var picker: FixturePicker
+    private lateinit var clipboard: ClipboardManager
     private lateinit var notes: NotesListViewModel
     private lateinit var source: SourceImportViewModel
     private val models = ViewModelStore()
@@ -67,9 +73,14 @@ class SourceMenuAcceptanceTest {
     @Before fun showNotes() {
         storage = AcceptanceStorage()
         picker = FixturePicker(compose.activityRule.scenario)
+        clipboard = compose.activity.getSystemService(ClipboardManager::class.java)
+        compose.runOnUiThread {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) clipboard.clearPrimaryClip()
+            else clipboard.setPrimaryClip(ClipData.newPlainText("Text", ""))
+        }
         compose.runOnUiThread {
             notes = NotesListViewModel(NoteRepository(AndroidFileStore(storage.context)))
-            source = SourceImportViewModel(storage.images)
+            source = SourceImportViewModel(storage.images, AndroidClipboardImageReader(compose.activity))
             models.put("notes", notes)
             models.put("source", source)
         }
@@ -107,12 +118,14 @@ class SourceMenuAcceptanceTest {
     @Test fun bothEntryPointsOpenTheSameMenuWithOnlyGalleryAndFile() {
         openMenu(0)
         assertMenuOpen()
+        compose.onNodeWithText("Paste").assertDoesNotExist()
         compose.onNodeWithTag("sourceMenuScrim").performClick()
         assertMenuClosed()
         // The notes list starts empty, so the centered empty-state pen icon (index 1) shares the
         // same "Add notes" content description; it must open the identical menu.
         openMenu(1)
         assertMenuOpen()
+        compose.onNodeWithText("Paste").assertDoesNotExist()
     }
 
     @Test fun scrimTapDismissesTheMenuWithoutLaunchingAnything() {
@@ -172,6 +185,87 @@ class SourceMenuAcceptanceTest {
         }
     }
 
+    @Test fun pasteIsShownOnlyForSingleReadableClipboardImage() {
+        setClipboardText("not an image")
+        openMenu(0)
+        assertMenuOpen()
+        compose.onNodeWithText("Paste").assertDoesNotExist()
+        compose.onNodeWithTag("sourceMenuScrim").performClick()
+
+        val nonImage = picker.provide("not an image".toByteArray(), name = "image.bin")
+        setClipboardUri(nonImage)
+        openMenu(0)
+        assertMenuOpen()
+        compose.onNodeWithText("Paste").assertDoesNotExist()
+        compose.onNodeWithTag("sourceMenuScrim").performClick()
+
+        val unreadable = picker.provide(byteArrayOf(1))
+        picker.remove(unreadable)
+        setClipboardUri(unreadable)
+        openMenu(0)
+        assertMenuOpen()
+        compose.onNodeWithText("Paste").assertDoesNotExist()
+        compose.onNodeWithTag("sourceMenuScrim").performClick()
+
+        val first = picker.provide(encodedBitmap(2, 2, Bitmap.CompressFormat.PNG) { _, _ -> Color.WHITE })
+        val second = picker.provide(encodedBitmap(2, 2, Bitmap.CompressFormat.PNG) { _, _ -> Color.BLACK })
+        setClipboardUris(first, second)
+        openMenu(0)
+        assertMenuOpen()
+        compose.onNodeWithText("Paste").assertDoesNotExist()
+        compose.onNodeWithTag("sourceMenuScrim").performClick()
+
+        setClipboardUri(first)
+        openMenu(0)
+        assertMenuOpen()
+        compose.onNodeWithText("Paste").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test fun clipboardAvailabilityRefreshesWhenScreenResumes() {
+        setClipboardText("not an image")
+        compose.runOnIdle { source.refreshClipboardAvailability() }
+        compose.waitUntil(10_000) { !source.uiState.value.clipboardPasteAvailable }
+
+        val uri = picker.provide(encodedBitmap(2, 2, Bitmap.CompressFormat.PNG) { _, _ -> Color.WHITE })
+        setClipboardUri(uri)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.STARTED)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitUntil(10_000) { source.uiState.value.clipboardPasteAvailable }
+    }
+
+    @Test fun successfulClipboardPasteNavigatesDirectlyToReview() {
+        val uri = picker.provide(encodedBitmap(8, 8, Bitmap.CompressFormat.PNG) { _, _ -> Color.WHITE })
+        setClipboardUri(uri)
+        openMenu(0)
+        compose.onNodeWithText("Paste").performClick()
+        assertMenuClosed()
+        compose.waitUntil(10_000) { readySourceIds.isNotEmpty() }
+        compose.runOnIdle {
+            assertEquals(1, readySourceIds.size)
+            assertNull(source.uiState.value.readySourceId)
+            assertNull(source.uiState.value.error)
+        }
+    }
+
+    @Test fun pasteRevalidatesChangedClipboardAndReportsVisibleFailure() {
+        val uri = picker.provide(encodedBitmap(8, 8, Bitmap.CompressFormat.PNG) { _, _ -> Color.WHITE })
+        setClipboardUri(uri)
+        openMenu(0)
+        compose.onNodeWithText("Paste").assertIsDisplayed()
+        setClipboardText("changed")
+        compose.onNodeWithText("Paste").performClick()
+        compose.onNodeWithText("Clipboard does not contain an image. Copy one image and try Paste again.").assertIsDisplayed()
+        assertTrue(readySourceIds.isEmpty())
+    }
+
+    @Test fun malformedClipboardImageIsVisiblyRejectedAndPrivatePartialImportRemoved() {
+        val uri = picker.provide("This is not an image".toByteArray())
+        setClipboardUri(uri)
+        openMenu(0)
+        compose.onNodeWithText("Paste").performClick()
+        assertRejected("This image is corrupt or its format is not supported on this device.")
+    }
+
     @Test fun malformedProviderImageIsVisiblyRejectedAndPrivatePartialImportRemoved() {
         val uri = picker.provide("This is not an image".toByteArray())
         returnImage(uri)
@@ -224,5 +318,20 @@ class SourceMenuAcceptanceTest {
     private fun assertMenuClosed() {
         compose.onNodeWithText("Gallery").assertDoesNotExist()
         compose.onNodeWithText("File").assertDoesNotExist()
+        compose.onNodeWithText("Paste").assertDoesNotExist()
+    }
+
+    private fun setClipboardText(text: String) = compose.runOnUiThread {
+        clipboard.setPrimaryClip(ClipData.newPlainText("Text", text))
+    }
+
+    private fun setClipboardUri(uri: Uri) = compose.runOnUiThread {
+        clipboard.setPrimaryClip(ClipData.newUri(compose.activity.contentResolver, "Image", uri))
+    }
+
+    private fun setClipboardUris(first: Uri, second: Uri) = compose.runOnUiThread {
+        clipboard.setPrimaryClip(ClipData.newUri(compose.activity.contentResolver, "Images", first).apply {
+            addItem(compose.activity.contentResolver, ClipData.Item(second))
+        })
     }
 }

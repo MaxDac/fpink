@@ -6,6 +6,7 @@
     <string name="take_photo">Take photo</string>
     <string name="gallery_action">Gallery</string>
     <string name="file_action">File</string>
+    <string name="paste_action">Paste</string>
     <string name="dismiss_source_menu">Dismiss menu</string>
     <string name="choose_another">Choose another</string>
     <string name="use_image">Use image</string>

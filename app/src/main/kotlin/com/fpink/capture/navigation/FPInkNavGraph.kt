@@ -2,6 +2,7 @@ package com.fpink.capture.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
@@ -12,6 +13,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.fpink.capture.ui.capture.CaptureScreen
 import com.fpink.capture.ui.detail.NoteDetailScreen
+import com.fpink.capture.ui.notes.AndroidClipboardImageReader
 import com.fpink.capture.ui.notes.NotesListScreen
 import com.fpink.capture.ui.notes.NotesListViewModel
 import com.fpink.capture.ui.notes.SourceImportViewModel
@@ -34,7 +36,7 @@ object Routes {
     fun processing(sourceId: String) = "processing/$sourceId"
     fun noteDetail(noteId: String) = "note_detail/$noteId"
 
-    /** [sourceId] is set when an image was already staged (e.g. from the notes list's Gallery/File
+    /** [sourceId] is set when an image was already staged (e.g. from the notes list's Gallery/File/Paste
      * menu), so [com.fpink.capture.ui.capture.CaptureScreen] opens directly on its review step. */
     fun capture(openCamera: Boolean, sourceId: String? = null) =
         "$CAPTURE?$CAMERA_ENTRY=$openCamera" + (sourceId?.let { "&$SOURCE_ID=$it" } ?: "")
@@ -104,7 +106,10 @@ internal fun NotesListDestination(
     navController: NavHostController,
     entry: NavBackStackEntry,
     viewModel: NotesListViewModel = containerViewModel { NotesListViewModel(it.noteRepository) },
-    sourceViewModel: SourceImportViewModel = containerViewModel { SourceImportViewModel(it.imageImports) },
+    sourceViewModel: SourceImportViewModel = run {
+        val context = LocalContext.current
+        containerViewModel { SourceImportViewModel(it.imageImports, AndroidClipboardImageReader(context)) }
+    },
 ) {
     val result by entry.savedStateHandle.getStateFlow<String?>("createdNotesMessage", null).collectAsStateWithLifecycle()
     fun openCapture(openCamera: Boolean, sourceId: String? = null) {
