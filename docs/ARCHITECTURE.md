@@ -155,11 +155,13 @@ does not rotate the preview or prepared image manually.
 The notes list reserves an inset-aware bottom row for Add notes (start/left in
 LTR) and Take photo (end/right in LTR), keeping list rows and snackbars above
 both actions. Both are hidden during note selection or deletion, preserving the
-bulk-selection workflow. Add notes, including the empty-state action, opens the source
-chooser without requesting permission. Take photo uses an explicit `openCamera`
-navigation argument to enter the same capture screen's in-app CameraX preview;
-it neither opens a gallery nor fires the shutter. Rapid notes-list activations
-cannot stack capture destinations.
+bulk-selection workflow. Add notes, including the empty-state pen action, opens
+a contextual Gallery/File menu directly on the notes list, scrimming the rest of
+the screen; tapping outside the menu or pressing Back dismisses it without
+requesting permission. Take photo uses an explicit `openCamera` navigation
+argument to enter the same capture screen's in-app CameraX preview; it neither
+opens the menu nor fires the shutter. Rapid notes-list activations cannot stack
+capture destinations.
 
 The capture view model consumes that entry request once using SavedStateHandle,
 before hardware/permission checks. A staged image, busy operation or restoration

@@ -14,6 +14,7 @@ import com.fpink.capture.ui.capture.CaptureScreen
 import com.fpink.capture.ui.detail.NoteDetailScreen
 import com.fpink.capture.ui.notes.NotesListScreen
 import com.fpink.capture.ui.notes.NotesListViewModel
+import com.fpink.capture.ui.notes.SourceImportViewModel
 import com.fpink.capture.ui.containerViewModel
 import com.fpink.capture.ui.processing.ProcessingScreen
 import com.fpink.capture.ui.settings.SettingsScreen
@@ -24,14 +25,19 @@ object Routes {
     const val NOTES_LIST = "notes_list"
     const val CAPTURE = "capture"
     const val CAMERA_ENTRY = "openCamera"
-    const val CAPTURE_DESTINATION = "$CAPTURE?$CAMERA_ENTRY={$CAMERA_ENTRY}"
+    const val SOURCE_ID = "sourceId"
+    const val CAPTURE_DESTINATION = "$CAPTURE?$CAMERA_ENTRY={$CAMERA_ENTRY}&$SOURCE_ID={$SOURCE_ID}"
     const val PROCESSING = "processing/{sourceId}"
     const val NOTE_DETAIL = "note_detail/{noteId}"
     const val SETTINGS = "settings"
 
     fun processing(sourceId: String) = "processing/$sourceId"
     fun noteDetail(noteId: String) = "note_detail/$noteId"
-    fun capture(openCamera: Boolean) = "$CAPTURE?$CAMERA_ENTRY=$openCamera"
+
+    /** [sourceId] is set when an image was already staged (e.g. from the notes list's Gallery/File
+     * menu), so [com.fpink.capture.ui.capture.CaptureScreen] opens directly on its review step. */
+    fun capture(openCamera: Boolean, sourceId: String? = null) =
+        "$CAPTURE?$CAMERA_ENTRY=$openCamera" + (sourceId?.let { "&$SOURCE_ID=$it" } ?: "")
 }
 
 @Composable
@@ -46,7 +52,10 @@ fun FPInkNavGraph(
         }
         composable(
             Routes.CAPTURE_DESTINATION,
-            arguments = listOf(navArgument(Routes.CAMERA_ENTRY) { type = NavType.BoolType; defaultValue = false }),
+            arguments = listOf(
+                navArgument(Routes.CAMERA_ENTRY) { type = NavType.BoolType; defaultValue = false },
+                navArgument(Routes.SOURCE_ID) { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
         ) { entry ->
             CaptureScreen(
                 onImageCaptured = { uri -> navController.navigate(Routes.processing(uri)) },
@@ -95,21 +104,23 @@ internal fun NotesListDestination(
     navController: NavHostController,
     entry: NavBackStackEntry,
     viewModel: NotesListViewModel = containerViewModel { NotesListViewModel(it.noteRepository) },
+    sourceViewModel: SourceImportViewModel = containerViewModel { SourceImportViewModel(it.imageImports) },
 ) {
     val result by entry.savedStateHandle.getStateFlow<String?>("createdNotesMessage", null).collectAsStateWithLifecycle()
-    fun openCapture(openCamera: Boolean) {
+    fun openCapture(openCamera: Boolean, sourceId: String? = null) {
         // Ignore rapid taps (including the other action) after this entry starts leaving.
         if (navController.currentBackStackEntry == entry && entry.lifecycle.currentState == Lifecycle.State.RESUMED) {
-            navController.navigate(Routes.capture(openCamera)) { launchSingleTop = true }
+            navController.navigate(Routes.capture(openCamera, sourceId)) { launchSingleTop = true }
         }
     }
     NotesListScreen(
-        onCaptureClick = { openCapture(false) },
+        onSourceReady = { sourceId -> openCapture(false, sourceId) },
         onCameraClick = { openCapture(true) },
         onNoteClick = { noteId -> navController.navigate(Routes.noteDetail(noteId)) },
         onSettingsClick = { navController.navigate(Routes.SETTINGS) },
         resultMessage = result,
         onResultShown = { entry.savedStateHandle.set<String?>("createdNotesMessage", null) },
         viewModel = viewModel,
+        sourceViewModel = sourceViewModel,
     )
 }

@@ -5,7 +5,6 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.FeatureInfo
 import android.content.pm.PackageManager
-import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.result.ActivityResultRegistry
@@ -26,7 +25,6 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.fpink.capture.data.AndroidFileStore
-import com.fpink.capture.data.ImageImportStore
 import com.fpink.capture.data.RecognitionCoordinator
 import com.fpink.capture.ui.capture.CaptureScreen
 import com.fpink.capture.ui.capture.CaptureViewModel
@@ -35,7 +33,6 @@ import com.fpink.core.storage.NoteRepository
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -43,12 +40,17 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+/**
+ * [CaptureScreen] no longer hosts a Gallery/File chooser: that contextual menu now lives on
+ * [com.fpink.capture.ui.notes.NotesListScreen] and stages images through
+ * [com.fpink.capture.ui.notes.SourceImportViewModel] (see [SourceMenuAcceptanceTest]). This class
+ * keeps the manifest contract and the Camera-only fallback that [CaptureScreen] still owns.
+ */
 @RunWith(AndroidJUnit4::class)
 class CaptureAcceptanceTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private lateinit var storage: AcceptanceStorage
     private lateinit var viewModel: CaptureViewModel
-    private lateinit var picker: FixturePicker
     private val viewModels = ViewModelStore()
     private val launches = mutableListOf<Pair<Int, Intent>>()
     private val registry = object : ActivityResultRegistry() {
@@ -61,7 +63,6 @@ class CaptureAcceptanceTest {
 
     @Before fun showCapture() {
         storage = AcceptanceStorage()
-        picker = FixturePicker(compose.activityRule.scenario)
         compose.runOnUiThread {
             val coordinator = RecognitionCoordinator(
                 storage.images, storage.settings, NoteRepository(AndroidFileStore(storage.context)),
@@ -86,15 +87,8 @@ class CaptureAcceptanceTest {
     }
 
     @After fun cleanUp() {
-        try {
-            picker.close()
-        } finally {
-            try {
-                compose.runOnUiThread { viewModels.clear() }
-            } finally {
-                storage.close()
-            }
-        }
+        compose.runOnUiThread { viewModels.clear() }
+        storage.close()
     }
 
     @Test fun manifestRequiresNeitherCameraHardwareNorBroadMediaPermissions() {
@@ -115,32 +109,7 @@ class CaptureAcceptanceTest {
         assertTrue(cameraFeatures.all { it.flags and FeatureInfo.FLAG_REQUIRED == 0 })
     }
 
-    @Test fun galleryAndFilesLaunchSingleOpenableImageReadGrantsWithoutPermissionRequests() {
-        for ((label, expectedAction) in listOf("Choose image" to Intent.ACTION_GET_CONTENT, "Browse files" to Intent.ACTION_OPEN_DOCUMENT)) {
-            compose.onNodeWithText(label).performClick()
-            compose.runOnIdle {
-                assertEquals(1, launches.size)
-                val (request, chooser) = launches.single()
-                assertEquals(Intent.ACTION_CHOOSER, chooser.action)
-                @Suppress("DEPRECATION")
-                val content = requireNotNull(chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT))
-                assertEquals(expectedAction, content.action)
-                assertEquals("image/*", content.type)
-                assertTrue(content.hasCategory(Intent.CATEGORY_OPENABLE))
-                assertTrue(content.flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0)
-                assertEquals(0, content.flags and (Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION))
-                assertFalse(content.getBooleanExtra(Intent.EXTRA_ALLOW_MULTIPLE, false))
-                registry.dispatchResult(request, Activity.RESULT_CANCELED, null)
-                launches.clear()
-            }
-            compose.onNodeWithText("No image selected. You can choose an image or take a photo.").assertIsDisplayed()
-            compose.onNodeWithText("Choose image").assertIsEnabled()
-            compose.onNodeWithText("Browse files").assertIsEnabled()
-            compose.onNodeWithText("Use image").assertDoesNotExist()
-        }
-    }
-
-    @Test fun deniedCameraCallbackKeepsGalleryAndFilesAvailable() {
+    @Test fun deniedCameraCallbackLeavesOnlyTheCameraRetryAvailable() {
         assumeTrue("Requires an ungranted camera permission; test never revokes an installed user's permission",
             ContextCompat.checkSelfPermission(compose.activity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
         assumeTrue("Camera-less devices are covered by the optional manifest contract",
@@ -158,46 +127,12 @@ class CaptureAcceptanceTest {
                 putExtra(ActivityResultContracts.RequestMultiplePermissions.EXTRA_PERMISSION_GRANT_RESULTS, intArrayOf(PackageManager.PERMISSION_DENIED))
             })
         }
-        compose.onNodeWithText("Camera access was denied. Choose image or Browse files still works; camera access can be enabled in Android Settings.").assertIsDisplayed()
-        compose.onNodeWithText("Choose image").assertIsEnabled()
-        compose.onNodeWithText("Browse files").assertIsEnabled()
+        compose.onNodeWithText(
+            "Camera access was denied. Go back and use Gallery or File instead; camera access can be enabled in Android Settings.",
+        ).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Take photo").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Choose image").assertDoesNotExist()
+        compose.onNodeWithText("Browse files").assertDoesNotExist()
         assertFalse(viewModel.uiState.value.cameraChosen)
-    }
-
-    @Test fun malformedProviderImageIsVisiblyRejectedAndPrivatePartialImportRemoved() {
-        val uri = picker.provide("This is not an image".toByteArray())
-        returnImage(uri)
-        assertRejected("This image is corrupt or its format is not supported on this device.")
-    }
-
-    @Test fun oversizedProviderStreamIsVisiblyRejectedAndPrivatePartialImportRemoved() {
-        val uri = picker.provide(byteArrayOf(1), length = ImageImportStore.MAX_IMPORT_BYTES + 1)
-        returnImage(uri)
-        assertRejected("Choose an image no larger than 24 MB.")
-    }
-
-    @Test fun revokedProviderGrantIsVisiblyRejectedWithoutLosingSourceChoices() {
-        val uri = picker.provide(byteArrayOf(1))
-        picker.remove(uri)
-        returnImage(uri)
-        assertRejected("The image provider denied access. Download the image locally and choose it again.")
-    }
-
-    private fun returnImage(uri: Uri) {
-        compose.onNodeWithText("Choose image").performClick()
-        compose.runOnIdle {
-            registry.dispatchResult(launches.single().first, Activity.RESULT_OK, Intent().setData(uri))
-        }
-    }
-
-    private fun assertRejected(message: String) {
-        compose.waitUntil(15_000) { viewModel.uiState.value.error != null && !viewModel.uiState.value.busy }
-        compose.onNodeWithText(message).assertIsDisplayed()
-        compose.onNodeWithText("Choose image").assertIsEnabled()
-        compose.onNodeWithText("Browse files").assertIsEnabled()
-        compose.onNodeWithText("Use image").assertDoesNotExist()
-        assertNull(viewModel.uiState.value.sourceId)
-        assertNull(viewModel.uiState.value.previewFile)
-        assertTrue(java.io.File(storage.context.noBackupFilesDir, "image-imports").listFiles().orEmpty().isEmpty())
     }
 }
