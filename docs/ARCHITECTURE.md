@@ -19,6 +19,7 @@ without a plugin registry or DI framework.
 ```text
 CameraX / ACTION_GET_CONTENT chooser
     -> private source import, bounded decode, orientation normalization
+    -> CameraX only: private crop stage and explicit rectangular crop
     -> PreparedImage (encoded PNG/JPEG + matching ARGB pixels)
     -> explicitly selected RecognitionProvider
          PaddleOcrProvider: native PP-OCRv5 mobile CPU
@@ -150,7 +151,12 @@ is started, including 180-degree changes without activity recreation; it ignores
 other displays and unregisters on stop, detach or disposal. CameraX owns camera
 activation through lifecycle binding and PreviewView owns preview transforms.
 Import normalizes captured EXIF orientation once into upright PNG pixels; the UI
-does not rotate the preview or prepared image manually.
+does not rotate the preview or prepared image manually. CameraX captures then
+pause at a private crop-only stage. Applying a constrained rectangular selection
+atomically creates `prepared.png` and removes the uncropped stage. Gallery and file
+imports bypass cropping. The crop rectangle and source identity survive ordinary
+recreation; retake, source change, back navigation and clearing an untransferred
+view model remove the entire private source directory.
 
 The notes list reserves an inset-aware bottom row for Add notes (start/left in
 LTR) and Take photo (end/right in LTR), keeping list rows and snackbars above

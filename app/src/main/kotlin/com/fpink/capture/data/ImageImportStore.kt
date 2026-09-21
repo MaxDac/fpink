@@ -20,6 +20,9 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.UUID
 import java.util.Properties
 import java.security.MessageDigest
@@ -50,6 +53,7 @@ class ImageImportStore(context: Context) {
     }
 
     fun previewFile(sourceId: String): File = File(sourceDirectory(sourceId), "prepared.png")
+    fun cameraCropFile(sourceId: String): File = File(sourceDirectory(sourceId), "camera-crop.png")
 
     suspend fun importContent(uri: Uri): StagedImage = importOwned { sourceId ->
         require(uri.scheme == "content") { "Choose an image from a gallery or file provider." }
@@ -67,6 +71,57 @@ class ImageImportStore(context: Context) {
             return importOwned { sourceId -> FileInputStream(file).use { stage(it, sourceId) } }
         } finally {
             file.delete()
+        }
+    }
+
+    suspend fun stageCameraCrop(file: File): StagedImage {
+        require(file.canonicalFile.parentFile == cameraDirectory.canonicalFile) { "Invalid camera capture." }
+        try {
+            return importOwned { sourceId ->
+                FileInputStream(file).use { stage(it, sourceId, cameraCropFile(sourceId)) }
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    suspend fun applyCameraCrop(sourceId: String, crop: CropRect): StagedImage = withContext(Dispatchers.IO) {
+        val input = cameraCropFile(sourceId)
+        require(input.isFile) { "The captured photo is no longer available. Retake it." }
+        val bitmap = BitmapFactory.decodeFile(input.absolutePath)
+            ?: throw IOException("The captured photo cannot be decoded. Retake it.")
+        val temporary = File(sourceDirectory(sourceId), "prepared.tmp")
+        var cropped: Bitmap? = null
+        try {
+            val bounds = crop.pixels(bitmap.width, bitmap.height)
+            cropped = Bitmap.createBitmap(bitmap, bounds.left, bounds.top, bounds.width, bounds.height)
+            FileOutputStream(temporary).use {
+                check(cropped.compress(Bitmap.CompressFormat.PNG, 100, it)) { "Could not encode the cropped photo." }
+                it.fd.sync()
+            }
+            require(temporary.length() in 1..MAX_PREPARED_BYTES) { "The cropped image is too large." }
+            try {
+                Files.move(
+                    temporary.toPath(),
+                    previewFile(sourceId).toPath(),
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            } catch (_: AtomicMoveNotSupportedException) {
+                Files.move(
+                    temporary.toPath(),
+                    previewFile(sourceId).toPath(),
+                    StandardCopyOption.REPLACE_EXISTING,
+                )
+            }
+            check(input.delete()) { "Could not remove the uncropped camera image." }
+            StagedImage(sourceId, previewFile(sourceId))
+        } catch (error: Throwable) {
+            temporary.delete()
+            throw error
+        } finally {
+            cropped?.takeIf { it !== bitmap }?.recycle()
+            bitmap.recycle()
         }
     }
 
@@ -183,7 +238,11 @@ class ImageImportStore(context: Context) {
         }
     }
 
-    private suspend fun stage(input: InputStream, sourceId: String): StagedImage {
+    private suspend fun stage(
+        input: InputStream,
+        sourceId: String,
+        destination: File = previewFile(sourceId),
+    ): StagedImage {
         val folder = sourceDirectory(sourceId)
         check(folder.mkdirs()) { "Private image storage is unavailable." }
         val original = File(folder, "original")
@@ -203,10 +262,10 @@ class ImageImportStore(context: Context) {
                 output.fd.sync()
             }
             currentCoroutineContext().ensureActive()
-            prepare(original, previewFile(sourceId))
+            prepare(original, destination)
             currentCoroutineContext().ensureActive()
             check(original.delete()) { "Could not remove the intermediate image." }
-            return StagedImage(sourceId, previewFile(sourceId))
+            return StagedImage(sourceId, destination)
         } catch (error: Throwable) {
             folder.deleteRecursively()
             throw error

@@ -11,6 +11,7 @@ import androidx.exifinterface.media.ExifInterface
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.fpink.capture.data.ImageImportStore
+import com.fpink.capture.data.CropRect
 import com.fpink.core.ai.PreparedImage
 import java.io.ByteArrayOutputStream
 import kotlinx.coroutines.runBlocking
@@ -126,6 +127,39 @@ class ImageImportAcceptanceTest {
             assertTrue(prepared.width.toLong() * prepared.height <= ImageImportStore.MAX_PIXELS)
             assertTrue(prepared.pixels.all { it == Color.WHITE })
             assertPngEquivalent(prepared)
+        }
+    }
+
+    @Test fun cameraCropProducesExactSelectedPixelsAndRemovesUncroppedStage() = runBlocking {
+        AcceptanceStorage().use { storage ->
+            val source = storage.images.newCameraFile().apply {
+                writeBytes(encodedBitmap(6, 4, Bitmap.CompressFormat.PNG) { x, y ->
+                    Color.rgb(x * 30, y * 50, x + y)
+                })
+            }
+            val staged = storage.images.stageCameraCrop(source)
+            assertFalse(source.exists())
+            assertEquals("camera-crop.png", staged.file.name)
+            assertFalse(storage.images.previewFile(staged.sourceId).exists())
+
+            val cropped = storage.images.applyCameraCrop(
+                staged.sourceId,
+                CropRect(1f / 6f, 1f / 4f, 4f / 6f, 3f / 4f),
+            )
+            assertFalse(staged.file.exists())
+            assertEquals(storage.images.previewFile(staged.sourceId), cropped.file)
+            val prepared = storage.images.load(staged.sourceId)
+            assertEquals(3, prepared.width)
+            assertEquals(2, prepared.height)
+            assertArrayEquals(
+                intArrayOf(
+                    Color.rgb(30, 50, 2), Color.rgb(60, 50, 3), Color.rgb(90, 50, 4),
+                    Color.rgb(30, 100, 3), Color.rgb(60, 100, 4), Color.rgb(90, 100, 5),
+                ),
+                prepared.pixels,
+            )
+            assertPngEquivalent(prepared)
+            storage.images.discard(staged.sourceId)
         }
     }
 }

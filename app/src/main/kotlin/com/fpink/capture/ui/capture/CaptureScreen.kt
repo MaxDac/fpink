@@ -123,9 +123,11 @@ fun CaptureScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasPermission = cameraPermissionGranted()
     }
-    LaunchedEffect(viewModel, hasPermission, state.cameraChosen, state.busy, state.previewFile) {
+    LaunchedEffect(viewModel, hasPermission, state.cameraChosen, state.busy, state.previewFile, state.cameraCropFile) {
         val current = viewModel.uiState.value
-        if (!hasPermission && current.cameraChosen && !current.busy && current.previewFile == null) {
+        if (!hasPermission && current.cameraChosen && !current.busy &&
+            current.previewFile == null && current.cameraCropFile == null
+        ) {
             viewModel.chooseOtherSource()
             if (current.error == null) viewModel.error(CAMERA_PERMISSION_DENIED)
         }
@@ -169,12 +171,19 @@ fun CaptureScreen(
         },
     ) { padding ->
         val contentModifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
-        if (state.previewFile != null || state.cameraChosen && hasPermission) {
+        if (state.previewFile != null || state.cameraCropFile != null || state.cameraChosen && hasPermission) {
             CaptureImageLayout(
                 modifier = contentModifier,
                 information = { CaptureInformation(state) },
                 image = { modifier ->
-                    if (state.previewFile != null) {
+                    if (state.cameraCropFile != null) {
+                        CameraCropEditor(
+                            file = requireNotNull(state.cameraCropFile),
+                            crop = state.cropRect,
+                            onCropChanged = viewModel::updateCropRect,
+                            modifier = modifier,
+                        )
+                    } else if (state.previewFile != null) {
                         AsyncImage(
                             model = state.previewFile,
                             contentDescription = "Prepared image to recognize",
@@ -185,7 +194,14 @@ fun CaptureScreen(
                     }
                 },
                 actions = { compact ->
-                    if (state.previewFile != null) {
+                    if (state.cameraCropFile != null) {
+                        CameraCropActions(
+                            busy = state.busy,
+                            onRetake = viewModel::retakePhoto,
+                            onChooseSource = viewModel::chooseAnother,
+                            onApply = viewModel::applyCrop,
+                        )
+                    } else if (state.previewFile != null) {
                         if (!compact) {
                             Text("Each recognized paragraph becomes a separate local note. Ink colour is measured on this device.")
                         }
@@ -230,11 +246,41 @@ fun CaptureScreen(
 private fun CaptureInformation(state: CaptureUiState) {
     Text(state.providerLabel, style = MaterialTheme.typography.bodyMedium)
     Text(
-        "One image, up to 24 MB. Images are normalized to PNG and downsampled to at most 4 megapixels / 3072 pixels per side. Photograph small handwriting closely; keep the page sharp and well lit.",
+        if (state.cameraCropFile != null) {
+            "Adjust the rectangular crop to the handwriting you want to recognize. The captured photo stays private on this device."
+        } else {
+            "One image, up to 24 MB. Images are normalized to PNG and downsampled to at most 4 megapixels / 3072 pixels per side. Photograph small handwriting closely; keep the page sharp and well lit."
+        },
         style = MaterialTheme.typography.bodySmall,
     )
     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     state.settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+}
+
+@Composable
+internal fun CameraCropActions(
+    busy: Boolean,
+    onRetake: () -> Unit,
+    onChooseSource: () -> Unit,
+    onApply: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = onApply,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) { Text(stringResource(R.string.apply_crop)) }
+        OutlinedButton(
+            onClick = onRetake,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) { Text(stringResource(R.string.retake_photo), softWrap = false) }
+        OutlinedButton(
+            onClick = onChooseSource,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        ) { Text(stringResource(R.string.choose_source), softWrap = false) }
+    }
 }
 
 @Composable

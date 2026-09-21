@@ -5,6 +5,8 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.FeatureInfo
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -181,6 +183,51 @@ class CaptureAcceptanceTest {
         picker.remove(uri)
         returnImage(uri)
         assertRejected("The image provider denied access. Download the image locally and choose it again.")
+    }
+
+    @Test fun cameraImportRequiresCropWhileGalleryImportGoesDirectlyToPreparedReview() {
+        val camera = storage.images.newCameraFile().apply {
+            writeBytes(encodedBitmap(8, 6, Bitmap.CompressFormat.PNG) { x, y -> Color.rgb(x * 20, y * 30, 0) })
+        }
+        compose.runOnIdle { viewModel.importCamera(camera) }
+        compose.waitUntil(15_000) { viewModel.uiState.value.cameraCropFile != null && !viewModel.uiState.value.busy }
+        compose.onNodeWithContentDescription(
+            "Crop captured photo. Drag inside the rectangle to move it or drag its edges to resize.",
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Apply crop").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Retake").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Choose source").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Use image").assertDoesNotExist()
+        val cameraSource = requireNotNull(viewModel.uiState.value.sourceId)
+        assertFalse(storage.images.previewFile(cameraSource).exists())
+
+        compose.onNodeWithText("Choose source").performClick()
+        compose.waitUntil(10_000) { viewModel.uiState.value.sourceId == null }
+        assertFalse(storage.images.cameraCropFile(cameraSource).exists())
+
+        val uri = picker.provide(encodedBitmap(8, 6, Bitmap.CompressFormat.PNG) { _, _ -> Color.WHITE })
+        returnImage(uri)
+        compose.waitUntil(15_000) { viewModel.uiState.value.previewFile != null && !viewModel.uiState.value.busy }
+        compose.onNodeWithText("Use image").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Apply crop").assertDoesNotExist()
+        assertNull(viewModel.uiState.value.cameraCropFile)
+    }
+
+    @Test fun cropFailureIsExplicitAndAbandoningCleansThePrivateStage() {
+        val camera = storage.images.newCameraFile().apply {
+            writeBytes(encodedBitmap(8, 6, Bitmap.CompressFormat.PNG) { _, _ -> Color.WHITE })
+        }
+        compose.runOnIdle { viewModel.importCamera(camera) }
+        compose.waitUntil(15_000) { viewModel.uiState.value.cameraCropFile != null && !viewModel.uiState.value.busy }
+        val sourceId = requireNotNull(viewModel.uiState.value.sourceId)
+        assertTrue(requireNotNull(viewModel.uiState.value.cameraCropFile).delete())
+        compose.onNodeWithText("Apply crop").performClick()
+        compose.waitUntil(10_000) { viewModel.uiState.value.error != null && !viewModel.uiState.value.busy }
+        compose.onNodeWithText("The captured photo is no longer available. Retake it.").assertIsDisplayed()
+        assertEquals(sourceId, viewModel.uiState.value.sourceId)
+        compose.onNodeWithText("Choose source").performClick()
+        compose.waitUntil(10_000) { viewModel.uiState.value.sourceId == null }
+        assertFalse(storage.images.cameraCropFile(sourceId).parentFile!!.exists())
     }
 
     private fun returnImage(uri: Uri) {

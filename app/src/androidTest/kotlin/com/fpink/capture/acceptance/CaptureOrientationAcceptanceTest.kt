@@ -46,6 +46,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.fpink.capture.MainActivity
 import com.fpink.capture.R
 import com.fpink.capture.data.AndroidFileStore
+import com.fpink.capture.data.CropRect
 import com.fpink.capture.data.RecognitionCoordinator
 import com.fpink.capture.ui.capture.CameraDisplayRotation
 import com.fpink.capture.ui.capture.CaptureImageLayout
@@ -227,20 +228,65 @@ class CaptureOrientationAcceptanceTest {
         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
         val file = cameraFile()
         compose.runOnIdle { viewModel.importCamera(file) }
-        compose.waitUntil(15_000) { viewModel.uiState.value.previewFile != null && !viewModel.uiState.value.busy }
+        compose.waitUntil(15_000) { viewModel.uiState.value.cameraCropFile != null && !viewModel.uiState.value.busy }
         val source = viewModel.uiState.value.sourceId
         assertFalse(file.exists())
         compose.activityRule.scenario.recreate()
         obtainActivityModel()
         mountScreen()
-        compose.onNodeWithContentDescription("Prepared image to recognize").assertIsDisplayed()
+        compose.onNodeWithContentDescription(
+            "Crop captured photo. Drag inside the rectangle to move it or drag its edges to resize.",
+        ).assertIsDisplayed()
+        compose.onNodeWithText("Apply crop").assertIsDisplayed().assertIsEnabled()
         assertEquals(source, viewModel.uiState.value.sourceId)
         assertEquals(1, File(storage.context.noBackupFilesDir, "image-imports").listFiles().orEmpty().size)
+    }
+
+    @Test fun pendingCameraCropAndRectangleRestoreAcrossViewModelRecreation() {
+        val handle = SavedStateHandle(mapOf("cameraChosen" to true))
+        lateinit var original: CaptureViewModel
+        compose.runOnIdle {
+            original = restoredModel(handle)
+            original.importCamera(cameraFile())
+        }
+        compose.waitUntil(15_000) { original.uiState.value.cameraCropFile != null && !original.uiState.value.busy }
+        val crop = CropRect(0.15f, 0.2f, 0.8f, 0.9f)
+        compose.runOnIdle { original.updateCropRect(crop) }
+        lateinit var restored: CaptureViewModel
+        compose.runOnIdle { restored = restoredModel(snapshot(handle)) }
+        compose.runOnIdle {
+            assertEquals(original.uiState.value.sourceId, restored.uiState.value.sourceId)
+            assertEquals(original.uiState.value.cameraCropFile, restored.uiState.value.cameraCropFile)
+            assertEquals(crop, restored.uiState.value.cropRect)
+            assertEquals(null, restored.uiState.value.previewFile)
+            assertTrue(restored.uiState.value.cameraChosen)
+            assertFalse(restored.captureStarted())
+        }
+    }
+
+    @Test fun retakeDiscardsPendingCropButKeepsCameraModeSelected() {
+        lateinit var model: CaptureViewModel
+        compose.runOnIdle {
+            model = restoredModel(SavedStateHandle(mapOf("cameraChosen" to true)))
+            model.importCamera(cameraFile())
+        }
+        compose.waitUntil(15_000) { model.uiState.value.cameraCropFile != null && !model.uiState.value.busy }
+        val sourceId = requireNotNull(model.uiState.value.sourceId)
+        compose.runOnIdle { model.retakePhoto() }
+        compose.waitUntil(10_000) { model.uiState.value.sourceId == null }
+        compose.runOnIdle {
+            assertTrue(model.uiState.value.cameraChosen)
+            assertEquals(null, model.uiState.value.cameraCropFile)
+            assertTrue(model.captureStarted())
+        }
+        assertFalse(storage.images.cameraCropFile(sourceId).parentFile!!.exists())
     }
 
     @Test fun landscapeReviewAtDoubleFontScaleKeepsImageAndActionsReachable() {
         val file = cameraFile()
         compose.runOnIdle { viewModel.importCamera(file) }
+        compose.waitUntil(15_000) { viewModel.uiState.value.cameraCropFile != null && !viewModel.uiState.value.busy }
+        compose.runOnIdle { viewModel.applyCrop() }
         compose.waitUntil(15_000) { viewModel.uiState.value.previewFile != null && !viewModel.uiState.value.busy }
         rotateHost(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)
         compose.activityRule.scenario.onActivity { activity ->
