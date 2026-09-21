@@ -1,6 +1,5 @@
 package com.fpink.capture.ui.capture
 
-import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -114,11 +113,9 @@ class CaptureViewModel(
         return true
     }
     fun error(message: String) = _uiState.update { it.copy(error = message, busy = false) }
-    fun pickerCancelled() = error("No image selected. You can choose an image or take a photo.")
     fun newCameraFile(): File = images.newCameraFile()
     fun deleteCameraFile(file: File) = images.deleteCameraFile(file)
 
-    fun importContent(uri: Uri) = importImage { images.importContent(uri) }
     fun importCamera(file: File) {
         if (cleared) {
             images.deleteCameraFile(file)

@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.luminance
@@ -32,6 +33,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
@@ -45,6 +47,7 @@ import com.fpink.capture.data.AndroidFileStore
 import com.fpink.capture.data.ThemeMode
 import com.fpink.capture.ui.notes.NotesListScreen
 import com.fpink.capture.ui.notes.NotesListViewModel
+import com.fpink.capture.ui.notes.SourceImportViewModel
 import com.fpink.capture.ui.theme.FPInkTheme
 import com.fpink.core.model.InkColorOrigin
 import com.fpink.core.model.Note
@@ -77,7 +80,7 @@ class NotesListAcceptanceTest {
     private lateinit var viewModel: NotesListViewModel
     private val models = ViewModelStore()
     private val openedNotes = mutableListOf<String>()
-    private var captureClicks = 0
+    private var sourceReadyCount = 0
     private var cameraClicks = 0
     private var settingsClicks = 0
     private var navigationBacks = 0
@@ -110,10 +113,14 @@ class NotesListAcceptanceTest {
         compose.onNodeWithText("Second line of legacy-0").assertDoesNotExist()
         icon(R.string.settings).assertMinimumTouchTarget().performClick()
         icon(R.string.add_notes).assertMinimumTouchTarget().performClick()
+        compose.onNodeWithText("Gallery").assertIsDisplayed()
+        compose.onNodeWithText("File").assertIsDisplayed()
+        compose.onNodeWithTag("sourceMenuScrim").performClick()
+        compose.onNodeWithText("Gallery").assertDoesNotExist()
         icon(R.string.take_photo).assertMinimumTouchTarget().performClick()
         compose.runOnIdle {
             assertEquals(1, settingsClicks)
-            assertEquals(1, captureClicks)
+            assertEquals(0, sourceReadyCount)
             assertEquals(1, cameraClicks)
         }
         assertNormalToolbar()
@@ -475,7 +482,7 @@ class NotesListAcceptanceTest {
                 assertTrue(viewModel.uiState.value.pendingDeletionIds.isEmpty())
                 assertTrue(openedNotes.isEmpty())
                 assertEquals(0, navigationBacks)
-                assertEquals(0, captureClicks)
+                assertEquals(0, sourceReadyCount)
                 assertEquals(0, cameraClicks)
                 assertEquals(0, settingsClicks)
             }
@@ -505,12 +512,14 @@ class NotesListAcceptanceTest {
                 val luminance = MaterialTheme.colorScheme.background.luminance()
                 SideEffect { backgroundLuminance = luminance }
                 BackHandler { navigationBacks++ }
+                val source = remember { SourceImportViewModel(storage.images) }
                 NotesListScreen(
-                    onCaptureClick = { captureClicks++ },
+                    onSourceReady = { sourceReadyCount++ },
                     onCameraClick = { cameraClicks++ },
                     onNoteClick = { openedNotes += it },
                     onSettingsClick = { settingsClicks++ },
                     viewModel = viewModel,
+                    sourceViewModel = source,
                 )
             }
         }

@@ -142,7 +142,7 @@ class CameraEntryAcceptanceTest {
         }
         assertAlternatives()
         compose.onNodeWithText(
-            "Camera access was denied. Choose image or Browse files still works; camera access can be enabled in Android Settings.",
+            "Camera access was denied. Go back and use Gallery or File instead; camera access can be enabled in Android Settings.",
         ).assertIsDisplayed()
         compose.runOnIdle { dark = true }
         restoration.emulateSavedInstanceStateRestore()
@@ -293,7 +293,7 @@ class CameraEntryAcceptanceTest {
         assumeFalse("Runs on camera-less devices", compose.activity.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY))
         createModel()
         showCapture()
-        compose.onNodeWithText("This device has no camera. Choose an image instead.").assertIsDisplayed()
+        compose.onNodeWithText("This device has no camera. Go back and choose Gallery or File instead.").assertIsDisplayed()
         assertAlternatives()
         compose.runOnIdle { assertTrue(launches.isEmpty()) }
     }
@@ -348,8 +348,9 @@ class CameraEntryAcceptanceTest {
     }
 
     private fun assertAlternatives() {
-        compose.onNodeWithText("Choose image").assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithText("Browse files").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("Take photo").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Choose image").assertDoesNotExist()
+        compose.onNodeWithText("Browse files").assertDoesNotExist()
     }
 
     private fun previewIsStreaming(): Boolean {
