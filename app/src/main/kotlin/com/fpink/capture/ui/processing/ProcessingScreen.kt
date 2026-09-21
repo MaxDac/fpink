@@ -32,7 +32,7 @@ import com.fpink.capture.ui.components.ActionIconButton
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessingScreen(
-    onComplete: (Int, Boolean, Boolean) -> Unit,
+    onComplete: (String, Int, Boolean, Boolean) -> Unit,
     onDiscard: () -> Unit,
     onSettings: () -> Unit,
     viewModel: ProcessingViewModel = savedContainerViewModel { container, savedState ->
@@ -44,7 +44,7 @@ fun ProcessingScreen(
     BackHandler { viewModel.discard(onDiscard) }
     LaunchedEffect(state) {
         (state as? RecognitionJobState.Complete)?.let {
-            onComplete(it.count, it.cleanupWarning, it.previouslySaved)
+            onComplete(viewModel.sourceId, it.count, it.cleanupWarning, it.previouslySaved)
             viewModel.release()
         }
     }
