@@ -208,7 +208,7 @@ until issues #27, #28, #30, #31, and #32 are complete.
 | Area | Remaining work |
 |---|---|
 | Rights and dependency audit | Confirm GPL compatibility and redistribution rights for transitive dependencies, artwork, dictionaries and model weights; preserve their licenses and notices. |
-| Paddle native runtime | Replace the bundled prebuilt `.so` with a pinned-source Linux build recipe acceptable to F-Droid, or obtain explicit maintainer approval of an acceptable dependency path. Hash pinning and the documented ELF metadata correction are not source builds. Do not bypass this with scanner exclusions. |
+| Paddle native runtime | Build the pinned source runtime with `-PbuildPaddleRuntimeFromSource` and the recipe in `recognition/paddle/source-runtime.lock.json`; obtain maintainer approval of the exact source/toolchain path. The checked-in `.so` is only a developer fallback during qualification. Hash pinning and the documented ELF metadata correction are not source builds. Do not bypass this with scanner exclusions. |
 | Model provenance | Supply original weights/source, licensing, conversion steps and tool versions, or obtain maintainer agreement on asset treatment for the shipped `.nb` files. |
 | Linux/F-Droid recipe | Validate all preparation and native/model builds in a clean supported build environment without private credentials, local paths or unpublished inputs. Pin permitted downloads and tools. |
 | Version discovery | Initially put literal version name/code and Gradle overrides in the F-Droid recipe. Tag auto-updates need regex-readable source metadata plus `UpdateCheckData`; F-Droid does not execute Gradle to discover computed versions. Workflow-only values are not automatically discoverable. |

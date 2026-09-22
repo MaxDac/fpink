@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "source": {
+    "repository": "https://github.com/PaddlePaddle/Paddle-Lite.git",
+    "commit": "28fe23f222de1865e01f0ab41d2494a1222be4f0",
+    "license": "Apache-2.0"
+  },
+  "build": {
+    "script": "lite/tools/build_android.sh",
+    "abi": "armv8",
+    "androidMinSdk": 26,
+    "withCv": true,
+    "withExtra": true,
+    "runtime": "libpaddle_light_api_shared.so",
+    "headers": [
+      "cxx/include/paddle_api.h",
+      "cxx/include/paddle_place.h"
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([switch]$VerifyOnly)
+param([switch]$VerifyOnly, [switch]$SourceBuild)
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
@@ -15,9 +15,14 @@ function Assert-Artifact([string]$Path, [long]$Length, [string]$Sha256) {
 }
 
 if (!$VerifyOnly) {
+    if ($SourceBuild) {
+        & bash (Join-Path $PSScriptRoot 'build-runtime.sh')
+        if ($LASTEXITCODE -ne 0) { throw 'Paddle Lite source build failed' }
+    }
     $cache = Join-Path $root 'build\acquisition'
     New-Item -ItemType Directory -Force $cache | Out-Null
     foreach ($archive in $manifest.archives) {
+        if ($SourceBuild -and $archive.name -eq 'lite.tar.gz') { continue }
         $download = Join-Path $cache $archive.name
         if (!(Test-Path -LiteralPath $download)) {
             # Deliberate developer/build-time acquisition only. Never called by the Android app or Gradle.
@@ -27,6 +32,11 @@ if (!$VerifyOnly) {
         }
         Assert-Artifact $download $archive.bytes $archive.sha256
         foreach ($artifact in $archive.files) {
+            if ($SourceBuild -and $artifact.destination -in @(
+                'native/arm64-v8a/libpaddle_light_api_shared.so',
+                'src/main/cpp/third_party/paddle_lite/paddle_api.h',
+                'src/main/cpp/third_party/paddle_lite/paddle_place.h'
+            )) { continue }
             & tar -xf $download -C $cache $artifact.member
             if ($LASTEXITCODE -ne 0) { throw "Extraction failed: $($artifact.member)" }
             $source = Join-Path $cache ($artifact.member.Replace('/', '\'))
@@ -55,6 +65,11 @@ foreach ($license in $licenses) {
 
 foreach ($archive in $manifest.archives) {
     foreach ($artifact in $archive.files) {
+        if ($SourceBuild -and $artifact.destination -in @(
+            'native/arm64-v8a/libpaddle_light_api_shared.so',
+            'src/main/cpp/third_party/paddle_lite/paddle_api.h',
+            'src/main/cpp/third_party/paddle_lite/paddle_place.h'
+        )) { continue }
         $expected = if ($artifact.normalization) { $artifact.normalization } else { $artifact }
         Assert-Artifact (Join-Path $root ($artifact.destination.Replace('/', '\'))) $expected.bytes $expected.sha256
     }

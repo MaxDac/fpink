@@ -114,6 +114,22 @@ No Git Bash, Python, desktop Paddle, model optimizer, model conversion, account,
 questionnaire, download service, accelerator SDK, or OpenCV is required at runtime.
 No source-format `pdiparams` or duplicate source checkpoints are packaged.
 
+## Source-built runtime path
+
+F-Droid and other clean Linux builds must pass
+`-PbuildPaddleRuntimeFromSource`. This runs `scripts/build-runtime.sh`, checks
+out the exact Paddle Lite commit in `source-runtime.lock.json`, invokes the
+upstream Android build script with CPU-only settings, copies the generated
+ARM64 runtime and public headers into the module, and verifies the resulting
+ELF. The source-build path requires `git`, Python 3, Bash, `readelf` (or
+`llvm-readelf`) and the pinned Android NDK exposed through `ANDROID_NDK_ROOT` or
+`ANDROID_NDK_HOME`.
+
+The checked-in runtime remains only as a developer fallback while the source
+build is qualified; it is not the F-Droid build input. A source build must
+record `build/source-output/SHA256SUMS` and `PROVENANCE`, and its output must
+pass the same dependency and 16 KB alignment checks as the fallback artifact.
+
 ## Public provenance (no gated material)
 
 The official [v3.4.1 on-device guide](https://www.paddleocr.ai/v3.4.1/en/version3.x/deployment/on_device_deployment.html)
