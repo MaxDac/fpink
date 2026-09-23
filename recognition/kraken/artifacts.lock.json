@@ -3,8 +3,10 @@
     "name": "PP-OCRv6 medium multilingual text recognition base model for Kraken",
     "canonicalDoi": "10.5281/zenodo.21788410",
     "mirror": "https://huggingface.co/small-models-for-glam/kraken-ppocrv6-medium",
+    "checkpointFile": "medium.safetensors",
+    "huggingFaceRevision": "01b574f071bf21cff7d7e2a4f38966925dddc30a",
     "license": "Apache-2.0",
-    "status": "export procedure recorded; reviewed ONNX weights are not yet bundled"
+    "status": "reviewed ONNX export bundled and verified (see README.md validation section)"
   },
   "packagedFiles": [
     {
@@ -16,16 +18,16 @@
       "destination": "src/main/assets/kraken/licenses/Kraken-APACHE-2.0.txt",
       "bytes": 350,
       "sha256": "9671033e80d8cc8e186b2a8d64e6916049ae7eba11811e66601e822ef070770e"
-    }
-  ],
-  "requiredModelExports": [
+    },
     {
       "destination": "src/main/assets/kraken/ppocrv6-medium-recognition.onnx",
-      "sha256": "MISSING_REVIEWED_EXPORT"
+      "bytes": 64204317,
+      "sha256": "12cfdbffa5e7243519120f177f26c716b924d9865e201b0fa459a0163979c95e"
     },
     {
       "destination": "src/main/assets/kraken/ppocrv6-medium-alphabet.txt",
-      "sha256": "MISSING_REVIEWED_EXPORT"
+      "bytes": 5615,
+      "sha256": "0b7c71199be609f1ceedb20d0e2bc136ad8f2a0beee4bb80e6903b444b0560f9"
     }
   ]
 }

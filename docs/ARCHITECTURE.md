@@ -8,7 +8,7 @@
 | `:core:ai` | Recognition provider contract, config-map settings, plugin registry, paragraph and colour processing |
 | `:core:storage` | Portable note repository and recoverable batch publication |
 | `:recognition:paddle` | Android/native CPU OCR, model assets and runtime provenance |
-| `:recognition:kraken` | Android ONNX Runtime Kraken provider seam, export provenance and fail-closed readiness |
+| `:recognition:kraken` | Android ONNX Runtime Kraken-compatible provider, bundled reviewed export and readiness |
 | `:app` | Image intake, permissions, encrypted settings, lifecycle, UI and manual DI |
 
 All `:core:*` modules remain Android-free. Android `Bitmap`, `Uri`, Keystore and
@@ -24,8 +24,8 @@ CameraX / ACTION_GET_CONTENT chooser
     -> PreparedImage (encoded PNG/JPEG + matching ARGB pixels)
     -> explicitly selected RecognitionProvider
          PaddleOcrProvider: native PP-OCRv5 mobile CPU (bundled, `foss`/`full`)
-         KrakenOcrProvider: ONNX Runtime provider seam (`foss`/`full`, unavailable
-         until reviewed exported model assets are bundled)
+         KrakenOcrProvider: ONNX Runtime recognizer (`foss`/`full`), bundled
+         reviewed PP-OCRv6 export, classical row-projection line segmenter
          Other providers (e.g. cloud OCR, MyScript ink recognition): discovered at
          runtime via `RecognitionProviderRegistry`, `full` flavor only
     -> RecognitionDocument (text regions + normalized geometry + paragraph hints)
@@ -43,9 +43,10 @@ notes nor chooses their colours. `NoteProcessor.process` consumes the normalized
 result and the same prepared colour pixels, without knowing vendor response DTOs.
 Both return explicit `Result` values and propagate coroutine cancellation.
 
-Paddle is selected by default. Kraken is the second public offline provider ID,
-but its reviewed ONNX export assets are not bundled yet, so readiness fails
-closed with a model-unavailable message instead of downloading or faking OCR.
+Paddle is selected by default. Kraken is the second public, fully offline
+provider ID, running a bundled, reviewed ONNX export of a Kraken-compatible
+recognizer (see recognition/kraken/README.md's validation section for exactly
+what has and hasn't been measured).
 `RecognitionProviderId` is also an open identifier, and
 `RecognitionProviderRegistry`/`RecognitionProviderPlugin` let private overlays
 register additional providers (e.g. cloud OCR, MyScript) without any public code
@@ -294,8 +295,8 @@ The `app` module declares two Gradle product flavors on a `distribution`
 dimension:
 
 - **`foss`** — the public default. Ships bundled offline `PaddleOcrProvider` and
-  the fail-closed `KrakenOcrProvider` ONNX integration seam. This is what
-  F-Droid, GitHub CI, and any public clone build.
+  `KrakenOcrProvider`, both fully on-device with no network permission. This is
+  what F-Droid, GitHub CI, and any public clone build.
 - **`full`** — reserved for the maintainer's separate, private companion repo.
   When that private repo's content is checked out locally under `private/`
   (never tracked here — see `.gitignore`), `full` additionally:

@@ -17,6 +17,10 @@
 gradlew  text eol=lf
 *.jar    binary
 
+# ML model exports (binary; must never be line-ending normalized)
+*.onnx   binary
+*.nb     binary
+
 # Images
 *.jpg    binary
 *.jpeg   binary
