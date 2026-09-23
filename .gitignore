@@ -43,7 +43,7 @@ secrets.properties
 **/apikeys*.*
 
 # ──────────────────────────────────────────────
-# Private "full" flavor overlay (proprietary Azure/MyScript modules + app overlay).
+# Private "full" flavor overlay (proprietary MyScript/ABBYY modules + app overlay).
 # Only ever populated locally from the maintainer's private companion repo; never
 # tracked here so the public repo stays 100% FOSS.
 # ──────────────────────────────────────────────
