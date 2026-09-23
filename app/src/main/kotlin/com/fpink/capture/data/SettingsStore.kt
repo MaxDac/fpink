@@ -11,7 +11,6 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import com.fpink.core.ai.AzureReadConfig
 import com.fpink.core.ai.RecognitionError
 import com.fpink.core.ai.RecognitionProviderId
 import com.fpink.core.ai.RecognitionSettings
@@ -21,6 +20,9 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
@@ -51,7 +53,7 @@ private val Context.recognitionDataStore by preferencesDataStore(
 
 data class StoredRecognitionSettings(
     val settings: RecognitionSettings,
-    val hasStoredKey: Boolean,
+    val hasStoredConfig: Boolean,
     val keyError: String? = null,
 )
 
@@ -70,8 +72,8 @@ class SettingsStore internal constructor(
 
     private object Keys {
         val PROVIDER = stringPreferencesKey("recognition_provider")
-        val ENDPOINT = stringPreferencesKey("document_intelligence_endpoint")
-        val KEY = stringPreferencesKey("document_intelligence_encrypted_key")
+        /** Encrypted JSON blob of the whole [RecognitionSettings.config] map for the saved provider. */
+        val CONFIG = stringPreferencesKey("recognition_config_encrypted")
         val THEME = stringPreferencesKey("appearance_theme")
         val ZETTELKASTEN_ENABLED = booleanPreferencesKey("zettelkasten_enabled")
         val ZETTELKASTEN_CATEGORY_COLORS = stringPreferencesKey("zettelkasten_category_colors")
@@ -111,68 +113,54 @@ class SettingsStore internal constructor(
     }
 
     val storedSettings: Flow<StoredRecognitionSettings> = store.data.map { preferences ->
-        val provider = preferences[Keys.PROVIDER]?.let { stored ->
-            RecognitionProviderId.entries.find { it.name == stored }
-                ?: throw RecognitionError.Configuration("The saved recognition provider is not supported. Choose one in Settings.")
-        } ?: RecognitionProviderId.PADDLE
-        val encrypted = preferences[Keys.KEY]
+        val provider = preferences[Keys.PROVIDER]?.let { RecognitionProviderId(it) } ?: RecognitionProviderId.PADDLE
+        val encrypted = preferences[Keys.CONFIG]
         var keyError: String? = null
-        val key = if (encrypted == null) "" else {
+        val config = if (encrypted == null) emptyMap() else {
             try {
-                cipher.decrypt(encrypted)
+                Json.decodeFromString<Map<String, String>>(cipher.decrypt(encrypted))
             } catch (_: Exception) {
-                keyError = "The saved Azure key is unavailable. Replace or remove it in Settings."
-                ""
+                keyError = "The saved recognition provider credentials are unavailable. Replace or remove them in Settings."
+                emptyMap()
             }
         }
         StoredRecognitionSettings(
-            RecognitionSettings(provider, AzureReadConfig(preferences[Keys.ENDPOINT].orEmpty(), key)),
-            hasStoredKey = encrypted != null,
+            RecognitionSettings(provider, config),
+            hasStoredConfig = encrypted != null,
             keyError = keyError,
         )
     }.flowOn(Dispatchers.IO)
 
     val recognitionSettings: Flow<RecognitionSettings> = storedSettings.map {
-        if (it.settings.provider == RecognitionProviderId.AZURE && it.keyError != null) {
+        if (it.settings.provider != RecognitionProviderId.PADDLE && it.keyError != null) {
             throw RecognitionError.Configuration(it.keyError)
         }
         it.settings
     }
 
+    /**
+     * Persists [provider] and, when [config] is non-empty, an encrypted blob of every entry in it
+     * (never a subset), so no provider-specific field is ever left unencrypted. This layer performs
+     * no provider-specific validation: callers are responsible for validating [config] before saving.
+     * Pass [removeConfig] to clear any previously stored config (e.g. when switching back to PaddleOCR).
+     */
     suspend fun save(
         provider: RecognitionProviderId,
-        endpoint: String,
-        replacementKey: String? = null,
-        removeKey: Boolean = false,
+        config: Map<String, String> = emptyMap(),
+        removeConfig: Boolean = false,
     ) = withContext(Dispatchers.IO) {
-        val normalizedEndpoint = endpoint.trim().trimEnd('/')
-        if (normalizedEndpoint.isNotEmpty() && !isValidAzureEndpoint(normalizedEndpoint)) {
-            throw RecognitionError.Configuration("Use an Azure Document Intelligence HTTPS resource or regional endpoint, without a path, query or credentials.")
-        }
-        val encrypted = replacementKey?.takeIf { it.isNotBlank() }?.let {
+        val encrypted = config.takeIf { it.isNotEmpty() }?.let {
             try {
-                cipher.encrypt(it.trim())
+                cipher.encrypt(Json.encodeToString(it))
             } catch (_: Exception) {
-                throw RecognitionError.Configuration("Could not protect the key with Android Keystore. Nothing was saved.")
+                throw RecognitionError.Configuration("Could not protect the credentials with Android Keystore. Nothing was saved.")
             }
         }
         store.edit { preferences ->
-            if (provider == RecognitionProviderId.AZURE) {
-                if (normalizedEndpoint.isEmpty()) {
-                    throw RecognitionError.Configuration("Enter your Document Intelligence resource endpoint.")
-                }
-                val keyAvailable = !removeKey && (encrypted != null || preferences[Keys.KEY]?.let {
-                    try { cipher.decrypt(it).isNotBlank() } catch (_: Exception) { false }
-                } == true)
-                if (!keyAvailable) {
-                    throw RecognitionError.Configuration("Enter a working Azure API key, or select PaddleOCR before removing it.")
-                }
-            }
-            preferences[Keys.PROVIDER] = provider.name
-            preferences[Keys.ENDPOINT] = normalizedEndpoint
+            preferences[Keys.PROVIDER] = provider.id
             when {
-                removeKey -> preferences.remove(Keys.KEY)
-                encrypted != null -> preferences[Keys.KEY] = encrypted
+                removeConfig -> preferences.remove(Keys.CONFIG)
+                encrypted != null -> preferences[Keys.CONFIG] = encrypted
             }
         }
         Unit

@@ -24,8 +24,10 @@ Gradle `build` already runs the configured JVM tests in `:app` (debug local
 tests), `:core:model`, `:core:ai`, and `:core:storage`. `:recognition:paddle`
 currently has no JVM test sources. The workflow uses one Gradle invocation with
 `--continue`, so independent tasks can finish after a failure without turning
-that failure into success. It retains lint, `verifyPaddleArtifacts`,
-`verifyDebugRecognitionPackage`, and `verifyReleaseRecognitionPackage`.
+that failure into success. It builds only the public `foss` product flavor
+(never `full`, which is reserved for the maintainer's private companion repo —
+see `docs/ARCHITECTURE.md`) and retains lint, `verifyPaddleArtifacts`,
+`verifyFossDebugRecognitionPackage`, and `verifyFossReleaseRecognitionPackage`.
 
 No emulator, device, connected test, or E2E suite is executed. Compiling
 instrumentation APKs does **not** mean those tests passed. Host checks do not
@@ -35,8 +37,9 @@ Those checks remain separate; see the [Paddle validation guide](../recognition/p
 The runtime-normalization test also remains separate because it requires an
 unbundled original upstream binary and an AArch64 linker.
 
-The workflow uses read-only repository permissions and does not need Azure
-credentials, signing secrets, deployment environments, or self-hosted runners.
+The workflow uses read-only repository permissions and does not need
+credentials for any recognition provider, signing secrets, deployment
+environments, or self-hosted runners.
 Gradle cache writes are limited to push/manual runs on `main`; PRs only read
 caches. New commits cancel older runs of the same PR. Main pushes, manual runs,
 and merge-group runs have separate concurrency groups and do not cancel each
@@ -63,14 +66,14 @@ with the platform/NDK/CMake versions above installed and SDK licenses accepted.
 Do not commit machine-specific paths. From the repository root on Windows:
 
 ```powershell
-.\gradlew.bat --continue --console=plain --stacktrace build :app:assembleDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
+.\gradlew.bat --continue --console=plain --stacktrace :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test :app:assembleFossDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest :app:verifyFossDebugRecognitionPackage
 .\recognition\paddle\scripts\test-geometry.ps1 -Cxx '<path-to-clang++.exe>'
 ```
 
 On Linux:
 
 ```bash
-./gradlew --continue --console=plain --stacktrace build :app:assembleDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
+./gradlew --continue --console=plain --stacktrace :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test :app:assembleFossDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest :app:verifyFossDebugRecognitionPackage
 pwsh -File ./recognition/paddle/scripts/test-geometry.ps1 -Cxx g++
 ```
 

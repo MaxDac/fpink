@@ -160,10 +160,10 @@ On Windows, configure `ANDROID_HOME` to your SDK and quote the `-P` arguments:
 
 ```powershell
 python -m unittest discover -s scripts\tests -v
-.\gradlew.bat --no-daemon test :app:lintRelease :app:assembleRelease :app:verifyReleaseRecognitionPackage `
+.\gradlew.bat --no-daemon :app:testFossReleaseUnitTest :app:lintFossRelease :app:assembleFossRelease :app:verifyFossReleaseRecognitionPackage `
     '-PrequireReleaseVersion=true' '-PreleaseVersionName=0.1.0-preview.2' '-PreleaseVersionCode=2'
 python scripts\verify_release_apk.py `
-    --apk app\build\outputs\apk\release\app-release-unsigned.apk `
+    --apk app\build\outputs\apk\foss\release\app-foss-release-unsigned.apk `
     --version-name 0.1.0-preview.2 --version-code 2 `
     --build-tools "$env:ANDROID_HOME\build-tools\36.0.0"
 ```
@@ -213,7 +213,7 @@ until issues #27, #28, #30, #31, and #32 are complete.
 | Linux/F-Droid recipe | Validate all preparation and native/model builds in a clean supported build environment without private credentials, local paths or unpublished inputs. Pin permitted downloads and tools. |
 | Version discovery | Initially put literal version name/code and Gradle overrides in the F-Droid recipe. Tag auto-updates need regex-readable source metadata plus `UpdateCheckData`; F-Droid does not execute Gradle to discover computed versions. Workflow-only values are not automatically discoverable. |
 | Listing | Descriptions, icon, phone screenshots and version-code-named changelogs now live in `fastlane/metadata/android/en-US/`. Still needed: author/contact information, categories, source/issue links and applicable anti-feature declarations. Every future release must add its own `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` (max 500 characters) alongside the version bump. |
-| Optional Azure service | Describe image transfer and user-provided credentials. Discuss `NonFreeNet` with maintainers. Offline is already the default; an offline-only flavor is an option, not an automatic requirement. |
+| Optional cloud OCR provider | Public releases (`foss` flavor) are offline-only (bundled PaddleOCR only) and never contact a cloud service; there is nothing to disclose. A private, non-F-Droid "full" build variant, built from a separate private companion repo, may add optional cloud/proprietary recognition providers for the maintainer's own signed releases — see `docs/ARCHITECTURE.md`'s flavor-split section — but that variant is never published to F-Droid. |
 | Identity and signing | Confirm the long-term `com.fpink.capture` identity. Choose F-Droid signing or upstream-signed reproducible builds before first distribution. Do not share the private key. Different certificates normally prevent switching channels in place. |
 | Shared-signature reproducibility | If sharing the GitHub signer, demonstrate independent byte-identical APK rebuilding, including native code, then configure `Binaries` and `AllowedAPKSigningKeys`. Ordinary F-Droid inclusion does not require this, but still requires acceptable source builds. |
 | Submission | Prepare `metadata/com.fpink.capture.yml` in `fdroiddata`, lint/build it, submit a merge request, resolve review, and maintain update checks. Acceptance and timing belong to F-Droid. |

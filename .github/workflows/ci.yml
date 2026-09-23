@@ -59,7 +59,9 @@ jobs:
       - name: Build, run JVM unit tests, and compile instrumentation APKs
         run: >-
           ./gradlew --continue --console=plain --stacktrace
-          build :app:assembleDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
+          :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test
+          :app:assembleFossDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
+          :app:verifyFossDebugRecognitionPackage
 
       - name: Upload verification reports
         if: always()

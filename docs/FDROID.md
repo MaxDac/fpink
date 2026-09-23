@@ -83,8 +83,8 @@ branch with a focused title such as **New app: FPInk**. Include:
 - links to gates #27, #28, #30, #31, and #32;
 - runtime and model provenance decisions and their limitations;
 - ARM64-only and offline behavior;
-- the optional Azure network behavior and any applicable `NonFreeNet`
-  discussion;
+- the optional cloud-recognition-provider network behavior (present only in privately
+  built, non-public variants) and any applicable `NonFreeNet` discussion;
 - the F-Droid signing versus shared-signature reproducibility decision; and
 - the initial manual update posture, if automatic discovery is not proven.
 

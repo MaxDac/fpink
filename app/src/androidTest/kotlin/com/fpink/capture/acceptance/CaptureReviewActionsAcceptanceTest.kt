@@ -169,7 +169,7 @@ class CaptureReviewActionsAcceptanceTest {
         val staged = showReview()
         val testStorage = requireNotNull(storage)
         runBlocking {
-            testStorage.preferences.edit { it[stringPreferencesKey("recognition_provider")] = "AZURE" }
+            testStorage.preferences.edit { it[stringPreferencesKey("recognition_provider")] = "OTHER" }
         }
         compose.waitUntil(10_000) { !viewModel.uiState.value.providerAvailable }
         compose.onNodeWithText(chooseAnother).assertIsEnabled()
@@ -178,7 +178,7 @@ class CaptureReviewActionsAcceptanceTest {
             assertTrue(confirmed.isEmpty())
             assertFalse(File(staged.file.parentFile, "selection").exists())
         }
-        runBlocking { testStorage.settings.save(RecognitionProviderId.PADDLE, "") }
+        runBlocking { testStorage.settings.save(RecognitionProviderId.PADDLE) }
         compose.waitUntil(10_000) { viewModel.uiState.value.providerAvailable }
         compose.onNodeWithText(useImage).assertIsEnabled().performClick()
         compose.waitUntil(10_000) { confirmed.isNotEmpty() }
@@ -284,7 +284,7 @@ class CaptureReviewActionsAcceptanceTest {
         compose.runOnUiThread {
             val coordinator = RecognitionCoordinator(
                 testStorage.images, testStorage.settings, NoteRepository(AndroidFileStore(testStorage.context)),
-                DefaultNoteProcessor(), { error("Review tests must never run recognition or contact Azure") },
+                DefaultNoteProcessor(), { error("Review tests must never run recognition or contact a cloud provider") },
             )
             viewModel = CaptureViewModel(testStorage.images, coordinator, testStorage.settings, savedState)
             viewModels.put("capture", viewModel)

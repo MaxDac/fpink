@@ -61,9 +61,36 @@ android {
         compose = true
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        // Public/F-Droid default: bundled Paddle OCR only, no proprietary code or binaries.
+        create("foss") {
+            dimension = "distribution"
+        }
+        // Private-companion-repo build only: adds Azure/MyScript recognition providers via
+        // a private submodule. Degrades to an exact copy of `foss` when that submodule is
+        // absent, which is always true for public clones, CI, and F-Droid.
+        create("full") {
+            dimension = "distribution"
+        }
+    }
+
     packaging {
         // Preserve the reviewed runtime bytes for APK provenance verification.
         jniLibs.keepDebugSymbols += "**/libpaddle_light_api_shared.so"
+    }
+
+    // Only wires in real content when the private submodule is present; otherwise `full`
+    // builds identically to `foss`. Never present in public clones, CI, or F-Droid.
+    val privateOverlayKotlin = rootDir.resolve("private/app-overlay/kotlin")
+    val privateOverlayResources = rootDir.resolve("private/app-overlay/resources")
+    if (privateOverlayKotlin.isDirectory) {
+        sourceSets.getByName("full") {
+            kotlin.srcDir(privateOverlayKotlin)
+            if (privateOverlayResources.isDirectory) {
+                resources.srcDir(privateOverlayResources)
+            }
+        }
     }
 }
 
@@ -105,9 +132,6 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
 
-    implementation(libs.ktor.client.core)
-    implementation(libs.ktor.client.okhttp)
-
     implementation(libs.coil.compose)
 
     testImplementation(platform(libs.junit.bom))
@@ -122,6 +146,21 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+}
+
+// Only added when the private submodule's recognition modules are actually present, so
+// public clones/CI/F-Droid never resolve a dependency on them.
+listOf("azure", "myscript").forEach { name ->
+    if (project.findProject(":recognition:$name") != null) {
+        dependencies.add("fullImplementation", project(":recognition:$name"))
+    }
+}
+// The app-overlay's Azure "test connection" action builds an HttpClient directly (mirroring
+// AzureReadProvider's own construction), so it needs Ktor's OkHttp engine on its own compile
+// classpath too; :recognition:azure only depends on it as `implementation`, not `api`.
+if (project.findProject(":recognition:azure") != null) {
+    dependencies.add("fullImplementation", libs.ktor.client.core)
+    dependencies.add("fullImplementation", libs.ktor.client.okhttp)
 }
 
 tasks.withType<Test> {

@@ -56,7 +56,7 @@ class JobCancellationStoreTest {
         val source = File(File(root, "imports"), sourceId)
         check(source.mkdirs())
         try {
-            File(source, "selection").writeText("provider=AZURE\nkeyFingerprint=fixture-fingerprint")
+            File(source, "selection").writeText("provider=OTHER\nkeyFingerprint=fixture-fingerprint")
             File(source, "prepared.png").writeBytes(byteArrayOf(1))
             test(root, source)
         } finally {
