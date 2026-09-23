@@ -53,7 +53,7 @@ class NativePipelineAcceptanceTest {
             val coordinator = RecognitionCoordinator(
                 storage.images, storage.settings, repository, DefaultNoteProcessor(),
             ) { settings ->
-                assertEquals("This test must never select or contact Azure", RecognitionProviderId.PADDLE, settings.provider)
+                assertEquals("This test must never select or contact a cloud provider", RecognitionProviderId.PADDLE, settings.provider)
                 PaddleOcrProvider(storage.context)
             }
             assertEquals(RecognitionProviderId.PADDLE, coordinator.confirm(staged.sourceId).provider)

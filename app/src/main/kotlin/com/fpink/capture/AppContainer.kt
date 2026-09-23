@@ -31,7 +31,7 @@ class AppContainer(context: Context) {
     /**
      * `PADDLE` is the only provider built into this (FOSS) build. Any other id is resolved
      * through [RecognitionProviderRegistry], which only finds a match when a private,
-     * non-public provider module (e.g. Azure or MyScript) has been compiled into the app —
+     * non-public provider module (e.g. ABBYY or MyScript) has been compiled into the app —
      * never true for the public build or public CI.
      */
     fun recognitionProvider(settings: RecognitionSettings): RecognitionProvider = when (settings.provider) {

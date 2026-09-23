@@ -68,7 +68,7 @@ class CaptureAcceptanceTest {
         compose.runOnUiThread {
             val coordinator = RecognitionCoordinator(
                 storage.images, storage.settings, NoteRepository(AndroidFileStore(storage.context)),
-                DefaultNoteProcessor(), { error("Acceptance capture tests must never run recognition or contact Azure") },
+                DefaultNoteProcessor(), { error("Acceptance capture tests must never run recognition or contact a cloud provider") },
             )
             viewModel = CaptureViewModel(storage.images, coordinator, storage.settings, SavedStateHandle())
             viewModels.put("capture", viewModel)

@@ -1,6 +1,6 @@
 FPInk captures handwritten fountain-pen notes and turns them into searchable text, while keeping the original ink colour information alongside each note.
 
-Offline recognition (PaddleOCR) runs entirely on-device and is the default. It currently requires an ARM64 device. Azure-based cloud recognition is available as an alternative, but it is optional and must be explicitly selected by you before it is ever used.
+Offline recognition (PaddleOCR) runs entirely on-device and is the default. It currently requires an ARM64 device. Optional cloud-based recognition providers may be available in privately built variants of this app, but they are never enabled in this build and would require explicit selection before ever being used.
 
 After a photo is recognized, FPInk opens a review screen listing every generated paragraph as a separate note. Correct any transcription in place, then save the changes; leaving the screen with unsaved corrections asks for confirmation first, and declining to save keeps the notes you already captured.
 

@@ -138,7 +138,7 @@ class RecognitionCoordinatorTest {
     }
 
     @Test
-    fun `unavailable native model never falls back to Azure`() = runTest {
+    fun `unavailable native model never falls back to another provider`() = runTest {
         val fixture = Fixture(this)
         fixture.recognize = { Result.failure(RecognitionError.ModelUnavailable("missing fixture model")) }
         val coordinator = fixture.coordinator()
