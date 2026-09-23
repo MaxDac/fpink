@@ -201,6 +201,10 @@ that those checks have passed. See the recognition module's documented limits.
 The official F-Droid repository builds from reviewed source; publishing a
 GitHub APK does not submit or deploy the app there.
 
+The gated submission and recurring maintenance procedure is documented in
+[F-Droid submission and maintenance](FDROID.md). Do not start that procedure
+until issues #27, #28, #30, #31, and #32 are complete.
+
 | Area | Remaining work |
 |---|---|
 | Rights and dependency audit | Confirm GPL compatibility and redistribution rights for transitive dependencies, artwork, dictionaries and model weights; preserve their licenses and notices. |
