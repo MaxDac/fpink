@@ -1,0 +1,1 @@
+First signed pre-release build for Android 8.0+, establishing the CI checks and signed-release pipeline used for all later versions. Offline recognition requires an ARM64 device.

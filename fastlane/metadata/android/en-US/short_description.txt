@@ -1,0 +1,1 @@
+Capture handwritten fountain-pen notes, recognized offline by default

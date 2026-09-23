@@ -1,0 +1,9 @@
+FPInk captures handwritten fountain-pen notes and turns them into searchable text, while keeping the original ink colour information alongside each note.
+
+Offline recognition (PaddleOCR) runs entirely on-device and is the default. It currently requires an ARM64 device. Azure-based cloud recognition is available as an alternative, but it is optional and must be explicitly selected by you before it is ever used.
+
+After a photo is recognized, FPInk opens a review screen listing every generated paragraph as a separate note. Correct any transcription in place, then save the changes; leaving the screen with unsaved corrections asks for confirmation first, and declining to save keeps the notes you already captured.
+
+From the notes list you can press and hold a note to start selecting, tap rows or checkboxes to change the selection, or use "Select all" to include every note, even ones off screen. Choose "Delete selected" and confirm once to permanently remove the selection; a shared source photo is kept until every note that uses it has been deleted.
+
+FPInk's original source code is licensed under the GNU General Public License, version 3 only (GPL-3.0-only). Third-party dependencies and bundled assets retain their own licenses.

@@ -1,0 +1,1 @@
+Added bulk note selection and deletion, a direct camera shortcut on the notes list, and support for landscape camera capture. Improved the image review action layout for readability on small screens.
