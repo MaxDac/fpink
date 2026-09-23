@@ -31,7 +31,8 @@ Run `.\gradlew.bat build` on Windows or `./gradlew build` on Linux.
 The offline recognizer currently requires an ARM64 device.
 
 See [architecture](docs/ARCHITECTURE.md), [offline recognition](recognition/paddle/README.md),
-and [release setup, versioning and F-Droid readiness](docs/RELEASING.md).
+[release setup and versioning](docs/RELEASING.md), and the
+[F-Droid submission and maintenance runbook](docs/FDROID.md).
 
 ## License
 
