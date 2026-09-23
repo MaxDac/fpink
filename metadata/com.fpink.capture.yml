@@ -1,0 +1,28 @@
+Disabled: "Blocked by #27 and #28: native runtime source build and model provenance are not yet F-Droid-ready."
+Categories:
+  - Productivity
+License: GPL-3.0-only
+SourceCode: https://github.com/MaxDac/fpink
+IssueTracker: https://github.com/MaxDac/fpink/issues
+RepoType: git
+Repo: https://github.com/MaxDac/fpink
+UpdateCheckMode: Static
+CurrentVersion: 0.1.0-preview.4
+CurrentVersionCode: 4
+MaintainerNotes: |
+  Build environment requirements: JDK 17, Android SDK platform 37,
+  build-tools 36.0.0, and CMake 3.22.1. The release Gradle task is
+  configured through the root project and requires the paired release
+  version properties in the build block. The app's offline recognizer
+  currently targets ARM64.
+Builds:
+  - versionName: 0.1.0-preview.4
+    versionCode: 4
+    commit: 44d9007229c0eb0d0008508e7ed9c73d61833a12
+    gradle: yes
+    gradleprops:
+      - requireReleaseVersion
+      - releaseVersionName=$$VERSION$$
+      - releaseVersionCode=$$VERCODE$$
+    output: app/build/outputs/apk/release/app-release-unsigned.apk
+    ndk: 28.2.13676358
