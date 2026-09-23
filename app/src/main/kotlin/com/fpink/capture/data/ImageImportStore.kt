@@ -11,7 +11,6 @@ import android.system.Os
 import android.system.OsConstants
 import androidx.exifinterface.media.ExifInterface
 import com.fpink.core.ai.PreparedImage
-import com.fpink.core.ai.AzureReadConfig
 import com.fpink.core.ai.RecognitionError
 import com.fpink.core.ai.RecognitionProviderId
 import com.fpink.core.ai.RecognitionSettings
@@ -175,10 +174,9 @@ class ImageImportStore(context: Context) {
         if (cancellations.isCancelled(sourceId)) throw RecognitionError.Configuration(CANCELLED_JOB_MESSAGE)
         check(previewFile(sourceId).isFile) { "The prepared image is unavailable." }
         val properties = Properties().apply {
-            setProperty("provider", settings.provider.name)
-            if (settings.provider == RecognitionProviderId.AZURE) {
-                setProperty("endpoint", settings.azure.endpoint)
-                setProperty("keyFingerprint", keyFingerprint(settings.azure.apiKey))
+            setProperty("provider", settings.provider.id)
+            if (settings.provider != RecognitionProviderId.PADDLE) {
+                setProperty("configFingerprint", configFingerprint(settings.config))
             }
         }
         FileOutputStream(File(sourceDirectory(sourceId), "selection")).use {
@@ -194,22 +192,17 @@ class ImageImportStore(context: Context) {
             val selection = File(sourceDirectory(sourceId), "selection")
             require(selection.isFile) { "Confirm this image again before processing it." }
             FileInputStream(selection).use { properties.load(it) }
-            when (properties.getProperty("provider")) {
-                RecognitionProviderId.PADDLE.name -> RecognitionSettings()
-                RecognitionProviderId.AZURE.name -> {
-                    val azure = current().azure
-                    if (properties.getProperty("keyFingerprint") != keyFingerprint(azure.apiKey)) {
-                        throw RecognitionError.Configuration(
-                            "The Azure key changed or became unavailable after this job was confirmed. Choose the image again to approve a new job.",
-                        )
-                    }
-                    RecognitionSettings(
-                        RecognitionProviderId.AZURE,
-                        AzureReadConfig(properties.getProperty("endpoint"), azure.apiKey),
-                    )
-                }
-                else -> throw RecognitionError.Configuration("This job has no valid provider selection. Choose the image again.")
+            val provider = properties.getProperty("provider")?.let { RecognitionProviderId(it) }
+                ?: throw RecognitionError.Configuration("This job has no valid provider selection. Choose the image again.")
+            if (provider == RecognitionProviderId.PADDLE) return@withContext RecognitionSettings()
+            val settings = current()
+            require(settings.provider == provider) { "This job's provider is no longer selected. Choose the image again." }
+            if (properties.getProperty("configFingerprint") != configFingerprint(settings.config)) {
+                throw RecognitionError.Configuration(
+                    "The provider settings changed or became unavailable after this job was confirmed. Choose the image again to approve a new job.",
+                )
             }
+            settings
         }
 
     suspend fun cleanExpired() = withContext(Dispatchers.IO) {
@@ -218,9 +211,15 @@ class ImageImportStore(context: Context) {
         cameraDirectory.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.delete() }
     }
 
-    private fun keyFingerprint(key: String): String =
-        MessageDigest.getInstance("SHA-256").digest(key.toByteArray(Charsets.UTF_8))
+    /**
+     * Fingerprints the entire config map (sorted, null-byte joined) so drift in any entry is
+     * detected without ever persisting a raw config value (which may hold secrets) to disk.
+     */
+    private fun configFingerprint(config: Map<String, String>): String {
+        val canonical = config.toSortedMap().entries.joinToString("\u0000") { (key, value) -> "$key=$value" }
+        return MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
 
     private fun sourceDirectory(sourceId: String): File {
         require(SOURCE_ID.matches(sourceId)) { "Invalid source identifier." }

@@ -196,15 +196,15 @@ class DefaultNoteProcessorTest {
     }
 
     @Test
-    fun `trustworthy Azure paragraph hints override indentation but distinct hints do not merge`() = runTest {
+    fun `trustworthy cloud paragraph hints override indentation but distinct hints do not merge`() = runTest {
         val page = Page(220, 100)
         val regions = listOf(
-            page.region("English paragraph", 10, 10, 180, 22, "azure:0", 0.8f),
-            page.region("an indented continuation", 30, 30, 190, 42, "azure:0", 1f),
-            page.region("Paragrafo italiano", 10, 50, 180, 62, "azure:1", 0.9f),
-            page.region("ancora qui.", 10, 70, 180, 82, "azure:1"),
+            page.region("English paragraph", 10, 10, 180, 22, "cloud:0", 0.8f),
+            page.region("an indented continuation", 30, 30, 190, 42, "cloud:0", 1f),
+            page.region("Paragrafo italiano", 10, 50, 180, 62, "cloud:1", 0.9f),
+            page.region("ancora qui.", 10, 70, 180, 82, "cloud:1"),
         )
-        val drafts = process(page, regions, RecognitionProviderId.AZURE)
+        val drafts = process(page, regions, RecognitionProviderId("cloud"))
         assertEquals(listOf("English paragraph an indented continuation", "Paragrafo italiano ancora qui."),
             drafts.map { it.text })
         assertEquals(0.9f, drafts.first().confidence)

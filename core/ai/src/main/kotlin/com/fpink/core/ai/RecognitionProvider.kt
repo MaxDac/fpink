@@ -2,20 +2,44 @@ package com.fpink.core.ai
 
 import com.fpink.core.model.ImagePoint
 import com.fpink.core.model.InkColorOrigin
+import java.util.ServiceLoader
 
-enum class RecognitionProviderId {
-    PADDLE,
-    AZURE,
+/**
+ * Open identifier so providers outside this module (never part of the public/FOSS build)
+ * can be selected without editing this file. [PADDLE] is the only built-in value; any other
+ * id is resolved at runtime through [RecognitionProviderRegistry].
+ */
+@JvmInline
+value class RecognitionProviderId(val id: String) {
+    companion object {
+        val PADDLE = RecognitionProviderId("paddle")
+    }
 }
 
-data class AzureReadConfig(val endpoint: String = "", val apiKey: String = "") {
-    override fun toString(): String = "AzureReadConfig(endpoint=$endpoint, apiKey=[redacted])"
-}
-
+/**
+ * Provider-specific configuration (endpoint, API key, license data, …) as opaque key/value
+ * pairs. This module never reads or writes specific keys; only the provider that owns [provider]
+ * interprets [config]. Values may be secrets: callers must never log or persist this map in
+ * plain text (see [com.fpink.capture.data.SettingsStore]'s encrypted storage).
+ */
 data class RecognitionSettings(
     val provider: RecognitionProviderId = RecognitionProviderId.PADDLE,
-    val azure: AzureReadConfig = AzureReadConfig(),
-)
+    val config: Map<String, String> = emptyMap(),
+) {
+    override fun toString(): String = "RecognitionSettings(provider=$provider, config=[redacted, ${config.size} entries])"
+}
+
+/** Implemented by a provider that ships outside this module and registers itself via [ServiceLoader]. */
+interface RecognitionProviderPlugin {
+    val id: RecognitionProviderId
+    fun create(context: Any, settings: RecognitionSettings): RecognitionProvider
+}
+
+/** Discovers [RecognitionProviderPlugin]s bundled into the current build, if any. */
+object RecognitionProviderRegistry {
+    fun find(id: RecognitionProviderId): RecognitionProviderPlugin? =
+        ServiceLoader.load(RecognitionProviderPlugin::class.java).firstOrNull { it.id == id }
+}
 
 /** Encoded bytes and ARGB pixels must describe the same orientation-corrected image. */
 class PreparedImage(

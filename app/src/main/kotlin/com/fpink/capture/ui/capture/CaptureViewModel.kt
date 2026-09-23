@@ -7,7 +7,6 @@ import com.fpink.capture.data.CropRect
 import com.fpink.capture.data.ImageImportStore
 import com.fpink.capture.data.RecognitionCoordinator
 import com.fpink.capture.data.SettingsStore
-import com.fpink.capture.data.isValidAzureEndpoint
 import com.fpink.core.ai.RecognitionError
 import com.fpink.core.ai.RecognitionProviderId
 import java.io.File
@@ -84,17 +83,18 @@ class CaptureViewModel(
                 settings.storedSettings.collect { stored ->
                     val selection = stored.settings
                     val settingsError = if (selection.provider == RecognitionProviderId.PADDLE) null else {
-                        stored.keyError ?: if (
-                            selection.azure.apiKey.isBlank() || !isValidAzureEndpoint(selection.azure.endpoint)
-                        ) "Configure your Azure endpoint and API key in Settings before using this image." else null
+                        stored.keyError ?: if (selection.config.isEmpty()) {
+                            "Configure the selected provider's settings before using this image."
+                        } else null
                     }
                     _uiState.update {
                         it.copy(
                             providerAvailable = settingsError == null,
                             settingsError = settingsError,
-                            providerLabel = when (selection.provider) {
-                                RecognitionProviderId.PADDLE -> "PaddleOCR · offline · English · requires ARM64"
-                                RecognitionProviderId.AZURE -> "Azure Read · English / Italian · this image will be uploaded to ${selection.azure.endpoint}"
+                            providerLabel = if (selection.provider == RecognitionProviderId.PADDLE) {
+                                "PaddleOCR · offline · English · requires ARM64"
+                            } else {
+                                "Cloud recognition · this image will be uploaded to the selected provider"
                             },
                         )
                     }

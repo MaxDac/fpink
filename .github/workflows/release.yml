@@ -89,14 +89,15 @@ jobs:
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
         run: |
-          ./gradlew --no-daemon test :app:lintRelease :app:assembleRelease :app:verifyReleaseRecognitionPackage \
+          ./gradlew --no-daemon :app:testFossDebugUnitTest :app:testFossReleaseUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test \
+            :app:lintFossRelease :app:assembleFossRelease :app:verifyFossReleaseRecognitionPackage \
             -PrequireReleaseVersion=true "-PreleaseVersionName=$VERSION_NAME" "-PreleaseVersionCode=$VERSION_CODE"
           python3 scripts/verify_release_apk.py \
-            --apk app/build/outputs/apk/release/app-release-unsigned.apk \
+            --apk app/build/outputs/apk/foss/release/app-foss-release-unsigned.apk \
             --version-name "$VERSION_NAME" --version-code "$VERSION_CODE" \
             --build-tools "$ANDROID_HOME/build-tools/36.0.0"
           mkdir release-staging
-          cp app/build/outputs/apk/release/app-release-unsigned.apk release-staging/unsigned.apk
+          cp app/build/outputs/apk/foss/release/app-foss-release-unsigned.apk release-staging/unsigned.apk
           cp release-metadata.json LICENSE release-staging/
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

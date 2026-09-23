@@ -178,7 +178,7 @@ class CaptureReviewActionsAcceptanceTest {
             assertTrue(confirmed.isEmpty())
             assertFalse(File(staged.file.parentFile, "selection").exists())
         }
-        runBlocking { testStorage.settings.save(RecognitionProviderId.PADDLE, "") }
+        runBlocking { testStorage.settings.save(RecognitionProviderId.PADDLE) }
         compose.waitUntil(10_000) { viewModel.uiState.value.providerAvailable }
         compose.onNodeWithText(useImage).assertIsEnabled().performClick()
         compose.waitUntil(10_000) { confirmed.isNotEmpty() }

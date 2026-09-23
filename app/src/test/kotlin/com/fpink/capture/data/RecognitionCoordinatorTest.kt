@@ -1,6 +1,5 @@
 package com.fpink.capture.data
 
-import com.fpink.core.ai.AzureReadConfig
 import com.fpink.core.ai.NoteProcessor
 import com.fpink.core.ai.ParagraphDraft
 import com.fpink.core.ai.PreparedImage
@@ -35,6 +34,8 @@ class RecognitionCoordinatorTest {
     private val document = RecognitionDocument(emptyList(), RecognitionProviderId.PADDLE, "fixture")
     private val sourceId = "4d3c1a1f-5449-4113-a22b-6a93d0971885"
     private fun draft(text: String) = ParagraphDraft(text, emptyList(), "#000000", "Black", InkColorOrigin.DEFAULTED)
+    private val cloudProvider = RecognitionProviderId("cloud")
+    private fun cloudSettings() = RecognitionSettings(cloudProvider, mapOf("endpoint" to "https://test.example", "apiKey" to "fixture-key"))
 
     @Test
     fun `reentry is one job with separate stable ordered paragraph notes`() = runTest {
@@ -81,9 +82,7 @@ class RecognitionCoordinatorTest {
         val fixture = Fixture(this)
         val coordinator = fixture.coordinator()
         coordinator.confirm(sourceId)
-        fixture.settings = RecognitionSettings(
-            RecognitionProviderId.AZURE, AzureReadConfig("https://test.cognitiveservices.azure.com", "fixture-key"),
-        )
+        fixture.settings = cloudSettings()
         coordinator.start(sourceId)
         advanceUntilIdle()
         assertEquals(listOf(RecognitionProviderId.PADDLE), fixture.selectedProviders)
@@ -172,9 +171,7 @@ class RecognitionCoordinatorTest {
     @Test
     fun `durable cancel blocks restoration during native wait and after cleanup failure`() = runTest {
         val fixture = Fixture(this)
-        fixture.settings = RecognitionSettings(
-            RecognitionProviderId.AZURE, AzureReadConfig("https://test.cognitiveservices.azure.com", "fixture-key"),
-        )
+        fixture.settings = cloudSettings()
         fixture.cleanupFailure = IOException("Cannot delete staged files")
         val native = CompletableDeferred<Unit>()
         fixture.recognize = {
@@ -219,10 +216,10 @@ class RecognitionCoordinatorTest {
 
     @Test
     fun `persisted cancel prevents provider image processor and save for either provider`() = runTest {
-        for (provider in RecognitionProviderId.entries) {
+        for (provider in listOf(RecognitionProviderId.PADDLE, cloudProvider)) {
             val fixture = Fixture(this)
             fixture.savedSelection = RecognitionSettings(
-                provider, AzureReadConfig("https://test.cognitiveservices.azure.com", "fixture-key"),
+                provider, mapOf("endpoint" to "https://test.example", "apiKey" to "fixture-key"),
             )
             fixture.cancelledSources += sourceId
             val restored = fixture.coordinator()

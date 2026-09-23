@@ -74,7 +74,7 @@ class NativePipelineAcceptanceTest {
             assertTrue(notes.first().text.contains("HELLO", ignoreCase = true))
             assertTrue(notes.all {
                 it.text.isNotBlank() && it.sourceId == staged.sourceId &&
-                    it.recognitionProvider == RecognitionProviderId.PADDLE.name &&
+                    it.recognitionProvider == RecognitionProviderId.PADDLE.id &&
                     it.inkColorOrigin == InkColorOrigin.DETECTED
             })
             assertEquals(1, notes.map { it.imagePath }.distinct().size)

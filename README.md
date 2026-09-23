@@ -1,8 +1,8 @@
 # FPInk
 
 An Android app for capturing handwritten fountain-pen notes, recognizing text,
-and preserving detected ink colours. Offline PaddleOCR is the default;
-Azure recognition is optional and explicitly selected.
+and preserving detected ink colours. This public build is 100% offline and
+FOSS: bundled PaddleOCR is the only recognition provider.
 
 ## Correcting captured notes
 

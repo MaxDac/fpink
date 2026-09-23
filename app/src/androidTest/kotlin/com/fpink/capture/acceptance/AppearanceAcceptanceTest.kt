@@ -52,7 +52,7 @@ class AppearanceAcceptanceTest {
         storage = AcceptanceStorage()
         compose.runOnUiThread {
             theme = ThemeViewModel(storage.settings)
-            settings = SettingsViewModel(storage.settings, { error("Must never contact Azure") }, { Result.success(Unit) })
+            settings = SettingsViewModel(storage.settings)
             models.put("theme", theme)
             models.put("settings", settings)
         }
@@ -77,13 +77,8 @@ class AppearanceAcceptanceTest {
         storage.close()
     }
 
-    @Test fun appearanceAppliesImmediatelyWithoutSavingOrReplacingPendingRecognitionEdits() {
+    @Test fun appearanceAppliesImmediatelyWithoutSavingRecognitionSettings() {
         compose.onNodeWithText("System (default)").assertIsSelected()
-        compose.runOnIdle {
-            settings.selectProvider(RecognitionProviderId.AZURE)
-            settings.onEndpointChange("https://unsaved.cognitiveservices.azure.com")
-            settings.onApiKeyChange("unsaved-local-fixture")
-        }
         compose.onNodeWithText("Dark").performClick().assertIsSelected().assertHeightIsAtLeast(48.dp)
         compose.runOnIdle { assertTrue(backgroundLuminance < 0.1f) }
         compose.onNodeWithText("Light").performClick().assertIsSelected()
@@ -93,12 +88,7 @@ class AppearanceAcceptanceTest {
         runBlocking {
             assertEquals(ThemeMode.DARK, storage.settings.themeMode.first())
             assertEquals(RecognitionProviderId.PADDLE, storage.settings.recognitionSettings.first().provider)
-            assertEquals("", storage.settings.recognitionSettings.first().azure.endpoint)
-        }
-        compose.runOnIdle {
-            assertEquals(RecognitionProviderId.AZURE, settings.uiState.value.provider)
-            assertEquals("https://unsaved.cognitiveservices.azure.com", settings.uiState.value.endpoint)
-            assertEquals("unsaved-local-fixture", settings.uiState.value.replacementKey)
+            assertTrue(storage.settings.recognitionSettings.first().config.isEmpty())
         }
     }
 

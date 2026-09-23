@@ -5,7 +5,7 @@
 | Module | Responsibility |
 |--------|----------------|
 | `:core:model` | Serializable notes, normalized image points and colour provenance |
-| `:core:ai` | Two public contracts, Azure Read implementation, paragraph and colour processing |
+| `:core:ai` | Recognition provider contract, config-map settings, plugin registry, paragraph and colour processing |
 | `:core:storage` | Portable note repository and recoverable batch publication |
 | `:recognition:paddle` | Android/native CPU OCR, model assets and runtime provenance |
 | `:app` | Image intake, permissions, encrypted settings, lifecycle, UI and manual DI |
@@ -22,8 +22,9 @@ CameraX / ACTION_GET_CONTENT chooser
     -> CameraX only: private crop stage and explicit rectangular crop
     -> PreparedImage (encoded PNG/JPEG + matching ARGB pixels)
     -> explicitly selected RecognitionProvider
-         PaddleOcrProvider: native PP-OCRv5 mobile CPU
-         AzureReadProvider: prebuilt-read, API 2024-11-30
+         PaddleOcrProvider: native PP-OCRv5 mobile CPU (bundled, `foss`/`full`)
+         Other providers (e.g. cloud OCR, MyScript ink recognition): discovered at
+         runtime via `RecognitionProviderRegistry`, `full` flavor only
     -> RecognitionDocument (text regions + normalized geometry + paragraph hints)
     -> DefaultNoteProcessor
          logical paragraph grouping
@@ -39,9 +40,15 @@ notes nor chooses their colours. `NoteProcessor.process` consumes the normalized
 result and the same prepared colour pixels, without knowing vendor response DTOs.
 Both return explicit `Result` values and propagate coroutine cancellation.
 
-Paddle is selected by default. Azure is only constructed/used for an explicitly
-selected online job; no error triggers another provider. Provider configuration
-is snapshotted for each job rather than reread midway through recognition.
+Paddle is selected by default and is the only recognition provider available in
+the public `foss` build. `RecognitionProviderId` is an open identifier, and
+`RecognitionProviderRegistry`/`RecognitionProviderPlugin` let a `full`-flavor-only
+private overlay register additional providers (e.g. cloud OCR, MyScript) without
+any public code depending on their implementation. A provider is only
+constructed/used for an explicitly selected job; no error triggers another
+provider. Provider configuration (an opaque `Map<String, String>`, meaningful only
+to the provider that defines its keys) is snapshotted for each job rather than
+reread midway through recognition.
 
 ## Coordinates, paragraphs and colour
 
@@ -50,10 +57,12 @@ orientation-corrected prepared image. Encoded bytes and the ARGB pixel buffer mu
 describe that same image. A provider must reverse any detection/crop/resize
 transform before returning polygons.
 
-Azure paragraph hints take precedence when available. Without hints, deterministic
-layout heuristics consider reading order, relative spacing and indentation.
-Visual newlines alone do not define notes. Soft wraps are joined without inventing
-text, rewriting accents or automatically repairing ambiguous hyphens.
+Paragraph hints from a recognition provider (when it supplies them) take
+precedence over layout heuristics; the public `foss` build's bundled Paddle
+provider does not supply hints, so deterministic layout heuristics (reading
+order, relative spacing, indentation) always apply there. Visual newlines alone
+do not define notes. Soft wraps are joined without inventing text, rewriting
+accents or automatically repairing ambiguous hyphens.
 
 Colour sampling uses the union of text polygons, so overlapping detections do not
 count pixels twice. Paper/background and long ruling are suppressed where
@@ -220,16 +229,19 @@ fails, durable selection invalidation prevents restoration; inability to persist
 either is reported explicitly rather than claiming cancellation succeeded.
 Cancelled or superseded work must not publish late notes.
 
-Settings separate provider selection from Azure endpoint/key configuration. The
-key is encrypted with Android Keystore-backed AES-GCM, never stored as a plaintext
-preference or included in note JSON. Old Azure OpenAI settings are not migrated to
-Document Intelligence. Backup rules exclude private notes, sources and secrets.
+The public `foss` build only ever configures the bundled Paddle provider, which
+needs no credentials, so `SettingsStore` never exercises encrypted-config storage
+there. That storage layer (a single encrypted, provider-keyed JSON config blob,
+using Android Keystore-backed AES-GCM, never stored as a plaintext preference or
+included in note JSON) exists generically in the public `core`/`app` code purely
+so a private `full`-flavor overlay can reuse it for its own providers' credentials
+without forking the encryption logic. Backup rules exclude private notes, sources
+and secrets.
 
-Azure submits the prepared image with its true MIME type and polls a bounded
-asynchronous operation. Polling is restricted to the configured trusted HTTPS
-origin; redirects must not leak the API key. The connection test uses a non-image
-resource operation and states its limits. No font-style/Layout add-ons or cloud
-colour computation are requested.
+Provider-specific network behavior (request/response shape, polling, connection
+testing, credential requirements) is entirely the responsibility of each
+`RecognitionProviderPlugin` implementation; the public repo defines no such
+behavior beyond the offline Paddle path. See "Public/private flavor split" below.
 
 ## Errors and verification boundaries
 
@@ -239,14 +251,16 @@ results create zero notes and receive a visible outcome. Only unreliable colour
 has the deliberate black fallback; OCR, image, storage and cancellation failures
 must not be disguised as successful colour fallback.
 
-JVM tests exercise contracts, old JSON, Azure mock responses, paragraph/colour
-fixtures and storage failure/recovery. Android device checks remain necessary for
+JVM tests exercise contracts, old JSON, generic-provider fixtures (a synthetic
+non-Paddle `RecognitionProviderId`, since the public repo ships no second
+provider), paragraph/colour fixtures and storage failure/recovery. Android device checks remain necessary for
 native inference and page sizes, chooser grants, EXIF decoding, Keystore,
 lifecycle and camera behavior. Model download size is not measured APK size, and
 passing synthetic tests is not a cursive-recognition quality claim.
 
-The app's `verifyDebugRecognitionPackage` and `verifyReleaseRecognitionPackage`
-tasks inspect the installable APKs, not just linker outputs. They prevent a
+The app's `verify<Variant>RecognitionPackage` tasks (e.g.
+`verifyFossDebugRecognitionPackage`, `verifyFossReleaseRecognitionPackage`)
+inspect the installable APKs, not just linker outputs. They prevent a
 successfully linked JNI wrapper from shipping
 without its required Paddle runtime or model assets. The native module explicitly
 packages its pinned runtime through the `native` JNI-library source directory.
@@ -263,3 +277,42 @@ The complete offline pipeline is exercised separately in
 passes through real import, bundled Paddle, paragraph/colour processing and
 file-backed persistence. Emulator results validate that path, not real journal
 accuracy, physical-camera capture or 16 KB device behavior.
+
+## Public/private flavor split
+
+This repository is 100% FOSS and offline-only: it declares no proprietary
+dependency, binary, license, or line of code anywhere, and its public Settings
+screen only ever exposes Appearance and the Zettelkasten beta toggle. That is
+true for every clone, every CI run, and F-Droid's build.
+
+The `app` module declares two Gradle product flavors on a `distribution`
+dimension:
+
+- **`foss`** — the public default. Ships only the bundled offline
+  `PaddleOcrProvider`. This is what F-Droid, GitHub CI, and any public clone
+  build.
+- **`full`** — reserved for the maintainer's separate, private companion repo.
+  When that private repo's content is checked out locally under `private/`
+  (never tracked here — see `.gitignore`), `full` additionally:
+  - includes extra Gradle modules under `private/recognition/<name>/` (e.g. a
+    cloud OCR provider, MyScript ink recognition), each implementing the public
+    `RecognitionProviderPlugin` seam and registered via
+    `META-INF/services/com.fpink.core.ai.RecognitionProviderPlugin` so
+    `RecognitionProviderRegistry` can discover them at runtime with no public
+    code change;
+  - adds a `private/app-overlay/kotlin` source directory to the `full` variant,
+    which is where a superset Settings UI (provider selection, per-provider
+    credential fields) lives.
+
+  When `private/` is absent — always true for this public repo — `full` builds
+  as an exact, byte-for-byte-equivalent copy of `foss`. Building `full` never
+  requires or resolves any proprietary artifact from this repo alone.
+
+Public CI (`ci.yml`) and the public release workflow (`release.yml`) only ever
+build and verify the `foss` variant (`assembleFossDebug`, `assembleFossRelease`,
+`verifyFoss*ReleaseRecognitionPackage`, etc.), so the public pipeline's output is
+unambiguous and never depends on whether a private overlay happens to exist on
+the machine running it.
+
+The private companion repo, its module layout, its own release automation, and
+friend distribution are documented only in that private repo — never here.

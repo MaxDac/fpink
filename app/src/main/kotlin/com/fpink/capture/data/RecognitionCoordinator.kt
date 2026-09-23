@@ -91,11 +91,6 @@ class RecognitionCoordinator internal constructor(
         requireNotCancelled(sourceId)
         val selected = readSettings()
         val snapshot = if (selected.provider == RecognitionProviderId.PADDLE) RecognitionSettings() else selected
-        if (snapshot.provider == RecognitionProviderId.AZURE &&
-            (!isValidAzureEndpoint(snapshot.azure.endpoint) || snapshot.azure.apiKey.isBlank())
-        ) {
-            throw RecognitionError.Configuration("Configure the Azure Document Intelligence endpoint and API key in Settings.")
-        }
         rememberSelection(sourceId, snapshot)
         records.getOrPut(sourceId) { Record() }.snapshot = snapshot
         return snapshot
@@ -129,7 +124,7 @@ class RecognitionCoordinator internal constructor(
                             if (snapshot.provider == RecognitionProviderId.PADDLE) {
                                 "Recognizing on this device with PaddleOCR…"
                             } else {
-                                "Uploading to your selected Azure resource and recognizing…"
+                                "Uploading to your selected recognition provider and recognizing…"
                             },
                         )
                         val recognition = providerFactory(snapshot).recognize(image).getOrThrow()
@@ -155,7 +150,7 @@ class RecognitionCoordinator internal constructor(
                                 sourceId = sourceId,
                                 paragraphIndex = index,
                                 paragraphPolygon = paragraph.polygon,
-                                recognitionProvider = recognition.provider.name,
+                                recognitionProvider = recognition.provider.id,
                                 recognitionModelVersion = recognition.modelVersion,
                                 inkColorOrigin = paragraph.colorOrigin,
                                 zettelkastenCategory = matchZettelkastenCategory(paragraph.inkColorHex, categoryColors),
@@ -255,7 +250,7 @@ internal fun Throwable.toJobFailure(): RecognitionJobState.Failed = when (this) 
         message ?: "Check recognition settings before trying another image.", false,
     )
     is RecognitionError.Authentication -> RecognitionJobState.Failed(
-        "Azure rejected the credentials or resource access. Check the endpoint and API key in Settings. No other provider was used.", false,
+        "The selected provider rejected the credentials or resource access. Check the settings for that provider. No other provider was used.", false,
     )
     is RecognitionError.ModelUnavailable -> RecognitionJobState.Failed(
         "The bundled PaddleOCR model or native runtime is unavailable. Check model readiness in Settings. No cloud request was made.", false,
@@ -264,10 +259,10 @@ internal fun Throwable.toJobFailure(): RecognitionJobState.Failed = when (this) 
         "PaddleOCR cannot run on this device or input. Check Settings for model/device support; no provider was switched automatically.", false,
     )
     is RecognitionError.Network -> RecognitionJobState.Failed(
-        "Azure could not be reached or timed out. Check your connection, then retry this same job.", true,
+        "The selected provider could not be reached or timed out. Check your connection, then retry this same job.", true,
     )
     is RecognitionError.RateLimited -> RecognitionJobState.Failed(
-        "Azure is rate limited. Wait before retrying this same job.", true,
+        "The selected provider is rate limited. Wait before retrying this same job.", true,
     )
     is RecognitionError.MalformedResponse -> RecognitionJobState.Failed(
         "The recognition provider returned an unsupported response. Retry, or choose a clearer image.", true,

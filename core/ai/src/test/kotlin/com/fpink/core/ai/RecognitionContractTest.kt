@@ -10,7 +10,7 @@ class RecognitionContractTest {
     @Test
     fun `settings default to offline and never print the key`() {
         assertEquals(RecognitionProviderId.PADDLE, RecognitionSettings().provider)
-        assertFalse(AzureReadConfig("https://example.cognitiveservices.azure.com", "private-key").toString().contains("private-key"))
+        assertFalse(RecognitionSettings(RecognitionProviderId("cloud"), mapOf("apiKey" to "private-key")).toString().contains("private-key"))
     }
 
     @Test
