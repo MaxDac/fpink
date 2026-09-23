@@ -110,6 +110,44 @@ APKs are compiled, not executed in CI.
 The host test script also works with PowerShell on Linux: pass `-Cxx g++` or
 the path to a compatible compiler. It does not load the Android Paddle runtime.
 
+## Required source reproduction gate
+
+`reproducibility.lock.json` is the source-of-truth for the required Linux
+reproduction inputs. It pins the Paddle-Lite source commit, Android ARM64 target,
+public PP-OCRv5 source-checkpoint revisions, published `inference.pdiparams`
+payload hashes, expected model outputs, and the policy that **forbids a prebuilt
+fallback**. It intentionally marks the runtime and model conversion as
+`requires-reproduction`: the checked-in `.so` and `.nb` files are not claimed to
+be source-built by this repository.
+
+Run the Linux-only bootstrap with a pinned Android NDK:
+
+```bash
+export ANDROID_NDK_HOME=/path/to/android-ndk
+./recognition/paddle/scripts/reproduce-linux.sh
+```
+
+The command checks the policy, downloads and verifies every declared
+source-model input, checks out the exact Paddle-Lite source commit, verifies its
+required third-party archive, then builds the runtime and both models. It does
+not copy or transform packaged artifacts. Run it in **two clean directories**,
+then require byte identity before considering either output for adoption:
+
+```bash
+./recognition/paddle/scripts/reproduce-linux.sh /work/build-one
+./recognition/paddle/scripts/reproduce-linux.sh /work/build-two
+python3 recognition/paddle/scripts/verify-reproducibility.py \
+  --manifest recognition/paddle/reproducibility.lock.json \
+  --first /work/build-one --second /work/build-two
+```
+
+Each directory must contain `libpaddle_light_api_shared.so`,
+`PP-OCRv5_mobile_det.nb`, and `PP-OCRv5_mobile_rec.nb`. The verifier fails for
+missing, empty, or different outputs. Matching bytes alone are not approval to
+replace the current assets: retain input hashes, commands, tool versions,
+license evidence, package/ELF checks, ARM64 device behavior, and handwriting
+quality results with the change.
+
 No Git Bash, Python, desktop Paddle, model optimizer, model conversion, account,
 questionnaire, download service, accelerator SDK, or OpenCV is required at runtime.
 No source-format `pdiparams` or duplicate source checkpoints are packaged.
