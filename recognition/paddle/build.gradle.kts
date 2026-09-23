@@ -55,9 +55,15 @@ dependencies {
 }
 
 val artifactManifest = file("artifacts.lock.json")
+val sourceBuildEnabled = providers.gradleProperty("buildPaddleRuntimeFromSource").isPresent
 @Suppress("UNCHECKED_CAST")
 val pinnedArtifacts = ((JsonSlurper().parse(artifactManifest) as Map<String, Any>)["archives"] as List<Map<String, Any>>)
     .flatMap { it["files"] as List<Map<String, Any>> }
+    .filter { !sourceBuildEnabled || (it["destination"] as String) !in setOf(
+        "native/arm64-v8a/libpaddle_light_api_shared.so",
+        "src/main/cpp/third_party/paddle_lite/paddle_api.h",
+        "src/main/cpp/third_party/paddle_lite/paddle_place.h",
+    ) }
     .map {
         val expected = (it["normalization"] as? Map<String, Any>) ?: it
         Triple(file(it["destination"] as String), (expected["bytes"] as Number).toLong(), expected["sha256"] as String)
@@ -94,5 +100,28 @@ val verifyPaddleArtifacts = tasks.register("verifyPaddleArtifacts") {
             }
         }
     }
+}
+if (sourceBuildEnabled) {
+    tasks.register("buildPaddleRuntimeFromSource") {
+        group = "build"
+        description = "Build the pinned Paddle Lite ARM64 runtime from source."
+        inputs.file("source-runtime.lock.json")
+        outputs.files(
+            file("native/arm64-v8a/libpaddle_light_api_shared.so"),
+            file("src/main/cpp/third_party/paddle_lite/paddle_api.h"),
+            file("src/main/cpp/third_party/paddle_lite/paddle_place.h"),
+        )
+        outputs.upToDateWhen { false }
+        doLast {
+            val script = file("scripts/build-runtime.sh")
+            val process = ProcessBuilder("bash", script.absolutePath)
+                .directory(projectDir)
+                .inheritIO()
+                .start()
+            check(process.waitFor() == 0) { "Paddle Lite source build failed." }
+        }
+    }
+    tasks.named("verifyPaddleArtifacts") { dependsOn("buildPaddleRuntimeFromSource") }
+    tasks.named("preBuild") { dependsOn("buildPaddleRuntimeFromSource") }
 }
 tasks.named("preBuild") { dependsOn(verifyPaddleArtifacts) }

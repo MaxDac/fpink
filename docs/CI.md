@@ -74,6 +74,21 @@ On Linux:
 pwsh -File ./recognition/paddle/scripts/test-geometry.ps1 -Cxx g++
 ```
 
+For the F-Droid-compatible source-runtime path, provide the Android NDK and
+run:
+
+```bash
+ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/28.2.13676358" \
+  ./gradlew --no-daemon --console=plain \
+  -PbuildPaddleRuntimeFromSource \
+  :recognition:paddle:verifyPaddleArtifacts \
+  :recognition:paddle:assembleRelease
+```
+
+This source build is intentionally separate from ordinary CI until the pinned
+Paddle Lite build has been qualified on the F-Droid build image. It must not
+silently fall back to the checked-in runtime.
+
 The native runner needs a host GCC-compatible C++17 compiler (`g++` or `clang++`).
 It keeps assertions enabled and fails on compilation errors or test failures.
 It does not load the Android-only Paddle runtime or require an Android SDK.
