@@ -1,0 +1,1 @@
+Replaced the source picker with a contextual notes-list menu and added clipboard image paste. Photos can now be cropped before recognition and captured notes reviewed before saving. Added exporting selected notes and an opt-in Zettelkasten note organisation feature.
