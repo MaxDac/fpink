@@ -1,0 +1,10 @@
+FPInk Kraken OCR provider notice
+
+This module contains only integration code, export instructions, and license notices.
+It intentionally does not bundle Kraken model weights until a reviewed ONNX export is
+added with pinned byte counts and SHA-256 hashes.
+
+Kraken engine: Apache-2.0, https://github.com/mittagessen/kraken
+Selected model family: PP-OCRv6 medium for Kraken, canonical Zenodo DOI
+10.5281/zenodo.21788410, mirrored at
+https://huggingface.co/small-models-for-glam/kraken-ppocrv6-medium

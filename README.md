@@ -2,7 +2,8 @@
 
 An Android app for capturing handwritten fountain-pen notes, recognizing text,
 and preserving detected ink colours. This public build is 100% offline and
-FOSS: bundled PaddleOCR is the only recognition provider.
+FOSS: bundled PaddleOCR is the default recognition provider, and the Settings
+screen also exposes a Kraken OCR provider slot for reviewed ONNX assets.
 
 ## Correcting captured notes
 
@@ -28,9 +29,13 @@ selection before trying again. If refresh fails, use **Retry** first.
 
 Use JDK 17, Android SDK 37, NDK `28.2.13676358`, and CMake `3.22.1`.
 Run `.\gradlew.bat build` on Windows or `./gradlew build` on Linux.
-The offline recognizer currently requires an ARM64 device.
+The Paddle offline recognizer currently requires an ARM64 device. The Kraken
+provider is Python-free and ONNX Runtime-based, but its reviewed model export is
+not bundled yet; Settings reports it as unavailable rather than downloading or
+substituting unreviewed model bytes.
 
-See [architecture](docs/ARCHITECTURE.md), [offline recognition](recognition/paddle/README.md),
+See [architecture](docs/ARCHITECTURE.md), [Paddle offline recognition](recognition/paddle/README.md),
+[Kraken OCR integration](recognition/kraken/README.md),
 [release setup and versioning](docs/RELEASING.md), and the
 [F-Droid submission and maintenance runbook](docs/FDROID.md).
 
@@ -47,5 +52,7 @@ the complete terms.
 Third-party dependencies and bundled assets retain their own licenses; this
 does not relicense their authors' work. Paddle runtime/model provenance and
 bundled notices are documented in [recognition/paddle](recognition/paddle/README.md).
+Kraken/ONNX provenance and current export limitations are documented in
+[recognition/kraken](recognition/kraken/README.md).
 When distributing an APK, provide its corresponding source and preserve those
 notices; the release workflow links each APK to its exact tagged source.

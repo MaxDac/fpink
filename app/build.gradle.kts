@@ -105,6 +105,7 @@ dependencies {
     implementation(project(":core:ai"))
     implementation(project(":core:storage"))
     implementation(project(":recognition:paddle"))
+    implementation(project(":recognition:kraken"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.exifinterface)
@@ -182,6 +183,7 @@ androidComponents {
                     "assets/paddle/PP-OCRv5_mobile_rec.nb",
                     "assets/paddle/ppocr_keys_ocrv5.txt",
                     "assets/paddle/NOTICE.txt",
+                    "assets/kraken/NOTICE.txt",
                     "lib/arm64-v8a/libfpink_paddle.so",
                     "lib/arm64-v8a/libpaddle_light_api_shared.so",
                     "lib/arm64-v8a/libc++_shared.so",
