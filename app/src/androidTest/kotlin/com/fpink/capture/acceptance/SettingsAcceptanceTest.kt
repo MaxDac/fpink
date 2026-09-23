@@ -26,7 +26,7 @@ import org.junit.runner.RunWith
  * These tests exercise [SettingsStore]'s generic, provider-agnostic encrypted storage using a
  * synthetic non-PaddleOCR provider id and config map: this build never ships a second provider,
  * but the storage/encryption guarantees below must hold for whichever provider a private,
- * non-public build (e.g. one adding ABBYY or MyScript) plugs in.
+ * non-public build (e.g. one adding Azure or MyScript) plugs in.
  */
 @RunWith(AndroidJUnit4::class)
 class SettingsAcceptanceTest {
