@@ -2,7 +2,8 @@ Apache License
 Version 2.0, January 2004
 https://www.apache.org/licenses/
 
-This placeholder notice points to the canonical Apache-2.0 license text for the
-Kraken engine and selected model family. Before model weights are bundled, replace
-or augment this file with the exact upstream license text captured from the
-canonical release artifact.
+This notice points to the canonical Apache-2.0 license text for the Kraken
+engine and the selected PP-OCRv6-for-Kraken model family, both licensed
+Apache-2.0 by their respective upstream authors. See README.md for the exact
+model repository, DOI, and Hugging Face mirror this module's bundled export
+was produced from.

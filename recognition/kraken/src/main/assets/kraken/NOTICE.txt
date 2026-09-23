@@ -1,8 +1,10 @@
 FPInk Kraken OCR provider notice
 
-This module contains only integration code, export instructions, and license notices.
-It intentionally does not bundle Kraken model weights until a reviewed ONNX export is
-added with pinned byte counts and SHA-256 hashes.
+This module bundles a reviewed ONNX export of a Kraken-compatible recognition
+model as an app asset, plus integration code and export instructions. It
+contains no Python, PyTorch, or Chaquopy runtime; only Android/ONNX Runtime
+code and pinned model files ship in the app. See README.md for the exact
+model choice, export procedure, and validation status.
 
 Kraken engine: Apache-2.0, https://github.com/mittagessen/kraken
 Selected model family: PP-OCRv6 medium for Kraken, canonical Zenodo DOI

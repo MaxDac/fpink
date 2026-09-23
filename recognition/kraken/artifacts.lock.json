@@ -11,13 +11,13 @@
   "packagedFiles": [
     {
       "destination": "src/main/assets/kraken/NOTICE.txt",
-      "bytes": 508,
-      "sha256": "9804d13be08199bee66e26acda964727f1e5a0a1277e4b0865ec2cb33665bbf2"
+      "bytes": 631,
+      "sha256": "4007d3ac461261d555d501819949d6bb9cc714b42312ab82e92034ababbf7984"
     },
     {
       "destination": "src/main/assets/kraken/licenses/Kraken-APACHE-2.0.txt",
-      "bytes": 350,
-      "sha256": "9671033e80d8cc8e186b2a8d64e6916049ae7eba11811e66601e822ef070770e"
+      "bytes": 394,
+      "sha256": "e93453d9e0e0ae9c2095123630955dd4ae12575ad38549ca0583829304e5fce4"
     },
     {
       "destination": "src/main/assets/kraken/ppocrv6-medium-recognition.onnx",
