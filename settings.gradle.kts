@@ -19,9 +19,9 @@ include(":core:ai")
 include(":core:storage")
 include(":recognition:paddle")
 
-// Private-companion-repo modules (Azure/MyScript), only present when the `private/`
+// Private-companion-repo modules (MyScript/ABBYY), only present when the `private/`
 // submodule has been checked out locally. Absent in public clones, CI, and F-Droid.
-listOf("azure", "myscript").forEach { name ->
+listOf("myscript", "abbyy").forEach { name ->
     val moduleDir = file("private/recognition/$name")
     if (moduleDir.resolve("build.gradle.kts").exists()) {
         include(":recognition:$name")

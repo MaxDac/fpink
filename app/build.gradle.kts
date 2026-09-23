@@ -67,7 +67,7 @@ android {
         create("foss") {
             dimension = "distribution"
         }
-        // Private-companion-repo build only: adds Azure/MyScript recognition providers via
+        // Private-companion-repo build only: adds MyScript/ABBYY recognition providers via
         // a private submodule. Degrades to an exact copy of `foss` when that submodule is
         // absent, which is always true for public clones, CI, and F-Droid.
         create("full") {
@@ -150,15 +150,15 @@ dependencies {
 
 // Only added when the private submodule's recognition modules are actually present, so
 // public clones/CI/F-Droid never resolve a dependency on them.
-listOf("azure", "myscript").forEach { name ->
+listOf("myscript", "abbyy").forEach { name ->
     if (project.findProject(":recognition:$name") != null) {
         dependencies.add("fullImplementation", project(":recognition:$name"))
     }
 }
-// The app-overlay's Azure "test connection" action builds an HttpClient directly (mirroring
-// AzureReadProvider's own construction), so it needs Ktor's OkHttp engine on its own compile
-// classpath too; :recognition:azure only depends on it as `implementation`, not `api`.
-if (project.findProject(":recognition:azure") != null) {
+// The app-overlay's ABBYY "test connection" action builds an HttpClient directly (mirroring
+// AbbyyOcrProvider's own construction), so it needs Ktor's OkHttp engine on its own compile
+// classpath too; :recognition:abbyy only depends on it as `implementation`, not `api`.
+if (project.findProject(":recognition:abbyy") != null) {
     dependencies.add("fullImplementation", libs.ktor.client.core)
     dependencies.add("fullImplementation", libs.ktor.client.okhttp)
 }
