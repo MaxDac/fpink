@@ -1,0 +1,1 @@
+Added Kraken OCR as a second fully offline recognition engine, selectable alongside PaddleOCR in a new Settings provider picker. The public build is now offline-only, with PaddleOCR and Kraken as the only recognition providers. Added upstream F-Droid metadata and a pinned, verifiable path for building the Paddle Lite runtime from source.

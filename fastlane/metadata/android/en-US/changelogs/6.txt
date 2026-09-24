@@ -1,0 +1,1 @@
+Paddle Lite, the offline recognition runtime, can now be built from source on the F-Droid build server, with every source input pinned and verified. The Android build no longer requires JDK 17 and works with JDK 21 alone. No changes to app features.
