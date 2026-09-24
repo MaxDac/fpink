@@ -81,12 +81,16 @@ For the F-Droid-compatible source-runtime path, provide the Android NDK and
 run:
 
 ```bash
-ANDROID_NDK_ROOT="$ANDROID_SDK_ROOT/ndk/28.2.13676358" \
-  ./gradlew --no-daemon --console=plain \
-  -PbuildPaddleRuntimeFromSource \
+bash recognition/paddle/scripts/build-runtime.sh fetch
+NDK_ROOT="$ANDROID_SDK_ROOT/ndk/28.2.13676358" \
+  bash recognition/paddle/scripts/build-runtime.sh build
+./gradlew --no-daemon --console=plain \
+  -PpaddleRuntimeBuiltFromSource \
   :recognition:paddle:verifyPaddleArtifacts \
   :recognition:paddle:assembleRelease
 ```
+
+(`-PbuildPaddleRuntimeFromSource` instead runs the whole script from Gradle.)
 
 This source build is intentionally separate from ordinary CI until the pinned
 Paddle Lite build has been qualified on the F-Droid build image. It must not

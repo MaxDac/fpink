@@ -154,19 +154,47 @@ No source-format `pdiparams` or duplicate source checkpoints are packaged.
 
 ## Source-built runtime path
 
-F-Droid and other clean Linux builds must pass
-`-PbuildPaddleRuntimeFromSource`. This runs `scripts/build-runtime.sh`, checks
-out the exact Paddle Lite commit in `source-runtime.lock.json`, invokes the
-upstream Android build script with CPU-only settings, copies the generated
-ARM64 runtime and public headers into the module, and verifies the resulting
-ELF. The source-build path requires `git`, Python 3, Bash, `readelf` (or
-`llvm-readelf`) and the pinned Android NDK exposed through `ANDROID_NDK_ROOT` or
-`ANDROID_NDK_HOME`.
+F-Droid and other clean Linux builds build the runtime with
+`scripts/build-runtime.sh`, which checks out the exact Paddle Lite commit in
+`source-runtime.lock.json`, applies the recorded source preparation (removes
+the unused Java demo containing a prebuilt `gradle-wrapper.jar`, pins the
+unused flatbuffers `ExternalProject` to a GitHub commit, renames a helper that
+shadows Python's `ast` module), invokes the upstream tiny-publish
+`lite/tools/build_android.sh` with the recorded CPU-only arguments, copies
+`inference_lite_lib.android.armv8/cxx/{lib,include}` outputs into the module,
+checks the AArch64 ELF and 16 KB alignment, and writes
+`build/source-output/SHA256SUMS` and `PROVENANCE`. The tiny-publish build uses
+no network after checkout and fails if any `ExternalProject` download occurs.
 
-The checked-in runtime remains only as a developer fallback while the source
-build is qualified; it is not the F-Droid build input. A source build must
-record `build/source-output/SHA256SUMS` and `PROVENANCE`, and its output must
-pass the same dependency and 16 KB alignment checks as the fallback artifact.
+The script has two phases so the network fetch can run before a source scan
+and the compilation after it:
+
+```bash
+bash recognition/paddle/scripts/build-runtime.sh fetch     # network: git fetch of the pinned commit
+NDK_ROOT=/path/to/ndk/28.2.13676358 \
+  bash recognition/paddle/scripts/build-runtime.sh build   # offline compilation
+./gradlew -PpaddleRuntimeBuiltFromSource :app:assembleFossRelease
+```
+
+With `-PpaddleRuntimeBuiltFromSource`, Gradle does not rebuild anything: it
+skips the prebuilt hashes for the runtime and the two headers and instead
+requires `PROVENANCE` to match `source-runtime.lock.json` and the three files to
+match `SHA256SUMS`. `-PbuildPaddleRuntimeFromSource` still runs the whole script
+(`all`) from Gradle, which is convenient locally but hides the script output in
+the Gradle daemon.
+
+Host tools: `bash`, `git`, `python3`, `cmake` (3.31 on the F-Droid buildserver;
+CMake 4 works through `CMAKE_POLICY_VERSION_MINIMUM`), `make`, coreutils
+(`sha256sum`, `nproc`), `sed`, `grep`, `awk`, and `readelf` from binutils (the NDK's
+`llvm-readelf` is used as a fallback). The Android build itself uses the NDK
+clang; no host C++ compiler is needed for the runtime (the JNI geometry host
+test still needs `g++`). The NDK is taken from `NDK_ROOT`, `ANDROID_NDK_ROOT`,
+`ANDROID_NDK_HOME` or `ANDROID_NDK` and must be revision `28.2.13676358`.
+On Debian: `apt-get install -y git python3 cmake make binutils`.
+
+The checked-in runtime remains the default developer/CI input; it is not the
+F-Droid build input. A source build must pass the same dependency and 16 KB
+alignment checks as the fallback artifact.
 
 ## Public provenance (no gated material)
 

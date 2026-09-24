@@ -1,20 +1,61 @@
 {
-  "schema": 1,
+  "schema": 2,
   "source": {
     "repository": "https://github.com/PaddlePaddle/Paddle-Lite.git",
     "commit": "28fe23f222de1865e01f0ab41d2494a1222be4f0",
     "license": "Apache-2.0"
   },
+  "preparation": {
+    "remove": [
+      "lite/demo/java"
+    ],
+    "rename": {
+      "lite/tools/cmake_tools/ast.py": "lite/tools/cmake_tools/lite_ast.py",
+      "reason": "Shadows the Python standard-library ast module (breaks on Python >= 3.14); importers are rewritten to 'from lite_ast import'."
+    },
+    "flatbuffers": {
+      "file": "cmake/external/flatbuffers.cmake",
+      "replaces": "https://paddlelite-data.bj.bcebos.com/third_party_libs/flatbuffers-1.12.0.zip",
+      "repository": "https://github.com/google/flatbuffers.git",
+      "tag": "v1.12.0",
+      "commit": "6df40a2471737b27271bdd9b900ab5f3aec746c7",
+      "license": "Apache-2.0",
+      "usedByThisBuild": false,
+      "note": "Only configured with -DLITE_UPDATE_FBS_HEAD=ON. The tiny publish uses the pre-generated headers in third-party/flatbuffers/pre-build of the pinned Paddle Lite commit; the build fails if any ExternalProject download stamp appears."
+    }
+  },
   "build": {
     "script": "lite/tools/build_android.sh",
-    "abi": "armv8",
-    "androidMinSdk": 26,
-    "withCv": true,
-    "withExtra": true,
-    "runtime": "libpaddle_light_api_shared.so",
+    "arch": "armv8",
+    "toolchain": "clang",
+    "arguments": [
+      "--arch=armv8",
+      "--toolchain=clang",
+      "--android_stl=c++_shared",
+      "--android_api_level=26",
+      "--with_cv=ON",
+      "--with_extra=ON",
+      "--with_java=OFF"
+    ],
+    "ndkRelease": "r28c",
+    "ndkRevision": "28.2.13676358",
+    "publishDirectory": "inference_lite_lib.android.armv8",
+    "runtime": "cxx/lib/libpaddle_light_api_shared.so",
     "headers": [
-      "cxx/include/paddle_api.h",
-      "cxx/include/paddle_place.h"
+      "paddle_api.h",
+      "paddle_place.h"
+    ],
+    "networkInputs": [
+      "source.repository@source.commit (git, fetch phase only)"
+    ],
+    "hostTools": [
+      "bash",
+      "git",
+      "python3",
+      "cmake (3.10-3.31; CMake 4 via CMAKE_POLICY_VERSION_MINIMUM)",
+      "make",
+      "sha256sum (coreutils)",
+      "readelf (binutils) or NDK llvm-readelf"
     ]
   }
 }
