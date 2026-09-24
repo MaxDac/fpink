@@ -82,7 +82,7 @@ class CaptureViewModel(
             try {
                 settings.storedSettings.collect { stored ->
                     val selection = stored.settings
-                    val settingsError = if (selection.provider == RecognitionProviderId.PADDLE) null else {
+                    val settingsError = if (selection.provider in setOf(RecognitionProviderId.PADDLE, RecognitionProviderId.KRAKEN)) null else {
                         stored.keyError ?: if (selection.config.isEmpty()) {
                             "Configure the selected provider's settings before using this image."
                         } else null
@@ -91,10 +91,10 @@ class CaptureViewModel(
                         it.copy(
                             providerAvailable = settingsError == null,
                             settingsError = settingsError,
-                            providerLabel = if (selection.provider == RecognitionProviderId.PADDLE) {
-                                "PaddleOCR · offline · English · requires ARM64"
-                            } else {
-                                "Cloud recognition · this image will be uploaded to the selected provider"
+                            providerLabel = when (selection.provider) {
+                                RecognitionProviderId.PADDLE -> "PaddleOCR · offline · English · requires ARM64"
+                                RecognitionProviderId.KRAKEN -> "Kraken OCR · offline · cursive-focused · ONNX"
+                                else -> "Cloud recognition · this image will be uploaded to the selected provider"
                             },
                         )
                     }

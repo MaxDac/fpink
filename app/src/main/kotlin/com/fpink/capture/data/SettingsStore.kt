@@ -132,7 +132,7 @@ class SettingsStore internal constructor(
     }.flowOn(Dispatchers.IO)
 
     val recognitionSettings: Flow<RecognitionSettings> = storedSettings.map {
-        if (it.settings.provider != RecognitionProviderId.PADDLE && it.keyError != null) {
+        if (it.settings.provider !in setOf(RecognitionProviderId.PADDLE, RecognitionProviderId.KRAKEN) && it.keyError != null) {
             throw RecognitionError.Configuration(it.keyError)
         }
         it.settings

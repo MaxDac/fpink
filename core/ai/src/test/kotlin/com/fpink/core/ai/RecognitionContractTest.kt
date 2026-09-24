@@ -10,6 +10,7 @@ class RecognitionContractTest {
     @Test
     fun `settings default to offline and never print the key`() {
         assertEquals(RecognitionProviderId.PADDLE, RecognitionSettings().provider)
+        assertEquals("kraken", RecognitionProviderId.KRAKEN.id)
         assertFalse(RecognitionSettings(RecognitionProviderId("cloud"), mapOf("apiKey" to "private-key")).toString().contains("private-key"))
     }
 

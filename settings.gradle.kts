@@ -18,6 +18,7 @@ include(":core:model")
 include(":core:ai")
 include(":core:storage")
 include(":recognition:paddle")
+include(":recognition:kraken")
 
 // Private-companion-repo modules (Azure/MyScript), only present when the `private/`
 // submodule has been checked out locally. Absent in public clones, CI, and F-Droid.

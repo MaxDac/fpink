@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,7 +42,9 @@ fun SettingsScreen(
     onBack: () -> Unit,
     appearance: ThemeUiState,
     onThemeSelected: (ThemeMode) -> Unit,
-    viewModel: SettingsViewModel = containerViewModel { SettingsViewModel(it.settingsStore) },
+    viewModel: SettingsViewModel = containerViewModel {
+        SettingsViewModel(it.settingsStore, it.recognitionReadinessChecks())
+    },
     onZettelkastenConfigureClick: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -68,6 +71,26 @@ fun SettingsScreen(
             AppearanceSettings(appearance, onThemeSelected)
             HorizontalDivider()
             state.message?.let { Text(it) }
+            Text("Recognition provider", style = MaterialTheme.typography.titleMedium)
+            state.recognitionProviders.forEach { provider ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RadioButton(
+                        selected = state.selectedProvider == provider.id,
+                        onClick = { viewModel.selectProvider(provider.id) },
+                        enabled = !state.loading,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(provider.label)
+                        Text(provider.description, style = MaterialTheme.typography.bodySmall)
+                        Text(provider.readiness, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            HorizontalDivider()
             Text("Beta features", style = MaterialTheme.typography.titleMedium)
             Row(
                 modifier = Modifier.fillMaxWidth(),

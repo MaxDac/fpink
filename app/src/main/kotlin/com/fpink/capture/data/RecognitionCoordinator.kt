@@ -90,7 +90,11 @@ class RecognitionCoordinator internal constructor(
     suspend fun confirm(sourceId: String): RecognitionSettings {
         requireNotCancelled(sourceId)
         val selected = readSettings()
-        val snapshot = if (selected.provider == RecognitionProviderId.PADDLE) RecognitionSettings() else selected
+        val snapshot = if (selected.provider in setOf(RecognitionProviderId.PADDLE, RecognitionProviderId.KRAKEN)) {
+            RecognitionSettings(selected.provider)
+        } else {
+            selected
+        }
         rememberSelection(sourceId, snapshot)
         records.getOrPut(sourceId) { Record() }.snapshot = snapshot
         return snapshot
@@ -121,10 +125,10 @@ class RecognitionCoordinator internal constructor(
                         val image = loadImage(sourceId)
                         requireNotCancelled(sourceId)
                         record.state.value = RecognitionJobState.Working(
-                            if (snapshot.provider == RecognitionProviderId.PADDLE) {
-                                "Recognizing on this device with PaddleOCR…"
-                            } else {
-                                "Uploading to your selected recognition provider and recognizing…"
+                            when (snapshot.provider) {
+                                RecognitionProviderId.PADDLE -> "Recognizing on this device with PaddleOCR…"
+                                RecognitionProviderId.KRAKEN -> "Recognizing on this device with Kraken OCR…"
+                                else -> "Uploading to your selected recognition provider and recognizing…"
                             },
                         )
                         val recognition = providerFactory(snapshot).recognize(image).getOrThrow()
@@ -253,10 +257,10 @@ internal fun Throwable.toJobFailure(): RecognitionJobState.Failed = when (this) 
         "The selected provider rejected the credentials or resource access. Check the settings for that provider. No other provider was used.", false,
     )
     is RecognitionError.ModelUnavailable -> RecognitionJobState.Failed(
-        "The bundled PaddleOCR model or native runtime is unavailable. Check model readiness in Settings. No cloud request was made.", false,
+        "The bundled OCR model or native runtime is unavailable. Check model readiness in Settings. No cloud request was made.", false,
     )
     is RecognitionError.UnsupportedDevice -> RecognitionJobState.Failed(
-        "PaddleOCR cannot run on this device or input. Check Settings for model/device support; no provider was switched automatically.", false,
+        "The selected offline OCR provider cannot run on this device or input. Check Settings for model/device support; no provider was switched automatically.", false,
     )
     is RecognitionError.Network -> RecognitionJobState.Failed(
         "The selected provider could not be reached or timed out. Check your connection, then retry this same job.", true,

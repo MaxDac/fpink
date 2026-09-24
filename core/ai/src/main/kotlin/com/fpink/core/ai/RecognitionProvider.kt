@@ -5,14 +5,15 @@ import com.fpink.core.model.InkColorOrigin
 import java.util.ServiceLoader
 
 /**
- * Open identifier so providers outside this module (never part of the public/FOSS build)
- * can be selected without editing this file. [PADDLE] is the only built-in value; any other
- * id is resolved at runtime through [RecognitionProviderRegistry].
+ * Open identifier so providers outside this module can be selected without editing this file.
+ * [PADDLE] and [KRAKEN] are public offline built-ins; any other id is resolved at runtime
+ * through [RecognitionProviderRegistry].
  */
 @JvmInline
 value class RecognitionProviderId(val id: String) {
     companion object {
         val PADDLE = RecognitionProviderId("paddle")
+        val KRAKEN = RecognitionProviderId("kraken")
     }
 }
 

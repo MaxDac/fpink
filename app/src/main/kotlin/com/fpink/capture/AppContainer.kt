@@ -12,6 +12,7 @@ import com.fpink.core.ai.RecognitionProviderId
 import com.fpink.core.ai.RecognitionProviderRegistry
 import com.fpink.core.ai.RecognitionSettings
 import com.fpink.core.storage.NoteRepository
+import com.fpink.recognition.kraken.KrakenOcrProvider
 import com.fpink.recognition.paddle.PaddleOcrProvider
 
 class AppContainer(context: Context) {
@@ -29,14 +30,19 @@ class AppContainer(context: Context) {
     )
 
     /**
-     * `PADDLE` is the only provider built into this (FOSS) build. Any other id is resolved
-     * through [RecognitionProviderRegistry], which only finds a match when a private,
-     * non-public provider module (e.g. Azure or MyScript) has been compiled into the app —
-     * never true for the public build or public CI.
+     * `PADDLE` and `KRAKEN` are the providers built into this (FOSS) build. Any other id is
+     * resolved through [RecognitionProviderRegistry], which only finds a match when a private,
+     * non-public provider module (e.g. Azure or MyScript) has been compiled into the app.
      */
     fun recognitionProvider(settings: RecognitionSettings): RecognitionProvider = when (settings.provider) {
         RecognitionProviderId.PADDLE -> PaddleOcrProvider(appContext)
+        RecognitionProviderId.KRAKEN -> KrakenOcrProvider(appContext)
         else -> RecognitionProviderRegistry.find(settings.provider)?.create(appContext, settings)
             ?: throw RecognitionError.Configuration("The selected recognition provider is not available in this build.")
     }
+
+    fun recognitionReadinessChecks(): Map<RecognitionProviderId, suspend () -> Result<Unit>> = mapOf(
+        RecognitionProviderId.PADDLE to { PaddleOcrProvider.readiness(appContext) },
+        RecognitionProviderId.KRAKEN to { KrakenOcrProvider.readiness(appContext) },
+    )
 }
