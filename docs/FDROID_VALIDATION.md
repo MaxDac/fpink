@@ -27,11 +27,38 @@ Use a fresh Debian-based host or an F-Droid buildserver VM. Record:
 - Linux distribution/image and architecture.
 - `fdroidserver` version or commit, Python version, Git version, and whether
   the isolated buildserver VM was used.
-- JDK 17.
+- JDK 17 or 21 (Gradle toolchains are not used; Kotlin/Java target 17).
 - Android platform 37 and build-tools 36.0.0.
 - NDK `28.2.13676358`.
-- CMake 3.22.1 and a GCC-compatible C++17 compiler.
+- CMake 3.22.1 (app JNI) and CMake 3.31 (Paddle Lite source build), plus a
+  GCC-compatible C++17 compiler.
+- Paddle Lite source-build host tools: `bash`, `git`, `python3`, `cmake`,
+  `make`, coreutils, `sed`, `grep`, `awk`, `binutils` (`readelf`).
 - Gradle wrapper version and distribution checksum.
+
+### Paddle Lite runtime in the recipe
+
+Build the runtime in two phases so the network fetch happens in `prebuild`
+and compilation happens in `build`, after the F-Droid source scan (a `.so`
+produced in `prebuild` would be flagged by the scanner):
+
+```yaml
+    sudo:
+      - apt-get update
+      - apt-get install -y git python3 cmake make binutils
+    rm:
+      - recognition/paddle/native/arm64-v8a/libpaddle_light_api_shared.so
+    prebuild: bash -x recognition/paddle/scripts/build-runtime.sh fetch
+    build: NDK_ROOT=$$NDK$$ bash -x recognition/paddle/scripts/build-runtime.sh build
+    ndk: r28c
+    gradleprops:
+      - paddleRuntimeBuiltFromSource
+```
+
+`paddleRuntimeBuiltFromSource` makes Gradle verify
+`recognition/paddle/build/source-output/PROVENANCE` and `SHA256SUMS` against
+`recognition/paddle/source-runtime.lock.json` instead of the prebuilt hashes;
+it does not rebuild the runtime.
 
 Acquire only public sources declared by the metadata and provenance records.
 Record every URL, revision, archive hash, SDK package, and tool version. After
