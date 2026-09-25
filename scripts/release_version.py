@@ -8,6 +8,12 @@ Drafts reserve their tag names but do not contribute version codes.
 All published manifests must use the same signing certificate; rotation is not
 supported. Resolved metadata exposes its lowercase SHA-256 fingerprint as
 previousSigningCertificateSha256, or null before the first published release.
+
+With --version-properties, the committed version.properties declares the
+release built from this commit (merged through a release-bump PR created with
+--prepare), so that F-Droid's checkupdates reads the same versionName and
+versionCode from the tag. The resolved release must match it exactly and have a
+Fastlane changelog.
 """
 
 from __future__ import annotations
@@ -26,7 +32,9 @@ from typing import Optional
 
 APPLICATION_ID = "com.fpink.capture"
 MAX_VERSION_CODE = 2_100_000_000
+MAX_CHANGELOG_CHARACTERS = 500
 ROOT = Path(__file__).resolve().parent.parent
+CHANGELOG_DIRECTORY = Path("fastlane/metadata/android/en-US/changelogs")
 VERSION = re.compile(
     r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
@@ -161,7 +169,7 @@ def run_command(arguments, root: Path, allowed_returncodes=(0,)):
     return result
 
 
-def load_baseline(path: Path):
+def load_baseline(path: Path, allow_prerelease: bool = False):
     try:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as error:
@@ -179,7 +187,7 @@ def load_baseline(path: Path):
     if set(properties) != {"versionName", "versionCode"}:
         raise ReleaseVersionError("Source baseline requires versionName and versionCode")
     version = Version.parse(properties["versionName"], "Source baseline versionName")
-    if version.prerelease:
+    if version.prerelease and not allow_prerelease:
         raise ReleaseVersionError("Source baseline versionName must be a stable X.Y.Z version")
     code_text = properties["versionCode"]
     if re.fullmatch(r"[1-9][0-9]*", code_text) is None:
@@ -305,9 +313,19 @@ def validate_manifest(manifest, release_tag: str):
 def resolve_version(
     repository: str, source_sha: str, requested_version: Optional[str] = None,
     root: Path = ROOT, release_type: str = "stable",
+    version_file: Optional[Path] = None, prepare: bool = False,
 ):
+    """Resolve the next release.
+
+    Without ``version_file``, version.properties is a stable baseline and a code floor.
+    With it, version.properties declares a release (release-bump PR): its base version
+    is the baseline and its code the minimum. A release must then match the declaration
+    exactly; ``prepare`` computes the next declaration instead.
+    """
     if release_type not in {"stable", "prerelease"}:
         raise ReleaseVersionError("Release type must be stable or prerelease")
+    if prepare and version_file is None:
+        raise ReleaseVersionError("Preparing a release requires a version.properties path")
     source_sha = valid_sha(source_sha, "--source-sha")
     requested = (
         Version.parse(requested_version, "--requested-version")
@@ -315,10 +333,27 @@ def resolve_version(
     )
     if requested is not None and bool(requested.prerelease) != (release_type == "prerelease"):
         raise ReleaseVersionError("Requested version suffix must match the selected release type")
+    declared = declared_code = None
+    if version_file is not None:
+        declared, declared_code = load_baseline(version_file, allow_prerelease=True)
+        if not prepare:
+            if requested is not None and requested != declared:
+                raise ReleaseVersionError(
+                    f"Requested version {requested} differs from version.properties ({declared}); "
+                    "merge a release-bump PR first"
+                )
+            if bool(declared.prerelease) != (release_type == "prerelease"):
+                raise ReleaseVersionError(
+                    f"version.properties declares {declared}, which does not match release type {release_type}"
+                )
+            requested = declared
     github = GitHubClient(repository, root)
     git = GitRepository(root)
     git.validate_source(source_sha)
-    baseline_version, baseline_code = load_baseline(root / "version.properties")
+    if declared is None:
+        baseline_version, baseline_code = load_baseline(root / "version.properties")
+    else:
+        baseline_version, baseline_code = declared.base, declared_code - 1
     releases = github.pages("releases")
     tags = github.pages("tags")
 
@@ -420,6 +455,11 @@ def resolve_version(
         raise ReleaseVersionError("Resolved version must be greater than the highest published version")
     code = max({baseline_code} | codes) + 1
     valid_code(code, "Next versionCode")
+    if declared is not None and not prepare and code != declared_code:
+        raise ReleaseVersionError(
+            f"version.properties versionCode {declared_code} must be greater than every published "
+            f"versionCode (highest {max(codes)})"
+        )
     return {
         "schemaVersion": 1,
         "applicationId": APPLICATION_ID,
@@ -431,6 +471,46 @@ def resolve_version(
         "previousSigningCertificateSha256": previous_signing_certificate,
         "isPrerelease": bool(version.prerelease),
     }
+
+
+def changelog_path(root: Path, code: int) -> Path:
+    return root / CHANGELOG_DIRECTORY / f"{code}.txt"
+
+
+def check_changelog(root: Path, code: int):
+    path = changelog_path(root, code)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ReleaseVersionError(
+            f"Release versionCode {code} requires the changelog {path.relative_to(root).as_posix()}: {error}"
+        ) from error
+    if not text.strip():
+        raise ReleaseVersionError(f"Changelog {path.relative_to(root).as_posix()} is empty")
+    if len(text) > MAX_CHANGELOG_CHARACTERS:
+        raise ReleaseVersionError(
+            f"Changelog {path.relative_to(root).as_posix()} exceeds {MAX_CHANGELOG_CHARACTERS} characters"
+        )
+
+
+def check_version_properties(root: Path = ROOT):
+    """Offline pull-request check: a declared release (versionCode > 1) needs its changelog."""
+    version, code = load_baseline(root / "version.properties", allow_prerelease=True)
+    if code > 1:
+        check_changelog(root, code)
+    return version, code
+
+
+def write_version_properties(metadata, version_file: Path, root: Path = ROOT):
+    version_file.write_text(
+        f"versionName={metadata['versionName']}\nversionCode={metadata['versionCode']}\n",
+        encoding="utf-8", newline="\n",
+    )
+    changelog = changelog_path(root, metadata["versionCode"])
+    if not changelog.exists():
+        changelog.parent.mkdir(parents=True, exist_ok=True)
+        changelog.write_text("", encoding="utf-8", newline="\n")
+    return changelog
 
 
 def write_outputs(metadata, path: Path):
@@ -463,22 +543,63 @@ def write_outputs(metadata, path: Path):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repository", required=True, help="GitHub OWNER/REPO")
-    parser.add_argument("--source-sha", required=True, help="Full SHA of the checked-out source commit")
+    parser.add_argument("--repository", help="GitHub OWNER/REPO")
+    parser.add_argument("--source-sha", help="Full SHA of the checked-out source commit (default with --prepare: HEAD)")
     parser.add_argument("--requested-version", help="Optional version, matching the release type (no v prefix)")
     parser.add_argument("--release-type", choices=("stable", "prerelease"), default="stable")
-    parser.add_argument("--output", required=True, type=Path, help="Resolved metadata JSON path")
+    parser.add_argument("--output", type=Path, help="Resolved metadata JSON path")
+    parser.add_argument(
+        "--version-properties", type=Path,
+        help="version.properties declaring the release on this commit; the release must match it and its changelog",
+    )
+    parser.add_argument(
+        "--prepare", action="store_true",
+        help="Write the next release into --version-properties and create its changelog stub (release-bump PR)",
+    )
+    parser.add_argument(
+        "--check-version-properties", action="store_true",
+        help="Offline check that a declared release in version.properties has a valid changelog",
+    )
     arguments = parser.parse_args(argv)
     try:
+        if arguments.check_version_properties:
+            version, code = check_version_properties()
+            print(f"version.properties declares {version} (versionCode {code})")
+            return 0
+        if arguments.prepare:
+            arguments.version_properties = arguments.version_properties or ROOT / "version.properties"
+            if arguments.source_sha is None:
+                arguments.source_sha = run_command(
+                    ["git", "rev-parse", "--verify", "HEAD^{commit}"], ROOT
+                ).stdout.strip()
+        missing = [name for name in ("repository", "source_sha") if getattr(arguments, name) is None]
+        if not arguments.prepare and arguments.output is None:
+            missing.append("output")
+        if missing:
+            parser.error("the following arguments are required: " + ", ".join(
+                "--" + name.replace("_", "-") for name in missing))
+        options = {"release_type": arguments.release_type}
+        if arguments.version_properties is not None:
+            options.update(version_file=arguments.version_properties, prepare=arguments.prepare)
         metadata = resolve_version(
-            arguments.repository, arguments.source_sha, arguments.requested_version,
-            release_type=arguments.release_type,
+            arguments.repository, arguments.source_sha, arguments.requested_version, **options,
         )
-        write_outputs(metadata, arguments.output)
+        if arguments.version_properties is not None and not arguments.prepare:
+            check_changelog(ROOT, metadata["versionCode"])
+        if arguments.prepare:
+            changelog = write_version_properties(metadata, arguments.version_properties)
+            print(
+                f"Prepared {metadata['tag']} (versionCode {metadata['versionCode']}).\n"
+                f"Fill in {changelog.relative_to(ROOT).as_posix()} and open a PR titled "
+                f"'Release {metadata['versionName']}' from a branch such as release/{metadata['versionName']}."
+            )
+        if arguments.output is not None:
+            write_outputs(metadata, arguments.output)
     except (ReleaseVersionError, OSError, UnicodeError) as error:
         print(f"Release version resolution failed: {error}", file=sys.stderr)
         return 1
-    print(f"Resolved {metadata['tag']} (versionCode {metadata['versionCode']})")
+    if not arguments.prepare:
+        print(f"Resolved {metadata['tag']} (versionCode {metadata['versionCode']})")
     return 0
 
 
