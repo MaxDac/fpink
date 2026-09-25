@@ -241,7 +241,8 @@ androidComponents {
 
         if (variant.flavorName == "foss") {
             val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
-            val verifyOffline = tasks.register("verify${variant.name.replaceFirstChar { it.uppercase() }}OfflineManifest") {
+            val variantName = variant.name
+            val verifyOffline = tasks.register("verify${variantName.replaceFirstChar { it.uppercase() }}OfflineManifest") {
                 group = "verification"
                 description = "Check that the public build requests no network permissions."
                 inputs.file(mergedManifest)
@@ -250,10 +251,10 @@ androidComponents {
                     val forbidden = listOf("android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE")
                         .filter { manifest.contains("\"$it\"") }
                     check(forbidden.isEmpty()) {
-                        "The ${variant.name} merged manifest must stay offline but requests $forbidden"
+                        "The $variantName merged manifest must stay offline but requests $forbidden"
                     }
                     check(!manifest.contains("ai.onnxruntime.TelemetryInitializer")) {
-                        "The ${variant.name} merged manifest must not register ONNX Runtime's telemetry initializer"
+                        "The $variantName merged manifest must not register ONNX Runtime's telemetry initializer"
                     }
                 }
             }

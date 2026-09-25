@@ -191,8 +191,9 @@ mask shrinking of FPInk's own classes, also smoke-test the exact
 confirm Settings lists both PaddleOCR and Kraken OCR as ready, and recognize an
 imported page with each provider. On x86_64 emulators with ARM64 native-bridge
 translation, the arm64 ONNX Runtime crashes in its static initializers, so
-Kraken (and the Settings screen, which checks Kraken readiness) can only be
-validated on real ARM64 hardware; Paddle works under translation.
+Kraken detects the translation layer and fails closed as an unsupported device
+(its acceptance test is skipped there); validate Kraken on real ARM64 hardware.
+Paddle works under translation.
 
 ## Repeatability and diagnostics
 

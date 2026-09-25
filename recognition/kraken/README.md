@@ -70,7 +70,9 @@ Chaquopy, network fetch, or dynamic model download happens at build or runtime.
   inputs"); other ABIs fail closed with `UnsupportedDevice` rather than
   silently degrading. The app APK itself packages `arm64-v8a` native code only
   (see `app/build.gradle.kts`), so x86_64 support applies to this module's own
-  tests, not to the published APK.
+  tests, not to the published APK. When the arm64 APK runs through an x86
+  ARM-translation layer, readiness fails closed with `UnsupportedDevice` before
+  loading ONNX Runtime, which otherwise crashes in its static initializers.
 * The full capture -> Settings -> select Kraken -> recognize UI flow was not
   driven end-to-end through Compose UI automation in this validation pass; the
   `connectedDebugAndroidTest` instrumentation exercises `KrakenOcrProvider`

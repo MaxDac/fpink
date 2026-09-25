@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.os.Build
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.fpink.capture.acceptance.AcceptanceStorage
 import com.fpink.capture.data.AndroidFileStore
@@ -21,6 +22,7 @@ import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -85,8 +87,9 @@ class NativePipelineAcceptanceTest {
         }
     }
 
-    /** Needs real arm64 hardware: arm64 ONNX Runtime crashes in its static initializers under x86 native bridges. */
+    /** Needs real arm64 hardware: Kraken fails closed under x86 ARM-translation layers, so it is skipped there. */
     @Test fun importedPageIsRecognizedLocallyByKraken() = runBlocking {
+        assumeTrue("Kraken needs a native arm64-v8a device", Build.SUPPORTED_ABIS.firstOrNull() == "arm64-v8a")
         AcceptanceStorage().use { storage ->
             assertTrue("Kraken readiness failed", KrakenOcrProvider.readiness(storage.context).isSuccess)
             storage.settings.save(RecognitionProviderId.KRAKEN, removeConfig = true)
