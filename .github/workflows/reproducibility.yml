@@ -41,9 +41,15 @@ jobs:
           - name: replay, all cores
             builder: replay
             threads: ''
-          - name: replay, 2 threads
+          # Also runs the release workflow's check tasks, which must not change the APK.
+          - name: replay, 2 threads, release checks
             builder: replay
             threads: '2'
+            checks: >-
+              --check-task :app:testFossDebugUnitTest --check-task :core:ai:test --check-task :core:model:test
+              --check-task :core:storage:test --check-task :recognition:paddle:test --check-task :recognition:kraken:test
+              --check-task :app:lintFossRelease --check-task :app:verifyFossReleaseRecognitionPackage
+              --check-task :app:verifyFossReleaseOfflineManifest
           - name: fdroid build
             builder: fdroidserver
             threads: ''
@@ -65,7 +71,7 @@ jobs:
           LITE_BUILD_THREADS: ${{ matrix.threads }}
         run: |
           if [[ "${{ matrix.builder }}" == replay ]]; then
-            bash scripts/fdroid-rb-docker.sh out
+            bash scripts/fdroid-rb-docker.sh out ${{ matrix.checks }}
           else
             bash scripts/fdroid-server-build.sh out
           fi
