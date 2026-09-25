@@ -220,13 +220,14 @@ def main(argv=None) -> int:
     parser.add_argument("--check-task", action="append", default=[], dest="check_tasks",
                         help="Gradle task to run after the APK is copied out (tests, lint, verification)")
     arguments = parser.parse_args(argv)
-    # The mounted checkout belongs to the host user; `git -c` does not reach upload-pack.
-    os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="safe.directory", GIT_CONFIG_VALUE_0="*")
     try:
         if os.geteuid() != 0:
             raise RbBuildError("Run as root: the recipe's sudo: commands need it, like on the buildserver")
         if not Path("/etc/profile.d/bsenv.sh").is_file() or not (HOME / "gradlew-fdroid").is_dir():
             raise RbBuildError("Run inside registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie")
+        # The mounted checkout belongs to the host user, and a local clone's upload-pack
+        # ignores `git -c` and GIT_CONFIG_*; the container is disposable.
+        run(["git", "config", "--system", "--replace-all", "safe.directory", "*"])
         recipe = load_recipe(arguments.recipe)
         commit = subprocess.run(["git", "-C", ROOT, "rev-parse", "HEAD"],
                                 check=True, capture_output=True, text=True).stdout.strip()

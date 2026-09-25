@@ -26,9 +26,10 @@ curl --silent --fail https://gitlab.com/fdroid/fdroidserver/-/archive/master/fdr
   | tar -xz --directory="$fdroidserver" --strip-components=1
 git -C "$home_vagrant/gradlew-fdroid" pull
 
-data=/tmp/fdroiddata
+# Like fdroiddata CI: run from $home_vagrant, so the app is built in
+# /home/vagrant/build/com.fpink.capture as on the production buildserver.
+data="$home_vagrant"
 mkdir -p "$data/metadata" "$data/build" "$data/tmp" "$data/unsigned" "$data/logs"
-: > "$data/config.yml"
 version_name="$(sed -n "s/^versionName=//p" /src/version.properties)"
 version_code="$(sed -n "s/^versionCode=//p" /src/version.properties)"
 # The last build block of the recipe, pinned to this commit and version. Binaries and
@@ -52,9 +53,12 @@ for d in "$home_vagrant/.android" "$home_vagrant/.gradle"; do mkdir -p "$d"; don
 chown -R vagrant "$data" "$home_vagrant"
 export GRADLE_USER_HOME="$home_vagrant/.gradle"
 cd "$data"
-(unset CI; sudo --preserve-env --user vagrant env PATH="$fdroidserver:$PATH" \
-  PYTHONPATH="$fdroidserver:$fdroidserver/examples" PYTHONUNBUFFERED=true HOME="$home_vagrant" \
-  fdroid build --verbose --test --refresh-scanner --on-server --no-tarball "com.fpink.capture:$version_code")
+fdroid() {
+  sudo --preserve-env --user vagrant env PATH="$fdroidserver:$PATH" \
+    PYTHONPATH="$fdroidserver:$fdroidserver/examples" PYTHONUNBUFFERED=true HOME="$home_vagrant" fdroid "$@"
+}
+fdroid fetchsrclibs "com.fpink.capture:$version_code" --verbose
+(unset CI; fdroid build --verbose --test --refresh-scanner --on-server --no-tarball "com.fpink.capture:$version_code")
 cp "tmp/com.fpink.capture_${version_code}.apk" /out/unsigned.apk
 (cd /out && sha256sum unsigned.apk > SHA256SUMS)
 chmod -R a+rwX /out
