@@ -7,6 +7,8 @@ SourceCode: https://github.com/MaxDac/fpink
 IssueTracker: https://github.com/MaxDac/fpink/issues
 Changelog: https://github.com/MaxDac/fpink/releases
 
+AutoName: FPInk
+
 RepoType: git
 Repo: https://github.com/MaxDac/fpink.git
 Binaries: https://github.com/MaxDac/fpink/releases/download/v%v/FPInk-%v.apk
@@ -24,7 +26,8 @@ Builds:
     rm:
       - recognition/paddle/native/arm64-v8a/libpaddle_light_api_shared.so
     prebuild: bash -x ../recognition/paddle/scripts/build-runtime.sh fetch
-    build: NDK_ROOT=$$NDK$$ bash -x ../recognition/paddle/scripts/build-runtime.sh build
+    build: NDK_ROOT=$$NDK$$ bash -x ../recognition/paddle/scripts/build-runtime.sh
+      build
     ndk: 28.2.13676358
     gradleprops:
       - paddleRuntimeBuiltFromSource
