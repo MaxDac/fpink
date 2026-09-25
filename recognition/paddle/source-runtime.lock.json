@@ -45,7 +45,11 @@
       "paddle_api.h",
       "paddle_place.h"
     ],
-    "expectedSha256": null,
+    "expectedSha256": {
+      "native/arm64-v8a/libpaddle_light_api_shared.so": "dcbb0c3ad7f35c06ff4d7bf0cbe273162bb6e27449b43dab4ce3921803073612",
+      "src/main/cpp/third_party/paddle_lite/paddle_api.h": "96fa8917b2c020f708a6510cb40ff7d4c8da3c97dc7b348b0e458c8da5099d68",
+      "src/main/cpp/third_party/paddle_lite/paddle_place.h": "a1dd6330943ef44836031f4f51dcb5b435378253e8ca5fa7671cec617b72dc6c"
+    },
     "reproducibility": "expectedSha256 pins the stripped runtime and headers built in registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie at /home/vagrant/build/com.fpink.capture (F-Droid's build path) with SOURCE_DATE_EPOCH set to the pinned Paddle Lite commit time; null means not pinned yet. -PpaddleRuntimeBuiltFromSource fails on a mismatch unless -PallowUnpinnedPaddleRuntime is set.",
     "networkInputs": [
       "source.repository@source.commit (git, fetch phase only)"
