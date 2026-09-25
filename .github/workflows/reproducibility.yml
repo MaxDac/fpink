@@ -1,0 +1,128 @@
+name: Reproducibility
+
+# Builds the same commit independently, like F-Droid's buildserver, and requires
+# byte-identical unsigned APKs. F-Droid publishes our signed APK only when its build
+# matches ours apart from the signature (fdroiddata Binaries + AllowedAPKSigningKeys).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/reproducibility.yml'
+      - 'app/**'
+      - 'core/**'
+      - 'recognition/**'
+      - 'gradle/**'
+      - '*.gradle.kts'
+      - 'gradle.properties'
+      - 'version.properties'
+      - 'metadata/**'
+      - 'scripts/fdroid*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reproducibility-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: replay, all cores
+            builder: replay
+            threads: ''
+          - name: replay, 2 threads
+            builder: replay
+            threads: '2'
+          - name: fdroid build
+            builder: fdroidserver
+            threads: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          # The PR head, not the merge commit: fdroid build fetches the commit from GitHub.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/lib/android
+          df -h /
+
+      - name: Build
+        env:
+          LITE_BUILD_THREADS: ${{ matrix.threads }}
+        run: |
+          if [[ "${{ matrix.builder }}" == replay ]]; then
+            bash scripts/fdroid-rb-docker.sh out
+          else
+            bash scripts/fdroid-server-build.sh out
+          fi
+          cat out/SHA256SUMS
+          {
+            echo "### ${{ matrix.name }}"
+            echo '```'
+            cat out/SHA256SUMS
+            if [[ -f out/paddle-runtime-SHA256SUMS ]]; then cat out/paddle-runtime-SHA256SUMS; fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: rb-${{ strategy.job-index }}
+          path: out/
+          if-no-files-found: warn
+          retention-days: 14
+
+  compare:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: rb-*
+          path: builds
+
+      - name: Compare APKs
+        run: |
+          sha256sum builds/*/unsigned.apk | tee -a "$GITHUB_STEP_SUMMARY"
+          reference=builds/rb-0/unsigned.apk
+          status=0
+          for apk in builds/*/unsigned.apk; do
+            if ! cmp -s "$reference" "$apk"; then
+              echo "::error::$apk differs from $reference"
+              status=1
+            fi
+          done
+          if [[ $status != 0 ]]; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends diffoscope-minimal default-jdk-headless
+            for apk in builds/*/unsigned.apk; do
+              cmp -s "$reference" "$apk" && continue
+              name="$(basename "$(dirname "$apk")")"
+              diffoscope --max-report-size 20000000 --text "diffoscope-$name.txt" --html "diffoscope-$name.html" \
+                "$reference" "$apk" || true
+              head -c 60000 "diffoscope-$name.txt"
+            done
+          fi
+          exit $status
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure()
+        with:
+          name: diffoscope
+          path: diffoscope-*
+          if-no-files-found: ignore
+          retention-days: 14

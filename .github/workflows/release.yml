@@ -35,7 +35,7 @@ defaults:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 180
     outputs:
       version_name: ${{ steps.version.outputs.version_name }}
       version_code: ${{ steps.version.outputs.version_code }}
@@ -63,42 +63,54 @@ jobs:
           REQUESTED_VERSION: ${{ inputs.version }}
           RELEASE_TYPE: ${{ inputs.release_type }}
         run: |
+          # The release must be declared in version.properties by a merged release-bump PR
+          # (scripts/release_version.py --prepare): F-Droid's checkupdates reads it at the tag.
           python3 scripts/release_version.py \
             --repository "$GITHUB_REPOSITORY" --source-sha "$GITHUB_SHA" \
             --requested-version "$REQUESTED_VERSION" --release-type "$RELEASE_TYPE" \
-            --output release-metadata.json
+            --version-properties version.properties --output release-metadata.json
 
       - name: Test release tooling
         run: python3 -m unittest discover -s scripts/tests -v
 
+      - name: Free disk space for the buildserver image and Paddle build
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift
+          df -h /
+
+      # Built exactly like F-Droid's buildserver, so F-Droid can reproduce this APK and
+      # publish it with our signature (fdroiddata Binaries + AllowedAPKSigningKeys).
+      - name: Build the reproducible release like F-Droid
+        run: |
+          bash scripts/fdroid-rb-docker.sh rb-output \
+            --check-task :app:testFossDebugUnitTest --check-task :core:ai:test --check-task :core:model:test \
+            --check-task :core:storage:test --check-task :recognition:paddle:test --check-task :recognition:kraken:test \
+            --check-task :app:lintFossRelease --check-task :app:verifyFossReleaseRecognitionPackage \
+            --check-task :app:verifyFossReleaseOfflineManifest
+          cat rb-output/build-env.txt >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: 17.0.18+8
+          java-version: '21'
 
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
-          packages: 'platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358 cmake;3.22.1'
+          packages: 'build-tools;36.0.0'
 
-      - uses: gradle/actions/setup-gradle@4733eaac7c1b0da527e4206b7671e0061de1ce37 # v6
-        with:
-          cache-provider: basic
-
-      - name: Build and verify release
+      - name: Verify release APK
         env:
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
           VERSION_CODE: ${{ steps.version.outputs.version_code }}
         run: |
-          ./gradlew --no-daemon :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test :recognition:kraken:test \
-            :app:lintFossRelease :app:assembleFossRelease :app:verifyFossReleaseRecognitionPackage :app:verifyFossReleaseOfflineManifest \
-            -PrequireReleaseVersion=true "-PreleaseVersionName=$VERSION_NAME" "-PreleaseVersionCode=$VERSION_CODE"
           python3 scripts/verify_release_apk.py \
-            --apk app/build/outputs/apk/foss/release/app-foss-release-unsigned.apk \
+            --apk rb-output/unsigned.apk \
             --version-name "$VERSION_NAME" --version-code "$VERSION_CODE" \
-            --build-tools "$ANDROID_HOME/build-tools/36.0.0"
+            --build-tools "$ANDROID_HOME/build-tools/36.0.0" \
+            --source-runtime-sums rb-output/paddle-runtime-SHA256SUMS
           mkdir release-staging
-          cp app/build/outputs/apk/foss/release/app-foss-release-unsigned.apk release-staging/unsigned.apk
-          cp release-metadata.json LICENSE release-staging/
+          cp rb-output/unsigned.apk release-staging/unsigned.apk
+          cp rb-output/build-env.txt release-metadata.json LICENSE release-staging/
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
@@ -144,11 +156,14 @@ jobs:
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6
         with:
           distribution: temurin
-          java-version: 17.0.18+8
+          java-version: '21'
 
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
           packages: 'platform-tools build-tools;36.0.0'
+
+      - name: Install apksigcopier
+        run: sudo apt-get update && sudo apt-get install -y apksigcopier
 
       - name: Sign and verify APK
         env:
@@ -193,20 +208,25 @@ jobs:
           tools = pathlib.Path(os.environ["ANDROID_HOME"]) / "build-tools/36.0.0"
           output = pathlib.Path("release-assets")
           output.mkdir()
+          # fdroiddata's Binaries URL expects this asset name: releases/download/v%v/FPInk-%v.apk
           apk = output / ("FPInk-" + version + ".apk")
           with tempfile.TemporaryDirectory(prefix="fpink-signing-", dir=os.environ["RUNNER_TEMP"]) as temp:
               keystore = pathlib.Path(temp) / "release.keystore"
               keystore.write_bytes(base64.b64decode(os.environ["KEYSTORE_BASE64"], validate=True))
               keystore.chmod(0o600)
-              aligned = pathlib.Path(temp) / "aligned.apk"
-              subprocess.run([str(tools / "zipalign"), "-P", "16", "-f", "4", "incoming/unsigned.apk", str(aligned)], check=True)
-              subprocess.run([str(tools / "apksigner"), "sign", "--ks", str(keystore),
+              # Sign the reproducible APK as is: F-Droid verifies that our APK is its own build
+              # plus a signature (apksigcopier), so the ZIP must not be realigned or re-padded.
+              subprocess.run([str(tools / "zipalign"), "-c", "-P", "16", "4", "incoming/unsigned.apk"], check=True)
+              subprocess.run([str(tools / "apksigner"), "sign", "--alignment-preserved",
+                              "--v1-signing-enabled", "false", "--v2-signing-enabled", "true",
+                              "--v3-signing-enabled", "true", "--v4-signing-enabled", "false", "--ks", str(keystore),
                               "--ks-key-alias", os.environ["KEY_ALIAS"], "--ks-pass", "env:KEYSTORE_PASSWORD",
-                              "--key-pass", "env:KEY_PASSWORD", "--out", str(apk), str(aligned)], check=True)
+                              "--key-pass", "env:KEY_PASSWORD", "--out", str(apk), "incoming/unsigned.apk"], check=True)
           verification = run(str(tools / "apksigner"), "verify", "--verbose", "--print-certs", str(apk))
           signers = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$", verification, re.MULTILINE)
           require(len(signers) == 1 and signers[0].lower() == certificate, "APK signing certificate mismatch")
           subprocess.run([str(tools / "zipalign"), "-c", "-P", "16", "4", str(apk)], check=True)
+          subprocess.run(["apksigcopier", "compare", str(apk), "--unsigned", "incoming/unsigned.apk"], check=True)
           badging = run(str(tools / "aapt2"), "dump", "badging", str(apk))
           package = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging, re.MULTILINE)
           require(package and package.groups() == ("com.fpink.capture", code, version), "Signed APK identity mismatch")
@@ -254,8 +274,8 @@ jobs:
               "handwriting-quality testing remain separate from CI; see the recognition documentation.\n\n"
               f"License: GPL-3.0-only for FPInk code; third-party components retain their licenses. "
               f"[Corresponding source](https://github.com/{repo}/archive/refs/tags/{tag}.tar.gz) "
-              f"at commit `{sha}`. Build with `-PreleaseVersionName={version} "
-              f"-PreleaseVersionCode={manifest['versionCode']}`; "
+              f"at commit `{sha}`. This APK is a reproducible build: `scripts/fdroid-rb-docker.sh` at the tag "
+              f"rebuilds it byte for byte apart from the signature; "
               f"[build instructions](https://github.com/{repo}/blob/{tag}/docs/RELEASING.md).\n\n"
               f"Signing certificate SHA-256: `{manifest['signingCertificateSha256']}`.\n"
           )

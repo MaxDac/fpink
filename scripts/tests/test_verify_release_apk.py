@@ -89,6 +89,24 @@ class AssetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Empty"):
             verifier.verify_assets(self.apk, self.root)
 
+    def test_source_built_runtime(self):
+        self.entries["lib/arm64-v8a/libpaddle_light_api_shared.so"] = b"source-built"
+        self.write_apk()
+        with self.assertRaisesRegex(ValueError, "pinned"):
+            verifier.verify_assets(self.apk, self.root)
+        verifier.verify_assets(self.apk, self.root, hashlib.sha256(b"source-built").hexdigest())
+        with self.assertRaisesRegex(ValueError, "source-built"):
+            verifier.verify_assets(self.apk, self.root, hashlib.sha256(b"other").hexdigest())
+
+    def test_source_runtime_digest(self):
+        sums = self.root / "SHA256SUMS"
+        sums.write_text("aa  src/main/cpp/third_party/paddle_lite/paddle_api.h\n"
+                        "bb  native/arm64-v8a/libpaddle_light_api_shared.so\n")
+        self.assertEqual(verifier.source_runtime_digest(sums), "bb")
+        sums.write_text("aa  other\n")
+        with self.assertRaises(ValueError):
+            verifier.source_runtime_digest(sums)
+
     def test_duplicate_entry(self):
         self.write_apk()
         with warnings.catch_warnings():

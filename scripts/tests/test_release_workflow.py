@@ -125,6 +125,22 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(list(self.root.glob("fpink-signing-*")), [])
         self.assertEqual(len(Path("release-assets/SHA256SUMS").read_text().splitlines()), 3)
 
+    def test_signing_keeps_the_reproducible_apk_bytes(self):
+        self.sign()
+        sign = next(args for args in self.calls if "sign" in args)
+        self.assertEqual(sign[-1], "incoming/unsigned.apk")
+        for flag, value in (("--v1-signing-enabled", "false"), ("--v2-signing-enabled", "true"),
+                            ("--v3-signing-enabled", "true"), ("--v4-signing-enabled", "false")):
+            self.assertEqual(sign[sign.index(flag) + 1], value)
+        self.assertIn("--alignment-preserved", sign)
+        self.assertFalse(any("-f" in args for args in self.calls if args[0].endswith("zipalign")))
+        compare = next(args for args in self.calls if args[0] == "apksigcopier")
+        self.assertEqual(compare[1:], ["compare", "release-assets/FPInk-0.1.0.apk", "--unsigned", "incoming/unsigned.apk"])
+        self.assertGreater(self.calls.index(compare), self.calls.index(sign))
+        self.assertNotIn("-PreleaseVersionName", WORKFLOW)
+        self.assertIn("--version-properties version.properties", WORKFLOW)
+        self.assertIn("scripts/fdroid-rb-docker.sh", WORKFLOW)
+
     def test_missing_signing_configuration_fails(self):
         os.environ["KEYSTORE_PASSWORD"] = ""
         with self.assertRaisesRegex(RuntimeError, "Missing signing configuration"):
