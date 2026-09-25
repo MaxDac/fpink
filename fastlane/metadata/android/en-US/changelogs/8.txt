@@ -1,0 +1,1 @@
+Builds are now reproducible, so F-Droid can distribute the same upstream-signed APK as GitHub releases. No functional changes since preview.7.
