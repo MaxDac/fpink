@@ -43,22 +43,29 @@ and compilation happens in `build`, after the F-Droid source scan (a `.so`
 produced in `prebuild` would be flagged by the scanner):
 
 ```yaml
+    subdir: app
     sudo:
       - apt-get update
-      - apt-get install -y git python3 cmake make binutils
+      - apt-get install -y binutils cmake g++ gcc git make python3
+    gradle:
+      - foss
     rm:
       - recognition/paddle/native/arm64-v8a/libpaddle_light_api_shared.so
-    prebuild: bash -x recognition/paddle/scripts/build-runtime.sh fetch
-    build: NDK_ROOT=$$NDK$$ bash -x recognition/paddle/scripts/build-runtime.sh build
-    ndk: r28c
+    prebuild: bash -x ../recognition/paddle/scripts/build-runtime.sh fetch
+    build: NDK_ROOT=$$NDK$$ bash -x ../recognition/paddle/scripts/build-runtime.sh build
+    ndk: 28.2.13676358
     gradleprops:
       - paddleRuntimeBuiltFromSource
 ```
 
+With `subdir: app`, fdroidserver runs `prebuild`, `build` and Gradle in `app/`
+(hence `../`), while `rm` stays relative to the repository root. The full
+recipe is mirrored in [`metadata/com.fpink.capture.yml`](../metadata/com.fpink.capture.yml).
+
 `paddleRuntimeBuiltFromSource` makes Gradle verify
 `recognition/paddle/build/source-output/PROVENANCE` and `SHA256SUMS` against
-`recognition/paddle/source-runtime.lock.json` instead of the prebuilt hashes;
-it does not rebuild the runtime.
+`recognition/paddle/source-runtime.lock.json` instead of the prebuilt hashes,
+including `build.expectedSha256` once pinned; it does not rebuild the runtime.
 
 Acquire only public sources declared by the metadata and provenance records.
 Record every URL, revision, archive hash, SDK package, and tool version. After
@@ -77,8 +84,10 @@ fdroid readmeta com.fpink.capture
 ```
 
 Confirm that the filename and application ID are `com.fpink.capture`, the
-repository is public, every build uses a full commit SHA, and the build block
-contains literal `versionName` and `versionCode` values.
+repository is public, every build uses a full commit SHA, and the build block's
+literal `versionName` and `versionCode` match `version.properties` at that
+commit. Check update discovery with `fdroid checkupdates --allow-dirty
+com.fpink.capture` once a tag declaring its release exists.
 
 Canonicalize the metadata and inspect the semantic diff:
 
@@ -120,17 +129,10 @@ If the buildserver is unavailable, a fresh Debian build without `--server` is
 useful for diagnosis but is not equivalent acceptance evidence. Do not reuse the
 server snapshot after changing the recipe or source commit.
 
-The recipe must invoke the root Gradle project and provide:
-
-```text
--PrequireReleaseVersion=true
--PreleaseVersionName=<metadata versionName>
--PreleaseVersionCode=<metadata versionCode>
-```
-
-It must use the checked-in Gradle wrapper and the finalized public native/model
-preparation recipe. It must not fall back to `version.properties` for a release
-version or download unpinned artifacts.
+The recipe builds the `foss` flavor from `app/` with gradlew-fdroid (the
+buildserver deletes `gradlew`) and takes its version from `version.properties`
+at the tagged commit. It must use the finalized public native/model preparation
+recipe and must not download unpinned artifacts.
 
 ## APK acceptance checks
 
@@ -165,7 +167,8 @@ python3 scripts/verify_release_apk.py \
   --apk <fdroidserver-output-apk> \
   --version-name <metadata-version-name> \
   --version-code <metadata-version-code> \
-  --build-tools "$ANDROID_HOME/build-tools/36.0.0"
+  --build-tools "$ANDROID_HOME/build-tools/36.0.0" \
+  --source-runtime-sums <build-dir>/recognition/paddle/build/source-output/SHA256SUMS
 ```
 
 If the runtime/model implementation changes under #27 or #28, port the same
@@ -195,14 +198,50 @@ Kraken detects the translation layer and fails closed as an unsupported device
 (its acceptance test is skipped there); validate Kraken on real ARM64 hardware.
 Paddle works under translation.
 
+## Reproducible builds
+
+F-Droid publishes the upstream-signed APK named by `Binaries` only if its own
+build is identical apart from the signature. fdroidserver downloads the GitHub
+asset, checks its certificate against `AllowedAPKSigningKeys`, and runs the
+equivalent of `apksigcopier compare`; on success it copies our signature onto
+its build and publishes that, otherwise it publishes nothing for the version.
+
+To reproduce locally on a Linux Docker host (committed files only):
+
+```bash
+bash scripts/fdroid-rb-docker.sh out                  # replay of the recipe
+bash scripts/fdroid-server-build.sh out-fd            # real fdroid build (HEAD must be pushed)
+cmp out/unsigned.apk out-fd/unsigned.apk
+curl -LO https://github.com/MaxDac/fpink/releases/download/v<version>/FPInk-<version>.apk
+apksigcopier compare FPInk-<version>.apk --unsigned out/unsigned.apk
+```
+
+The builders use the digest-pinned `fdroidserver:buildserver-trixie` image, so
+the toolchain matches: OpenJDK 21, gradlew-fdroid, NDK 28.2.13676358 and
+Debian's CMake and compilers. The build path is F-Droid's
+`/home/vagrant/build/com.fpink.capture` and `SOURCE_DATE_EPOCH` is the source
+commit time. When bumping the image digest in `scripts/fdroid-rb-docker.sh`,
+rerun the Reproducibility workflow.
+
+To debug a mismatch, run `diffoscope a.apk b.apk` (the Reproducibility workflow
+attaches reports) and look at the first differing entry:
+
+| Differing entry | Usual cause | Fix |
+| --- | --- | --- |
+| `lib/arm64-v8a/libpaddle_light_api_shared.so` | Paddle build embeds paths, timestamps or parallel-build ordering | `-ffile-prefix-map`, `SOURCE_DATE_EPOCH`, `--build-id=none` and stripping in `build-runtime.sh`; pin `build.expectedSha256` once stable |
+| `lib/arm64-v8a/libfpink_paddle.so` | Absolute source paths or build ID | Prefix map and `--build-id=none` in `src/main/cpp/CMakeLists.txt` |
+| `classes*.dex` | R8 nondeterminism or a different JDK/AGP | Same image and JDK; check keep rules |
+| `assets/dexopt/baseline.prof*` | Profile ordering | Compare with a rebuild on the same side first |
+| `META-INF/version-control-info.textproto` or dependency metadata | Checkout state, `dependenciesInfo` | Build a clean checkout; `dependenciesInfo` is disabled |
+| ZIP alignment or padding only | Re-aligned or re-signed APK | Sign with `--alignment-preserved`, never `zipalign -f` |
+
 ## Repeatability and diagnostics
 
 Delete build outputs, temporary acquisition files, Gradle caches, and the
 buildserver snapshot. Recreate the clean environment and repeat the exact
 commit and commands. Compare metadata, source/dependency inventories, APK
 identity, package entries, native/model hashes, and logs. Byte-identical APKs
-are useful evidence but are not required for ordinary inclusion unless the
-project chooses shared-signature reproducibility.
+are required: the recipe uses shared-signature reproducibility (see above).
 
 Use these blocker paths:
 

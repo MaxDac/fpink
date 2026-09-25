@@ -136,7 +136,7 @@ fun verifySourceRuntimeProvenance() {
         check(checksums == pinned) {
             "The source-built Paddle runtime is not the reproducible one pinned in source-runtime.lock.json " +
                 "(build.expectedSha256 $pinned, built $checksums). Build it in the F-Droid buildserver image " +
-                "(scripts/fdroid-rb-build.sh), or pass -PallowUnpinnedPaddleRuntime for a local experiment."
+                "(scripts/fdroid-rb-docker.sh), or pass -PallowUnpinnedPaddleRuntime for a local experiment."
         }
     }
 }
