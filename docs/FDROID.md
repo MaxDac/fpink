@@ -82,7 +82,13 @@ branch with a focused title such as **New app: FPInk**. Include:
 - the validation commands, tool versions, and results;
 - links to gates #27, #28, #30, #31, and #32;
 - runtime and model provenance decisions and their limitations;
-- ARM64-only and offline behavior;
+- ARM64-only and offline behavior (the APK packages `lib/arm64-v8a/` only, the
+  public `foss` build requests no `INTERNET` or `ACCESS_NETWORK_STATE`
+  permission, and ONNX Runtime's bundled 1DS telemetry initializer is removed
+  from the merged manifest);
+- that release builds are shrunk with R8 (`proguard-android-optimize.txt` plus
+  `app/proguard-rules.pro`) while `libpaddle_light_api_shared.so` keeps its
+  exact verified bytes;
 - the optional cloud-recognition-provider network behavior (present only in privately
   built, non-public variants) and any applicable `NonFreeNet` discussion;
 - the F-Droid signing versus shared-signature reproducibility decision; and

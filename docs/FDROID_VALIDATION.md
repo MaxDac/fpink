@@ -142,7 +142,17 @@ entry/hash report. The APK must satisfy all of the following:
 - `versionName` and `versionCode` exactly match the metadata and Gradle
   properties.
 - The package is a release APK and is not debuggable or a test APK.
-- It contains the ARM64 native libraries required by the finalized runtime.
+- It contains the ARM64 native libraries required by the finalized runtime,
+  and no `lib/<abi>/` directory other than `lib/arm64-v8a/`
+  (`:app:verifyFossReleaseRecognitionPackage` enforces this).
+- It requests no `android.permission.INTERNET` or
+  `android.permission.ACCESS_NETWORK_STATE` and does not register
+  `ai.onnxruntime.TelemetryInitializer` (`:app:verifyFossReleaseOfflineManifest`,
+  part of `check`, enforces this on the merged manifest). `CAMERA` and
+  AndroidX's signature-level `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` remain.
+- Its dex carries an R8 marker (`~~R8{...}`), and the packaged
+  `lib/arm64-v8a/libpaddle_light_api_shared.so` is byte-identical to the
+  verified runtime (debug symbols are kept for it on purpose).
 - It contains both OCR models, the dictionary, notices, and license texts
   required by the finalized provenance record.
 - Native and ZIP alignment checks pass, including the project's 16 KB checks.
@@ -161,6 +171,28 @@ python3 scripts/verify_release_apk.py \
 If the runtime/model implementation changes under #27 or #28, port the same
 identity, asset, ELF, and alignment assertions to the replacement verifier
 before accepting the F-Droid build.
+
+## Instrumenting the minified release APK
+
+The acceptance suite normally runs against the debug APK. To run it against the
+R8-minified `fossRelease` APK on an ARM64 device or an x86_64 emulator with
+ARM64 native-bridge translation, use the local-only `instrumentReleaseBuild`
+property (it cannot be combined with release version properties):
+
+```bash
+./gradlew -PinstrumentReleaseBuild :app:connectedFossReleaseAndroidTest
+```
+
+It sets `testBuildType = "release"`, signs with the debug key, adds Compose's
+test activity manifest, and applies `app/proguard-release-instrumentation.pro`,
+which keeps the classes the test APK calls directly. Because those extra keeps
+mask shrinking of FPInk's own classes, also smoke-test the exact
+`:app:assembleFossRelease` output (re-signed only with `apksigner`): launch it,
+confirm Settings lists both PaddleOCR and Kraken OCR as ready, and recognize an
+imported page with each provider. On x86_64 emulators with ARM64 native-bridge
+translation, the arm64 ONNX Runtime crashes in its static initializers, so
+Kraken (and the Settings screen, which checks Kraken readiness) can only be
+validated on real ARM64 hardware; Paddle works under translation.
 
 ## Repeatability and diagnostics
 
