@@ -106,6 +106,13 @@ android {
         jniLibs.keepDebugSymbols += "**/libpaddle_light_api_shared.so"
     }
 
+    // Reproducible builds: F-Droid compares its rebuild with our signed release. This block is
+    // only added when AGP signs (we sign externally), but keep it out explicitly.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     // Only wires in real content when the private submodule is present; otherwise `full`
     // builds identically to `foss`. Never present in public clones, CI, or F-Droid.
     val privateOverlayKotlin = rootDir.resolve("private/app-overlay/kotlin")

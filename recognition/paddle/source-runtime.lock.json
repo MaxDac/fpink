@@ -45,6 +45,8 @@
       "paddle_api.h",
       "paddle_place.h"
     ],
+    "expectedSha256": null,
+    "reproducibility": "expectedSha256 pins the stripped runtime and headers built in registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie at /home/vagrant/build/com.fpink.capture (F-Droid's build path) with SOURCE_DATE_EPOCH set to the pinned Paddle Lite commit time; null means not pinned yet. -PpaddleRuntimeBuiltFromSource fails on a mismatch unless -PallowUnpinnedPaddleRuntime is set.",
     "networkInputs": [
       "source.repository@source.commit (git, fetch phase only)"
     ],

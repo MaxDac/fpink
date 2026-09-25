@@ -12,6 +12,9 @@ set_target_properties(paddle_light_api_shared PROPERTIES
 
 add_library(fpink_paddle SHARED paddle_jni.cpp ocr_geometry.cpp)
 target_compile_features(fpink_paddle PRIVATE cxx_std_17)
-target_compile_options(fpink_paddle PRIVATE -fvisibility=hidden)
-target_link_options(fpink_paddle PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384")
+# Reproducible builds: F-Droid rebuilds this library and must get identical bytes. Keep build
+# paths out of __FILE__ and debug info, and drop the lld build ID (a hash over the unstripped
+# output, which AGP strips after the ID was computed).
+target_compile_options(fpink_paddle PRIVATE -fvisibility=hidden "-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.")
+target_link_options(fpink_paddle PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384" "LINKER:--build-id=none")
 target_link_libraries(fpink_paddle PRIVATE paddle_light_api_shared log)
