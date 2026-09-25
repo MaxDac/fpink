@@ -28,7 +28,20 @@ def verify_identity(badging, version_name, version_code):
         raise ValueError("A debuggable APK cannot be released.")
 
 
-def verify_assets(apk, root=ROOT):
+RUNTIME_SOURCE = "native/arm64-v8a/libpaddle_light_api_shared.so"
+RUNTIME_ENTRY = "lib/arm64-v8a/libpaddle_light_api_shared.so"
+
+
+def source_runtime_digest(sums_path):
+    """The runtime digest from build-runtime.sh's SHA256SUMS (a source-built runtime)."""
+    for line in Path(sums_path).read_text(encoding="utf-8").splitlines():
+        digest, _, path = line.partition("  ")
+        if path == RUNTIME_SOURCE:
+            return digest
+    raise ValueError(f"{sums_path} does not list {RUNTIME_SOURCE}.")
+
+
+def verify_assets(apk, root=ROOT, source_runtime_sha256=None):
     paddle = root / "recognition" / "paddle"
     artifacts = json.loads((paddle / "artifacts.lock.json").read_text())
     licenses = json.loads((paddle / "licenses.lock.json").read_text())
@@ -45,6 +58,9 @@ def verify_assets(apk, root=ROOT):
             expected[entry] = item.get("normalization", item)
     for item in licenses:
         expected["assets/paddle/licenses/" + item["name"]] = item
+    if source_runtime_sha256 is not None:
+        # F-Droid builds and the reproducible release build the runtime from source instead.
+        expected.pop(RUNTIME_ENTRY)
     with zipfile.ZipFile(apk) as archive:
         if len(archive.namelist()) != len(set(archive.namelist())):
             raise ValueError("APK contains duplicate ZIP entries.")
@@ -52,6 +68,9 @@ def verify_assets(apk, root=ROOT):
             data = archive.read(name)
             if len(data) != item["bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
                 raise ValueError(f"Packaged artifact does not match its pinned content: {name}")
+        if source_runtime_sha256 is not None and \
+                hashlib.sha256(archive.read(RUNTIME_ENTRY)).hexdigest() != source_runtime_sha256:
+            raise ValueError("Packaged Paddle runtime does not match the source-built runtime.")
         for name in (
             "assets/paddle/NOTICE.txt",
             "lib/arm64-v8a/libfpink_paddle.so",
@@ -67,6 +86,10 @@ def main():
     parser.add_argument("--version-name", required=True)
     parser.add_argument("--version-code", type=int, required=True)
     parser.add_argument("--build-tools", type=Path, required=True)
+    parser.add_argument(
+        "--source-runtime-sums", type=Path,
+        help="SHA256SUMS from build-runtime.sh when the Paddle runtime was built from source",
+    )
     args = parser.parse_args()
     suffix = ".exe" if os.name == "nt" else ""
     badging = subprocess.check_output(
@@ -75,7 +98,10 @@ def main():
         encoding="utf-8",
     )
     verify_identity(badging, args.version_name, args.version_code)
-    verify_assets(args.apk)
+    verify_assets(
+        args.apk,
+        source_runtime_sha256=source_runtime_digest(args.source_runtime_sums) if args.source_runtime_sums else None,
+    )
     subprocess.run(
         [str(args.build_tools / ("zipalign" + suffix)), "-c", "-P", "16", "4", str(args.apk)],
         check=True,

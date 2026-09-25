@@ -193,8 +193,26 @@ test still needs `g++`). The NDK is taken from `NDK_ROOT`, `ANDROID_NDK_ROOT`,
 On Debian: `apt-get install -y git python3 cmake make binutils`.
 
 The checked-in runtime remains the default developer/CI input; it is not the
-F-Droid build input. A source build must pass the same dependency and 16 KB
-alignment checks as the fallback artifact.
+F-Droid build input or the release build input. A source build must pass the
+same dependency and 16 KB alignment checks as the fallback artifact.
+
+### Reproducibility of the source-built runtime
+
+Signed GitHub releases and F-Droid both build this runtime from source in the
+same buildserver image (see `docs/RELEASING.md`), and the resulting APKs must be
+byte-identical. To make the runtime deterministic, `build-runtime.sh`:
+
+- sets `SOURCE_DATE_EPOCH` to the pinned Paddle Lite commit time;
+- maps the source, NDK and NDK-symlink paths with `-ffile-prefix-map`;
+- links with `--build-id=none`;
+- strips the output with the NDK's `llvm-strip --strip-unneeded`. It is
+  packaged with `keepDebugSymbols`, so AGP never strips it again.
+
+The `build` phase prints the SHA-256 of the runtime and headers. Once CI has
+shown that they are stable, record them in `build.expectedSha256` in
+`source-runtime.lock.json`. From then on, `-PpaddleRuntimeBuiltFromSource`
+fails when a build differs from them. Use `-PallowUnpinnedPaddleRuntime` only
+to diagnose such a failure locally.
 
 ## Public provenance (no gated material)
 

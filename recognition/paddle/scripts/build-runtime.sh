@@ -4,9 +4,11 @@
 # Usage: build-runtime.sh [all|fetch|build]
 #   fetch  Network phase: check out the pinned Paddle Lite commit and prepare
 #          the tree (F-Droid `prebuild`).
-#   build  Offline phase: compile the tiny-publish runtime, copy the runtime and
-#          headers into the module and write build/source-output/PROVENANCE
-#          (F-Droid `build`, after the source scan).
+#   build  Offline phase: compile the tiny-publish runtime, strip it with the
+#          pinned NDK, copy the runtime and headers into the module and write
+#          build/source-output/{PROVENANCE,SHA256SUMS} (F-Droid `build`, after
+#          the source scan). The output is reproducible for a fixed build path,
+#          toolchain and SOURCE_DATE_EPOCH; see build.expectedSha256.
 #   all    fetch + build (default).
 set -euo pipefail
 
@@ -150,6 +152,14 @@ build() {
 
   rm -rf "$output_dir"
   mkdir -p "$output_dir" "$headers" "$(dirname "$runtime")"
+
+  # Reproducible builds (F-Droid rebuilds this runtime and compares the APK against the
+  # upstream-signed release): timestamps from the pinned Paddle Lite commit (not the
+  # caller's SOURCE_DATE_EPOCH, so the pinned hashes hold for every fpink commit), no
+  # build paths in __FILE__/debug info, and no lld build ID.
+  SOURCE_DATE_EPOCH="$(git -C "$source_dir" log -1 --format=%ct)"
+  export SOURCE_DATE_EPOCH
+  local prefix_map="-ffile-prefix-map=$source_dir=/paddle-lite -ffile-prefix-map=$ndk_link=/ndk -ffile-prefix-map=$ndk=/ndk"
   (
     cd "$source_dir"
     export NDK_ROOT="$ndk_link"
@@ -157,6 +167,9 @@ build() {
     # Paddle Lite declares cmake_minimum_required(VERSION 3.0); only CMake 4
     # needs this (CMake 3.31 on the F-Droid buildserver ignores it).
     export CMAKE_POLICY_VERSION_MINIMUM="${CMAKE_POLICY_VERSION_MINIMUM:-3.5}"
+    export CFLAGS="${CFLAGS:+$CFLAGS }$prefix_map"
+    export CXXFLAGS="${CXXFLAGS:+$CXXFLAGS }$prefix_map"
+    export LDFLAGS="${LDFLAGS:+$LDFLAGS }-Wl,--build-id=none"
     ./lite/tools/build_android.sh "${arguments[@]}"
   )
 
@@ -185,6 +198,16 @@ build() {
     cp "$publish_root/cxx/include/$header" "$headers/$header"
   done
 
+  # Strip with the pinned NDK so the shipped bytes do not depend on debug info. The app
+  # packages this file with keepDebugSymbols, so AGP never strips it a second time.
+  local strip_bin
+  strip_bin="$(find "$ndk/toolchains/llvm/prebuilt" -name llvm-strip \( -type f -o -type l \) -print -quit)"
+  if [[ -z "$strip_bin" ]]; then
+    echo "The pinned NDK does not provide llvm-strip." >&2
+    exit 1
+  fi
+  "$strip_bin" --strip-unneeded "$runtime"
+
   local readelf_bin
   readelf_bin="$(command -v llvm-readelf || command -v readelf || true)"
   if [[ -z "$readelf_bin" ]]; then
@@ -212,6 +235,24 @@ build() {
       native/arm64-v8a/libpaddle_light_api_shared.so \
       "${required_headers[@]/#/src/main/cpp/third_party/paddle_lite/}"
   ) | tee "$output_dir/SHA256SUMS"
+  # Gradle's -PpaddleRuntimeBuiltFromSource enforces build.expectedSha256; report early.
+  python3 - "$lock" "$output_dir/SHA256SUMS" <<'PY'
+import json, sys
+expected = json.load(open(sys.argv[1], encoding="utf-8"))["build"].get("expectedSha256")
+actual = {}
+for line in open(sys.argv[2], encoding="utf-8"):
+    if line.strip():
+        digest, path = line.rstrip("\n").split("  ", 1)
+        actual[path] = digest
+if expected is None:
+    print("source-runtime.lock.json does not pin build.expectedSha256 yet; this build produced:")
+    print(json.dumps(actual, indent=2, sort_keys=True))
+elif expected != actual:
+    print("WARNING: the source-built Paddle runtime differs from build.expectedSha256 in "
+          "source-runtime.lock.json; the build is not reproducible on this host.", file=sys.stderr)
+    for path in sorted(set(expected) | set(actual)):
+        print(f"  {path}: expected {expected.get(path)}, built {actual.get(path)}", file=sys.stderr)
+PY
   {
     printf 'source=%s\n' "$repository"
     printf 'commit=%s\n' "$commit"

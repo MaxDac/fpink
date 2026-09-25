@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest.mock import mock_open, patch
 
@@ -23,7 +24,7 @@ OLD_SHA = "b" * 40
 OTHER_SHA = "c" * 40
 
 
-class ResolverTests(unittest.TestCase):
+class ResolverFixture(unittest.TestCase):
     def setUp(self):
         self.release_pages = [[]]
         self.tag_pages = [[]]
@@ -136,6 +137,8 @@ class ResolverTests(unittest.TestCase):
             and "/releases/assets/" in call.args[0][2]
         ]
 
+
+class ResolverTests(ResolverFixture):
     def test_first_release_uses_baseline_and_code_two(self):
         self.assertEqual(self.resolve(), {
             "schemaVersion": 1,
@@ -711,6 +714,142 @@ class ResolverTests(unittest.TestCase):
             self.resolve()
 
 
+class DeclaredReleaseTests(ResolverFixture):
+    """version.properties declares the release (release-bump PR flow used by F-Droid auto-update)."""
+
+    def publish_previews(self, last=6):
+        for number in range(2, last + 1):
+            self.add_release(f"0.1.0-preview.{number}", code=number, prerelease=True)
+
+    def declare(self, release_type="prerelease", requested=None, prepare=False):
+        return resolver.resolve_version(
+            "example/fpink", SOURCE_SHA, requested, release_type=release_type,
+            version_file=Path("version.properties"), prepare=prepare,
+        )
+
+    def test_declared_preview_matches_next_release(self):
+        self.publish_previews()
+        self.baseline = "versionName=0.1.0-preview.7\nversionCode=7\n"
+        metadata = self.declare()
+        self.assertEqual((metadata["versionName"], metadata["versionCode"]), ("0.1.0-preview.7", 7))
+        self.assertEqual(metadata["previousTag"], "v0.1.0-preview.6")
+        self.assertTrue(metadata["isPrerelease"])
+
+    def test_declared_stable_after_previews(self):
+        self.publish_previews()
+        self.baseline = "versionName=0.1.0\nversionCode=7\n"
+        metadata = self.declare(release_type="stable")
+        self.assertEqual((metadata["versionName"], metadata["versionCode"]), ("0.1.0", 7))
+
+    def test_crlf_declaration_is_accepted(self):
+        self.publish_previews()
+        self.baseline = "versionName=0.1.0-preview.7\r\nversionCode=7\r\n"
+        self.assertEqual(self.declare()["versionCode"], 7)
+
+    def test_declared_code_may_skip_but_never_reuse(self):
+        self.publish_previews()
+        self.baseline = "versionName=0.1.0-preview.7\nversionCode=9\n"
+        self.assertEqual(self.declare()["versionCode"], 9)
+        for code in (6, 2):
+            with self.subTest(code=code):
+                self.baseline = f"versionName=0.1.0-preview.7\nversionCode={code}\n"
+                with self.assertRaisesRegex(resolver.ReleaseVersionError, "greater than every published"):
+                    self.declare()
+
+    def test_stale_declaration_collides_with_published_tag(self):
+        self.publish_previews()
+        self.baseline = "versionName=0.1.0-preview.6\nversionCode=7\n"
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "collides|greater than"):
+            self.declare()
+
+    def test_requested_version_must_equal_declaration(self):
+        self.publish_previews()
+        self.baseline = "versionName=0.1.0-preview.7\nversionCode=7\n"
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "release-bump PR"):
+            self.declare(requested="0.1.0-preview.8")
+        self.assertEqual(self.declare(requested="0.1.0-preview.7")["versionCode"], 7)
+
+    def test_release_type_must_match_declaration(self):
+        self.baseline = "versionName=0.1.0-preview.7\nversionCode=7\n"
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "does not match release type"):
+            self.declare(release_type="stable")
+        self.command_mock.assert_not_called()
+
+    def test_invalid_declarations_fail_before_network(self):
+        for baseline in ("versionName=0.1.0-preview.07\nversionCode=7\n", "versionName=0.1.0\nversionCode=0\n", ""):
+            with self.subTest(baseline=baseline):
+                self.baseline = baseline
+                with self.assertRaises(resolver.ReleaseVersionError):
+                    self.declare(release_type="stable")
+        self.command_mock.assert_not_called()
+
+    def test_prepare_from_legacy_baseline(self):
+        self.publish_previews()
+        metadata = self.declare(prepare=True)
+        self.assertEqual((metadata["versionName"], metadata["versionCode"]), ("0.1.0-preview.7", 7))
+
+    def test_prepare_after_published_declaration(self):
+        self.publish_previews(7)
+        self.baseline = "versionName=0.1.0-preview.7\nversionCode=7\n"
+        metadata = self.declare(prepare=True)
+        self.assertEqual((metadata["versionName"], metadata["versionCode"]), ("0.1.0-preview.8", 8))
+        stable = self.declare(release_type="stable", prepare=True)
+        self.assertEqual((stable["versionName"], stable["versionCode"]), ("0.1.0", 8))
+
+    def test_prepare_is_idempotent_for_an_unpublished_declaration(self):
+        self.publish_previews()
+        self.baseline = "versionName=0.1.0-preview.7\nversionCode=7\n"
+        metadata = self.declare(prepare=True)
+        self.assertEqual((metadata["versionName"], metadata["versionCode"]), ("0.1.0-preview.7", 7))
+
+    def test_prepare_requires_a_version_file(self):
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "version.properties path"):
+            resolver.resolve_version("example/fpink", SOURCE_SHA, prepare=True)
+
+
+class ChangelogTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        self.changelogs = self.root / resolver.CHANGELOG_DIRECTORY
+        self.changelogs.mkdir(parents=True)
+
+    def properties(self, text):
+        (self.root / "version.properties").write_text(text, encoding="utf-8")
+
+    def test_changelog_requirements(self):
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "requires the changelog"):
+            resolver.check_changelog(self.root, 7)
+        (self.changelogs / "7.txt").write_text(" \n", encoding="utf-8")
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "is empty"):
+            resolver.check_changelog(self.root, 7)
+        (self.changelogs / "7.txt").write_text("x" * 501, encoding="utf-8")
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "exceeds 500"):
+            resolver.check_changelog(self.root, 7)
+        (self.changelogs / "7.txt").write_text("Fixes.\n", encoding="utf-8")
+        resolver.check_changelog(self.root, 7)
+
+    def test_offline_check_skips_the_undeclared_baseline(self):
+        self.properties("versionName=0.1.0\nversionCode=1\n")
+        self.assertEqual(resolver.check_version_properties(self.root)[1], 1)
+        self.properties("versionName=0.1.0-preview.7\nversionCode=7\n")
+        with self.assertRaisesRegex(resolver.ReleaseVersionError, "requires the changelog"):
+            resolver.check_version_properties(self.root)
+        (self.changelogs / "7.txt").write_text("Fixes.\n", encoding="utf-8")
+        self.assertEqual(str(resolver.check_version_properties(self.root)[0]), "0.1.0-preview.7")
+
+    def test_write_version_properties_creates_stub_once(self):
+        metadata = {"versionName": "0.1.0-preview.7", "versionCode": 7}
+        path = self.root / "version.properties"
+        changelog = resolver.write_version_properties(metadata, path, self.root)
+        self.assertEqual(path.read_bytes(), b"versionName=0.1.0-preview.7\nversionCode=7\n")
+        self.assertEqual(changelog.read_text(encoding="utf-8"), "")
+        changelog.write_text("Kept.\n", encoding="utf-8")
+        resolver.write_version_properties(metadata, path, self.root)
+        self.assertEqual(changelog.read_text(encoding="utf-8"), "Kept.\n")
+
+
 class VersionTests(unittest.TestCase):
     def test_semver_precedence(self):
         values = ["1.0.0-1", "1.0.0-alpha", "1.0.0-alpha.1", "1.0.0-alpha.beta",
@@ -810,6 +949,53 @@ class OutputTests(unittest.TestCase):
                 "--output", "resolved.json",
             ]), 0)
         resolve.assert_called_once_with("example/fpink", SOURCE_SHA, "", release_type="prerelease")
+
+    def test_cli_declared_release_requires_its_changelog(self):
+        arguments = [
+            "--repository", "example/fpink", "--source-sha", SOURCE_SHA, "--release-type", "prerelease",
+            "--version-properties", "version.properties", "--output", "resolved.json",
+        ]
+        with patch.object(resolver, "resolve_version", return_value=self.metadata) as resolve, \
+                patch.object(resolver, "check_changelog") as changelog, \
+                patch.object(resolver, "write_outputs") as write, \
+                patch.object(resolver.sys, "stdout", new_callable=io.StringIO):
+            self.assertEqual(resolver.main(arguments), 0)
+        resolve.assert_called_once_with(
+            "example/fpink", SOURCE_SHA, None, release_type="prerelease",
+            version_file=Path("version.properties"), prepare=False,
+        )
+        changelog.assert_called_once_with(resolver.ROOT, 2)
+        write.assert_called_once()
+        with patch.object(resolver, "resolve_version", return_value=self.metadata), \
+                patch.object(resolver, "check_changelog", side_effect=resolver.ReleaseVersionError("no changelog")), \
+                patch.object(resolver, "write_outputs") as write, \
+                patch.object(resolver.sys, "stderr", new_callable=io.StringIO):
+            self.assertEqual(resolver.main(arguments), 1)
+        write.assert_not_called()
+
+    def test_cli_prepare_writes_version_properties_from_head(self):
+        head = subprocess.CompletedProcess([], 0, stdout=SOURCE_SHA + "\n", stderr="")
+        with patch.object(resolver, "run_command", return_value=head), \
+                patch.object(resolver, "resolve_version", return_value=self.metadata) as resolve, \
+                patch.object(resolver, "write_version_properties",
+                             return_value=resolver.ROOT / "changelog.txt") as write_properties, \
+                patch.object(resolver, "write_outputs") as write, \
+                patch.object(resolver.sys, "stdout", new_callable=io.StringIO) as stdout:
+            self.assertEqual(resolver.main([
+                "--repository", "example/fpink", "--release-type", "prerelease", "--prepare",
+            ]), 0)
+        resolve.assert_called_once_with(
+            "example/fpink", SOURCE_SHA, None, release_type="prerelease",
+            version_file=resolver.ROOT / "version.properties", prepare=True,
+        )
+        write_properties.assert_called_once_with(self.metadata, resolver.ROOT / "version.properties")
+        write.assert_not_called()
+        self.assertIn("Release 0.1.0", stdout.getvalue())
+
+    def test_cli_requires_output_outside_prepare(self):
+        with patch.object(resolver.sys, "stderr", new_callable=io.StringIO), \
+                self.assertRaises(SystemExit):
+            resolver.main(["--repository", "example/fpink", "--source-sha", SOURCE_SHA])
 
     def test_cli_failure_never_writes_metadata(self):
         with patch.object(resolver, "resolve_version", side_effect=resolver.ReleaseVersionError("bad history")), \

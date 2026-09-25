@@ -65,6 +65,8 @@ val sourceBuiltRuntime = providers.gradleProperty("paddleRuntimeBuiltFromSource"
 check(!(sourceBuildEnabled && sourceBuiltRuntime)) {
     "Use either -PbuildPaddleRuntimeFromSource or -PpaddleRuntimeBuiltFromSource, not both."
 }
+// Local experiments on other hosts/toolchains produce different runtime bytes.
+val allowUnpinnedRuntime = providers.gradleProperty("allowUnpinnedPaddleRuntime").isPresent
 val sourceRuntimeFiles = setOf(
     "native/arm64-v8a/libpaddle_light_api_shared.so",
     "src/main/cpp/third_party/paddle_lite/paddle_api.h",
@@ -127,6 +129,14 @@ fun verifySourceRuntimeProvenance() {
         val artifact = file(path)
         check(artifact.isFile && sha256(artifact) == hash) {
             "Source-built Paddle artifact $path does not match build/source-output/SHA256SUMS."
+        }
+    }
+    val pinned = build["expectedSha256"] as Map<String, String>?
+    if (pinned != null && !allowUnpinnedRuntime) {
+        check(checksums == pinned) {
+            "The source-built Paddle runtime is not the reproducible one pinned in source-runtime.lock.json " +
+                "(build.expectedSha256 $pinned, built $checksums). Build it in the F-Droid buildserver image " +
+                "(scripts/fdroid-rb-docker.sh), or pass -PallowUnpinnedPaddleRuntime for a local experiment."
         }
     }
 }

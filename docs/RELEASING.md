@@ -45,7 +45,24 @@ approval, not something a routine CI run should create.
 
 ## Run a release
 
-In **Actions > Release > Run workflow**, choose `main`.
+First declare the release in a release-bump PR. F-Droid's auto-update reads the
+version from `version.properties` at the release tag, so the tagged commit must
+already contain it:
+
+```text
+git switch -c release/next origin/main
+python3 scripts/release_version.py --repository MaxDac/fpink --release-type prerelease --prepare
+# edit fastlane/metadata/android/en-US/changelogs/<versionCode>.txt (max 500 characters)
+git commit -am "Release <versionName>" && gh pr create --fill
+```
+
+`--prepare` computes the next version exactly as the workflow does (pass
+`--requested-version` or `--release-type stable` as needed), writes it into
+`version.properties` and creates an empty changelog. CI rejects a declared
+release whose changelog is missing, empty or too long. After merging, in
+**Actions > Release > Run workflow**, choose `main`. The workflow refuses to run
+unless the version it computes equals the declared one, so a stale
+`version.properties` fails before building; it never commits to `main`.
 
 - Select **release_type**: `prerelease` (the default) or `stable`. Pre-releases
   are marked non-production-ready on GitHub and never replace the Latest release.
@@ -81,9 +98,10 @@ multiple dispatches queue, so confirm that the intended run actually started.
 
 ## Versioning and output
 
-`version.properties` holds local-build defaults. Release name/code overrides
-are supplied together through Gradle properties; the workflow requires them
-explicitly. The Android code is one greater than the maximum baseline/published
+`version.properties` declares the release built from each commit; release
+builds use it directly, with no Gradle overrides, so F-Droid and local builds of
+a tag produce the same version. `-PreleaseVersionName`/`-PreleaseVersionCode`
+remain available for local experiments only. The Android code is one greater than the maximum baseline/published
 code across both stable and pre-release APKs, starting at `2`, with a maximum of
 `2100000000`. It is not a workflow run number and does not reset for a new major
 version or when a preview becomes stable. The signing certificate must also
@@ -133,24 +151,51 @@ The GitHub Release contains:
 | `SHA256SUMS` | SHA-256 checksums for the APK, manifest and license |
 | `LICENSE` | GPL version 3 text for FPInk's original code |
 
-Notes link to the corresponding source at the exact release tag and show the
-Gradle properties needed to rebuild it. Preserve the source/tag and third-party
+Notes link to the corresponding source at the exact release tag. The APK is a
+reproducible build (see below): `scripts/fdroid-rb-docker.sh` at the tag rebuilds
+the unsigned APK byte for byte. The asset name `FPInk-<version>.apk` is part of
+the fdroiddata `Binaries` URL; do not rename it. Preserve the source/tag and third-party
 notices when redistributing. Offline PaddleOCR currently supports ARM64 only;
 the workflow does not change the app's existing ABI installation behavior.
 
 Only the signing/publishing job has repository write permission. It does not
 check out or execute repository build scripts. It receives the current run's
-unsigned artifact, restores secrets into a temporary directory, aligns before
-signing, verifies the signer and APK identity, then removes the keystore even
-on ordinary signing failures. Hosted runners are ephemeral.
+unsigned artifact, restores secrets into a temporary directory, checks the
+existing 16 KB/4-byte alignment, signs the APK in place with
+`apksigner sign --alignment-preserved` (v2 and v3 signatures, no v1 or v4),
+verifies the signer and APK identity, requires `apksigcopier compare` to confirm
+that the signed APK is exactly the unsigned build plus a signature, then removes
+the keystore even on ordinary signing failures. Re-aligning or re-padding the
+APK would break F-Droid's reproducibility check. Hosted runners are ephemeral.
 
 Publication creates the tag atomically, creates a draft, uploads every asset,
 downloads them again to compare hashes, and only then publishes. Existing tags
 and releases are never overwritten.
 
+## Reproducible release builds
+
+The release build job runs `scripts/fdroid-rb-docker.sh`, which replays the last
+build block of `metadata/com.fpink.capture.yml` with `scripts/fdroid_rb_build.py`
+inside the digest-pinned `registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie`
+image, like `fdroid build --on-server`: the same apt packages, OpenJDK 21,
+gradlew-fdroid, NDK installation, `/home/vagrant/build/com.fpink.capture` path,
+`SOURCE_DATE_EPOCH`, `rm`, `prebuild`, `build` and Gradle invocation. The Paddle
+runtime is therefore built from source on both sides. On a Linux Docker host:
+
+```text
+bash scripts/fdroid-rb-docker.sh out        # builds HEAD (committed files only)
+bash scripts/fdroid-server-build.sh out-fd  # the real fdroid build, for comparison
+cmp out/unsigned.apk out-fd/unsigned.apk
+```
+
+The **Reproducibility** workflow runs both builders (twice for the replay) on
+pull requests that touch build inputs and fails unless the APKs are identical;
+it attaches diffoscope reports otherwise. See
+[F-Droid validation](FDROID_VALIDATION.md#reproducible-builds) for debugging.
+
 ## Build and validate locally
 
-Use JDK **17** (the release workflow pins Temurin **17.0.18+8**), Android SDK
+Use JDK **17** or **21** (releases use the buildserver's OpenJDK 21), Android SDK
 platform **37**, build tools **36.0.0**, NDK **28.2.13676358**, CMake **3.22.1**,
 Python 3 and PowerShell 7 (`pwsh`, also available on GitHub's Ubuntu runners).
 The SDK manager package for this platform is `platforms;android-37.0`.
@@ -211,11 +256,11 @@ until issues #27, #28, #30, #31, and #32 are complete.
 | Paddle native runtime | Build the pinned source runtime with `-PbuildPaddleRuntimeFromSource` and the recipe in `recognition/paddle/source-runtime.lock.json`; obtain maintainer approval of the exact source/toolchain path. The checked-in `.so` is only a developer fallback during qualification. Hash pinning and the documented ELF metadata correction are not source builds. Do not bypass this with scanner exclusions. |
 | Model provenance | Supply original weights/source, licensing, conversion steps and tool versions, or obtain maintainer agreement on asset treatment for the shipped `.nb` files. |
 | Linux/F-Droid recipe | Validate all preparation and native/model builds in a clean supported build environment without private credentials, local paths or unpublished inputs. Pin permitted downloads and tools. |
-| Version discovery | Initially put literal version name/code and Gradle overrides in the F-Droid recipe. Tag auto-updates need regex-readable source metadata plus `UpdateCheckData`; F-Droid does not execute Gradle to discover computed versions. Workflow-only values are not automatically discoverable. |
+| Version discovery | Done from 0.1.0-preview.8: releases are declared in `version.properties`, which the recipe reads with `UpdateCheckMode: Tags` and `UpdateCheckData`, and the version-agnostic build block lets `AutoUpdateMode: Version` copy it. |
 | Listing | Descriptions, icon, phone screenshots and version-code-named changelogs now live in `fastlane/metadata/android/en-US/`. Still needed: author/contact information, categories, source/issue links and applicable anti-feature declarations. Every future release must add its own `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` (max 500 characters) alongside the version bump. |
 | Optional cloud OCR provider | Public releases (`foss` flavor) are offline-only (bundled PaddleOCR only) and never contact a cloud service; there is nothing to disclose. A private, non-F-Droid "full" build variant, built from a separate private companion repo, may add optional cloud/proprietary recognition providers for the maintainer's own signed releases — see `docs/ARCHITECTURE.md`'s flavor-split section — but that variant is never published to F-Droid. |
 | Identity and signing | Confirm the long-term `com.fpink.capture` identity. Choose F-Droid signing or upstream-signed reproducible builds before first distribution. Do not share the private key. Different certificates normally prevent switching channels in place. |
-| Shared-signature reproducibility | If sharing the GitHub signer, demonstrate independent byte-identical APK rebuilding, including native code, then configure `Binaries` and `AllowedAPKSigningKeys`. Ordinary F-Droid inclusion does not require this, but still requires acceptable source builds. |
+| Shared-signature reproducibility | Releases from 0.1.0-preview.8 are built like the buildserver and checked by the Reproducibility workflow; the recipe sets `Binaries` and `AllowedAPKSigningKeys`. The source-built runtime is pinned in `build.expectedSha256` of `recognition/paddle/source-runtime.lock.json`; update it only together with the Paddle Lite source or toolchain. |
 | Submission | Prepare `metadata/com.fpink.capture.yml` in `fdroiddata`, lint/build it, submit a merge request, resolve review, and maintain update checks. Acceptance and timing belong to F-Droid. |
 
 A self-hosted F-Droid repository is a different distribution route. It requires

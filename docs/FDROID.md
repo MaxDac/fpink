@@ -31,24 +31,27 @@ stop and return to its owning issue before continuing.
 3. Add only `metadata/com.fpink.capture.yml` and other fdroiddata files that
    are required by the finalized recipe. Do not copy upstream Fastlane
    descriptions, screenshots, or generated APKs into fdroiddata.
-4. Use the full immutable source SHA in `Builds.commit`, literal
-   `versionName` and monotonically increasing `versionCode`, and the actual
-   Gradle task and paired release properties:
-
-   ```text
-   -PrequireReleaseVersion=true
-   -PreleaseVersionName=<versionName>
-   -PreleaseVersionCode=<versionCode>
-   ```
+4. Start from the recipe mirrored in this repository,
+   [`metadata/com.fpink.capture.yml`](../metadata/com.fpink.capture.yml). Use
+   the full immutable source SHA in `Builds.commit` (the mirror shows the tag
+   name for readability). The build block is version-agnostic: `subdir: app`
+   with no `output` (fdroidserver finds `app/build/outputs/apk/foss/release/`),
+   `prebuild`/`build` paths relative to `app/`, and no version properties,
+   because the tagged `version.properties` already declares the release.
 
 5. Keep credentials, signing keys, local paths, opaque binaries, and release
    workflow-only values out of the recipe. Never add scanner suppressions to
    hide runtime or model findings. Any `scandelete` must be justified by the
    clean-build evidence in #32.
-6. Start with literal versions and manual/static update handling. F-Droid
-   cannot run Gradle to discover values supplied through properties. Add
-   `Tags`, `AutoUpdateMode`, or `UpdateCheckData` only after regex-based
-   discovery has been proven against immutable release tags.
+6. Updates are automatic from 0.1.0-preview.8: `UpdateCheckMode: Tags` with a
+   `^v` release-tag pattern, `UpdateCheckData` reading `versionCode` and
+   `versionName` from `version.properties`, and `AutoUpdateMode: Version`.
+   Only switch an existing recipe to `Tags` once a tag declaring its release in
+   `version.properties` exists; older tags declare `0.1.0`/`1`.
+7. Releases from 0.1.0-preview.8 are reproducible and published with the
+   upstream signature: `Binaries` points at the GitHub release asset and
+   `AllowedAPKSigningKeys` holds the certificate SHA-256
+   `2058d113771276175856ad9c6d3f24e4f95f54500995d5171a61e73333ab6155`.
 
 Run `fdroid rewritemeta com.fpink.capture`, inspect the resulting diff, and
 create one focused commit, for example:
@@ -92,7 +95,8 @@ branch with a focused title such as **New app: FPInk**. Include:
 - the optional cloud-recognition-provider network behavior (present only in privately
   built, non-public variants) and any applicable `NonFreeNet` discussion;
 - the F-Droid signing versus shared-signature reproducibility decision; and
-- the initial manual update posture, if automatic discovery is not proven.
+- the update-check configuration and the reproducibility evidence (the
+  Reproducibility workflow run for the release commit).
 
 Do not claim acceptance, reproducibility, broader ABI support, or privacy
 properties that the recorded evidence does not demonstrate.
@@ -142,12 +146,14 @@ For every installable release:
    `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` before the
    release is F-Droid-eligible. Keep it truthful and within the 500-character
    limit.
-4. Update fdroiddata with the exact tag SHA and literal version/code. Run
-   `fdroid checkupdates`, inspect its diff, then run rewrite, lint, and a clean
-   build before merging the update.
-5. Enable automatic tag/version discovery only after repeated checks prove that
-   release metadata is readable by F-Droid's regex-based updater without
-   executing Gradle.
+4. Declare the release in `version.properties` with a release-bump PR
+   (`scripts/release_version.py --prepare`, see [RELEASING.md](RELEASING.md)),
+   then run the Release workflow. F-Droid's checkupdates bot discovers the new
+   tag, reads its `version.properties`, copies the last build block and builds
+   it; the reproducible build lets F-Droid publish the signed GitHub APK.
+5. If the bot's build does not match, inspect the fdroiddata build log and the
+   diffoscope output, fix the source, and publish a new release; never replace
+   the GitHub asset.
 
 Never move a release tag, reuse a version code, replace an installed release,
 or let a computed GitHub-only version become the only source of F-Droid
