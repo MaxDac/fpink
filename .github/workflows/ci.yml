@@ -61,7 +61,7 @@ jobs:
           ./gradlew --continue --console=plain --stacktrace
           :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test
           :app:assembleFossDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
-          :app:verifyFossDebugRecognitionPackage
+          :app:verifyFossDebugRecognitionPackage :app:verifyFossDebugOfflineManifest
 
       - name: Upload verification reports
         if: always()

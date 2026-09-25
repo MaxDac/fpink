@@ -37,6 +37,11 @@ require(versionCodeText != null && Regex("[1-9][0-9]*").matches(versionCodeText)
     resolvedVersionCode != null && resolvedVersionCode in 1..2_100_000_000) {
     "versionCode must be an integer between 1 and 2100000000."
 }
+// Opt-in, local-only: instrument the minified release APK instead of the debug one.
+val instrumentReleaseBuild = providers.gradleProperty("instrumentReleaseBuild").isPresent
+require(!(instrumentReleaseBuild && releaseVersionName != null)) {
+    "-PinstrumentReleaseBuild is for local validation only and cannot be combined with a publishing version."
+}
 
 android {
     namespace = "com.fpink.capture"
@@ -50,6 +55,27 @@ android {
         versionCode = resolvedVersionCode
         versionName = resolvedVersionName
         testInstrumentationRunner = "com.fpink.capture.acceptance.AcceptanceTestRunner"
+        // Paddle Lite ships arm64-v8a only; one ABI keeps every OCR provider available on every
+        // device the APK installs on and stops ONNX Runtime from bloating the APK with other ABIs.
+        ndk { abiFilters += "arm64-v8a" }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (instrumentReleaseBuild) {
+                // Local validation only (see docs/FDROID_VALIDATION.md): lets the acceptance
+                // suite install and instrument the minified release APK. Never used for publishing.
+                signingConfig = signingConfigs.getByName("debug")
+                proguardFiles("proguard-release-instrumentation.pro")
+                testProguardFiles("proguard-release-instrumentation-test.pro")
+            }
+        }
+    }
+    if (instrumentReleaseBuild) {
+        testBuildType = "release"
     }
 
     compileOptions {
@@ -147,6 +173,9 @@ dependencies {
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)
+    if (instrumentReleaseBuild) {
+        releaseImplementation(libs.compose.ui.test.manifest)
+    }
 }
 
 // Only added when the private submodule's recognition modules are actually present, so
@@ -195,10 +224,41 @@ androidComponents {
                                 "${apk.name} is missing the required offline recognition artifact $name"
                             }
                         }
+                        val unexpectedAbis = archive.entries().asSequence()
+                            .map { it.name }
+                            .filter { it.startsWith("lib/") }
+                            .map { it.removePrefix("lib/").substringBefore('/') }
+                            .filter { it != "arm64-v8a" }
+                            .toSortedSet()
+                        check(unexpectedAbis.isEmpty()) {
+                            "${apk.name} must ship native libraries for arm64-v8a only, but also contains lib/$unexpectedAbis"
+                        }
                     }
                 }
             }
         }
         tasks.named("check") { dependsOn(verifyPackage) }
+
+        if (variant.flavorName == "foss") {
+            val mergedManifest = variant.artifacts.get(SingleArtifact.MERGED_MANIFEST)
+            val variantName = variant.name
+            val verifyOffline = tasks.register("verify${variantName.replaceFirstChar { it.uppercase() }}OfflineManifest") {
+                group = "verification"
+                description = "Check that the public build requests no network permissions."
+                inputs.file(mergedManifest)
+                doLast {
+                    val manifest = mergedManifest.get().asFile.readText()
+                    val forbidden = listOf("android.permission.INTERNET", "android.permission.ACCESS_NETWORK_STATE")
+                        .filter { manifest.contains("\"$it\"") }
+                    check(forbidden.isEmpty()) {
+                        "The $variantName merged manifest must stay offline but requests $forbidden"
+                    }
+                    check(!manifest.contains("ai.onnxruntime.TelemetryInitializer")) {
+                        "The $variantName merged manifest must not register ONNX Runtime's telemetry initializer"
+                    }
+                }
+            }
+            tasks.named("check") { dependsOn(verifyOffline) }
+        }
     }
 }

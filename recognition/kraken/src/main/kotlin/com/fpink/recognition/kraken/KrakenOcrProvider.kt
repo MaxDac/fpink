@@ -115,6 +115,13 @@ class KrakenOcrProvider(context: Context) : RecognitionProvider {
                     "Offline Kraken requires an Android ABI supported by ONNX Runtime (${supportedAbis.joinToString()}).",
                 )
             }
+            if (runsUnderNativeTranslation(context)) {
+                // ONNX Runtime crashes the process in its static initializers when loaded through
+                // an ARM-to-x86 native bridge, so fail closed before touching it.
+                throw RecognitionError.UnsupportedDevice(
+                    "Offline Kraken cannot run through this device's ARM translation layer.",
+                )
+            }
             synchronized(assetLock) {
                 assets.forEach { asset ->
                     if (asset.sha256 == "MISSING_REVIEWED_EXPORT") {
@@ -160,6 +167,17 @@ class KrakenOcrProvider(context: Context) : RecognitionProvider {
         }
 
         private val supportedAbis = setOf("arm64-v8a", "x86_64")
+
+        /** True when the app's native libraries target a different ISA than the device's primary ABI. */
+        private fun runsUnderNativeTranslation(context: Context): Boolean {
+            val loadedIsa = context.applicationInfo.nativeLibraryDir?.let { File(it).name } ?: return false
+            val primaryIsa = when (val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: return false) {
+                "arm64-v8a" -> "arm64"
+                "armeabi-v7a", "armeabi" -> "arm"
+                else -> abi
+            }
+            return loadedIsa in setOf("arm64", "arm", "x86_64", "x86") && loadedIsa != primaryIsa
+        }
 
         private fun materializeModels(context: Context): List<File> = synchronized(assetLock) {
             val directory = File(context.noBackupFilesDir, "kraken-ppocrv6-medium")

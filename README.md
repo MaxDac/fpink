@@ -29,10 +29,13 @@ selection before trying again. If refresh fails, use **Retry** first.
 
 Use JDK 17, Android SDK 37, NDK `28.2.13676358`, and CMake `3.22.1`.
 Run `.\gradlew.bat build` on Windows or `./gradlew build` on Linux.
-The Paddle offline recognizer currently requires an ARM64 device. The Kraken
-provider is Python-free and ONNX Runtime-based (`arm64-v8a`/`x86_64`), ships a
+The published APK contains `arm64-v8a` native code only, so it installs on
+ARM64 devices. Both offline recognizers run on it: Paddle Lite and the
+Python-free, ONNX Runtime-based Kraken provider, which ships a
 reviewed, pinned ONNX export of a Kraken-compatible recognizer as a bundled
-asset, and never downloads or substitutes model bytes at runtime.
+asset, and never downloads or substitutes model bytes at runtime. The public
+build requests no network permissions, and ONNX Runtime's bundled telemetry
+initializer is removed from every build. Release builds are shrunk with R8.
 
 See [architecture](docs/ARCHITECTURE.md), [Paddle offline recognition](recognition/paddle/README.md),
 [Kraken OCR integration](recognition/kraken/README.md),
