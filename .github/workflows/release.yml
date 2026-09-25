@@ -226,7 +226,8 @@ jobs:
           signers = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$", verification, re.MULTILINE)
           require(len(signers) == 1 and signers[0].lower() == certificate, "APK signing certificate mismatch")
           subprocess.run([str(tools / "zipalign"), "-c", "-P", "16", "4", str(apk)], check=True)
-          subprocess.run(["apksigcopier", "compare", str(apk), "--unsigned", "incoming/unsigned.apk"], check=True)
+          subprocess.run(["apksigcopier", "compare", str(apk), "--unsigned", "incoming/unsigned.apk"], check=True,
+                         env={**os.environ, "PATH": str(tools) + os.pathsep + os.environ["PATH"]})
           badging = run(str(tools / "aapt2"), "dump", "badging", str(apk))
           package = re.search(r"^package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging, re.MULTILINE)
           require(package and package.groups() == ("com.fpink.capture", code, version), "Signed APK identity mismatch")
