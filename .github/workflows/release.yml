@@ -302,3 +302,55 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
               summary.write(f"\nPublished [FPInk {version}](https://github.com/{repo}/releases/tag/{tag}).\n")
           PY
+
+  # While the fdroiddata MR (fdroid/fdroiddata!50122, from MaxDac/fdroiddata@com.fpink.capture)
+  # is unmerged, checkupdates does not run for FPInk, so point the MR at the tag this run
+  # just published. Needs the FDROIDDATA_GITLAB_TOKEN secret: a project access token on the
+  # fork only, write_repository scope. Without it the job only warns. Delete this job once
+  # the MR is merged. FDROIDDATA_FORK / FDROID_MR_BRANCH variables override the defaults.
+  fdroid-mr:
+    if: ${{ inputs.publish }}
+    needs: [build, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.build.outputs.tag }}
+      FORK: ${{ vars.FDROIDDATA_FORK || 'MaxDac/fdroiddata' }}
+      BRANCH: ${{ vars.FDROID_MR_BRANCH || 'com.fpink.capture' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Push the published release to the fdroiddata MR branch
+        env:
+          GITLAB_TOKEN: ${{ secrets.FDROIDDATA_GITLAB_TOKEN }}
+        run: |
+          if [[ -z "$GITLAB_TOKEN" ]]; then
+            echo "::warning::FDROIDDATA_GITLAB_TOKEN is not set; update the fdroiddata MR to $TAG manually (docs/FDROID.md)."
+            echo "fdroiddata MR not updated: set FDROIDDATA_GITLAB_TOKEN or run \`scripts/fdroid_mr_bump.py --tag $TAG\` by hand." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The token never lands in a URL or .git/config.
+          git config --global credential.helper \
+            '!f() { test "$1" = get && echo username=oauth2 && echo "password=$GITLAB_TOKEN"; }; f'
+          git clone --quiet --single-branch --branch "$BRANCH" "https://gitlab.com/$FORK.git" "$RUNNER_TEMP/fdroiddata"
+          recipe="$RUNNER_TEMP/fdroiddata/metadata/com.fpink.capture.yml"
+          note=$(python3 scripts/fdroid_mr_bump.py --tag "$TAG" --commit-style sha --metadata "$recipe" | grep '^MR note:')
+          cd "$RUNNER_TEMP/fdroiddata"
+          if git diff --quiet; then
+            echo "The MR branch already targets $TAG." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit --quiet -am "FPInk: update to $TAG"
+          git push --quiet origin "HEAD:$BRANCH"
+          {
+            echo "Pushed $TAG to [$FORK@$BRANCH](https://gitlab.com/$FORK/-/tree/$BRANCH); its CI runs lint and build."
+            echo
+            echo "Comment on the fdroiddata MR with: \`${note#MR note: }\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -118,6 +118,28 @@ class ResolveReleaseTests(unittest.TestCase):
         with self.assertRaisesRegex(bumper.BumpError, "is empty"):
             bumper.resolve_release(self.root, "v0.1.0-preview.9")
 
+    def test_latest_picks_highest_version_code(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "old")
+        self.git("tag", "v0.0.1")  # predates version.properties: skipped
+        self.release("0.1.0-preview.9", 9)
+        self.release("0.1.0-preview.10", 10)
+        self.git("tag", "v0.1.0-rogue")  # name mismatch: skipped
+        self.git("tag", "not-a-release")
+        self.assertEqual(bumper.latest_tag(self.root), "v0.1.0-preview.10")
+        recipe = self.root / "recipe.yml"
+        recipe.write_bytes(MIRROR.encode("utf-8"))
+        self.assertEqual(
+            bumper.main(["--tag", "latest", "--metadata", str(recipe), "--source", str(self.root)]), 0
+        )
+        fields = build_fields(recipe.read_text(encoding="utf-8"))
+        self.assertEqual((fields["versionCode"], fields["commit"]), ("10", "v0.1.0-preview.10"))
+
+    def test_latest_without_releases_fails(self):
+        self.git("commit", "-q", "--allow-empty", "-m", "old")
+        self.git("tag", "v0.0.1")
+        with self.assertRaisesRegex(bumper.BumpError, "no release tag"):
+            bumper.latest_tag(self.root)
+
     def test_main_rewrites_fork_recipe_with_sha(self):
         sha = self.release("0.1.0-preview.9", 9)
         recipe = self.root / "recipe.yml"

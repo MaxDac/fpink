@@ -120,28 +120,48 @@ Treat every maintainer comment and CI failure as a required evidence change.
 
 Reviewers may leave an approved MR in the test queue for a long time, and
 checkupdates only runs for merged apps. Until the merge, every new installable
-release must be pushed to the MR by hand, so reviewers test the current version:
+release must be pushed to the MR, so testers get the version we actually ship.
+`scripts/fdroid_mr_bump.py` rewrites the single build block and
+`CurrentVersion`/`CurrentVersionCode` for a release tag. It doesn't append a
+new block, so the MR always covers one version. It reads `version.properties`
+at the tag and rejects a mismatched tag, an empty changelog, or a versionCode
+that doesn't supersede the current one.
 
-1. Publish the release as usual (see [Recurring release maintenance](#recurring-release-maintenance)).
-2. Update both recipes from the new tag. The script reads `version.properties`
-   at the tag and rejects a mismatched tag, an empty changelog, or a versionCode
-   that does not supersede the current one. It replaces the single build block
-   instead of appending one, so the MR stays one version:
+### Automatic: the Release workflow
 
-   ```text
-   git fetch --tags origin
-   python3 scripts/fdroid_mr_bump.py --tag v<versionName>
-   python3 scripts/fdroid_mr_bump.py --tag v<versionName> --commit-style sha \
-     --metadata ../fdroiddata/metadata/com.fpink.capture.yml
-   ```
+When a publishing run succeeds, the `fdroid-mr` job in `release.yml` runs the
+script with the exact tag that run just published. You never pick the tag by
+hand. It pushes a commit to the MR's source branch, `com.fpink.capture` on
+[`MaxDac/fdroiddata`](https://gitlab.com/MaxDac/fdroiddata/-/tree/com.fpink.capture),
+whose GitLab CI then runs lint and build. The job summary shows the line to post
+as an MR comment.
 
-   The mirror here keeps the tag as `commit`, and the fdroiddata fork uses the
-   full SHA.
-3. In the fork, run `fdroid rewritemeta com.fpink.capture`, `fdroid lint
-   com.fpink.capture` and `fdroid build com.fpink.capture:<versionCode>`, then
-   push the branch. Commit the mirror change here in a PR.
-4. Comment on the MR with the `MR note` line the script prints (tag, SHA,
-   versionName, versionCode) and the validation results.
+The only setup is the repository secret `FDROIDDATA_GITLAB_TOKEN`: a GitLab
+project access token on the fork only, with the `write_repository` scope and a
+short expiry. Without it, the job warns and the release stays green, so update
+the MR manually. It never force-pushes. The variables `FDROIDDATA_FORK` and
+`FDROID_MR_BRANCH` override the fork and branch. Once the MR is merged, delete
+the job and the secret; from then on checkupdates handles new releases.
+
+### Manual fallback and the mirror
+
+For the in-repo mirror, or when the job isn't configured, `--tag latest` selects
+the release tag with the highest `versionCode`, not the newest tag date. Only
+tags that match `UpdateCheckMode` and declare themselves in `version.properties`
+count:
+
+```text
+git fetch --tags origin
+python3 scripts/fdroid_mr_bump.py --tag latest
+python3 scripts/fdroid_mr_bump.py --tag latest --commit-style sha \
+  --metadata ../fdroiddata/metadata/com.fpink.capture.yml
+```
+
+The mirror here keeps the tag as `commit`; commit its change in a PR. The
+fdroiddata fork uses the full SHA. If you update the fork by hand, run
+`fdroid rewritemeta`, `fdroid lint` and `fdroid build com.fpink.capture:<versionCode>`
+before pushing. Either way, comment on the MR with the `MR note` line (tag, SHA,
+versionName, versionCode).
 
 If you want to help the queue move, you can test other waiting MRs and post the
 results. This is optional.

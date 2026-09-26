@@ -96,8 +96,8 @@ It must contain the latest released source. A concurrency group prevents active
 release runs from overlapping; GitHub may replace an older *pending* run when
 multiple dispatches queue, so confirm that the intended run actually started.
 
-While the fdroiddata merge request is unmerged, also point it at the new tag with
-`scripts/fdroid_mr_bump.py`. See
+While the fdroiddata merge request is unmerged, the `fdroid-mr` job pushes the new tag to it
+automatically once `FDROIDDATA_GITLAB_TOKEN` is set. See
 [FDROID.md](FDROID.md#while-the-merge-request-is-open).
 
 ## Versioning and output

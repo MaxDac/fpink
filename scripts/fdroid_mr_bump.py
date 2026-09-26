@@ -2,7 +2,8 @@
 """Point an F-Droid recipe at a new FPInk release tag.
 
 While the fdroiddata merge request is unmerged, checkupdates does not run, so
-every new release must be pushed to the MR by hand. This rewrites the single
+every new release must be pushed to the MR (the Release workflow's fdroid-mr job
+does it with the exact published tag; ``--tag latest`` picks it locally). This rewrites the single
 build block (versionName, versionCode, commit) and CurrentVersion(Code) in
 place, keeping the rewritemeta layout. The mirror in this repository uses the
 tag as ``commit``; the fdroiddata fork uses the full SHA (``--commit-style sha``).
@@ -19,6 +20,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_METADATA = ROOT / "metadata" / "com.fpink.capture.yml"
 CHANGELOG = "fastlane/metadata/android/en-US/changelogs/{code}.txt"
+# Same pattern as the recipe's UpdateCheckMode, so we pick what checkupdates would.
+RELEASE_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?")
 
 FIELDS = {
     "versionName": re.compile(r"^(  - versionName: )([^\r\n]*)(?=\r?$)", re.MULTILINE),
@@ -98,9 +101,29 @@ def resolve_release(root: Path, tag: str) -> tuple[str, int, str]:
     return name, code, sha
 
 
+def latest_tag(root: Path) -> str:
+    """Return the release tag with the highest versionCode (not the newest date)."""
+    best = None
+    for tag in git(root, "tag", "--list", "v*").split():
+        if not RELEASE_TAG.fullmatch(tag):
+            continue
+        try:
+            name, code = parse_properties(git(root, "show", f"{tag}:version.properties"))
+        except BumpError:
+            continue
+        if tag == f"v{name}" and (best is None or code > best[0]):
+            best = (code, tag)
+    if best is None:
+        raise BumpError("no release tag declares its version in version.properties")
+    return best[1]
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--tag", required=True, help="Release tag, e.g. v0.1.0-preview.9")
+    parser.add_argument(
+        "--tag", required=True,
+        help="Release tag, e.g. v0.1.0-preview.9, or 'latest' for the highest versionCode",
+    )
     parser.add_argument(
         "--metadata", type=Path, default=DEFAULT_METADATA,
         help="Recipe to rewrite (default: this repository's mirror)",
@@ -113,6 +136,8 @@ def main(argv=None) -> int:
     arguments = parser.parse_args(argv)
 
     try:
+        if arguments.tag == "latest":
+            arguments.tag = latest_tag(arguments.source)
         name, code, sha = resolve_release(arguments.source, arguments.tag)
         commit = arguments.tag if arguments.commit_style == "tag" else sha
         original = arguments.metadata.read_bytes().decode("utf-8")
