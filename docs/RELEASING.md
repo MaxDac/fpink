@@ -96,6 +96,10 @@ It must contain the latest released source. A concurrency group prevents active
 release runs from overlapping; GitHub may replace an older *pending* run when
 multiple dispatches queue, so confirm that the intended run actually started.
 
+While the fdroiddata merge request is unmerged, also point it at the new tag with
+`scripts/fdroid_mr_bump.py`. See
+[FDROID.md](FDROID.md#while-the-merge-request-is-open).
+
 ## Versioning and output
 
 `version.properties` declares the release built from each commit; release
@@ -261,7 +265,7 @@ until issues #27, #28, #30, #31, and #32 are complete.
 | Optional cloud OCR provider | Public releases (`foss` flavor) are offline-only (bundled PaddleOCR only) and never contact a cloud service; there is nothing to disclose. A private, non-F-Droid "full" build variant, built from a separate private companion repo, may add optional cloud/proprietary recognition providers for the maintainer's own signed releases — see `docs/ARCHITECTURE.md`'s flavor-split section — but that variant is never published to F-Droid. |
 | Identity and signing | Confirm the long-term `com.fpink.capture` identity. Choose F-Droid signing or upstream-signed reproducible builds before first distribution. Do not share the private key. Different certificates normally prevent switching channels in place. |
 | Shared-signature reproducibility | Releases from 0.1.0-preview.8 are built like the buildserver and checked by the Reproducibility workflow; the recipe sets `Binaries` and `AllowedAPKSigningKeys`. The source-built runtime is pinned in `build.expectedSha256` of `recognition/paddle/source-runtime.lock.json`; update it only together with the Paddle Lite source or toolchain. |
-| Submission | Prepare `metadata/com.fpink.capture.yml` in `fdroiddata`, lint/build it, submit a merge request, resolve review, and maintain update checks. Acceptance and timing belong to F-Droid. |
+| Submission | Prepare `metadata/com.fpink.capture.yml` in `fdroiddata`, lint/build it, submit a merge request, resolve review, push every new release to the open MR (`scripts/fdroid_mr_bump.py`), and maintain update checks. Acceptance and timing belong to F-Droid. |
 
 A self-hosted F-Droid repository is a different distribution route. It requires
 hosting, signed indexes and maintenance and does not remove licensing duties.
