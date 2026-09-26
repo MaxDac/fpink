@@ -1,0 +1,1 @@
+Easier one-handed capture: in landscape the shutter now sits beside the camera preview, within thumb reach, under the info text. In portrait the info text is smaller and has more room around the preview. Also includes dependency updates.
