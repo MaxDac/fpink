@@ -110,12 +110,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('RELEASE_TYPE: ${{ inputs.release_type }}', WORKFLOW)
         self.assertIn('--release-type "$RELEASE_TYPE"', WORKFLOW)
         build, publish = WORKFLOW.split("\n  publish:\n")
+        publish, fdroid_mr = publish.split("\n  fdroid-mr:\n")
         self.assertNotIn("contents: write", build)
         self.assertNotIn("actions/checkout@", publish)
         self.assertIn("persist-credentials: false", build)
         self.assertIn('if [[ "$GITHUB_REF" != refs/heads/main ]]', build)
         self.assertIn("environment: release", publish)
         self.assertIn("RELEASE_PUBLICATION_APPROVED", publish)
+
+    def test_fdroid_mr_job_uses_the_published_tag(self):
+        job = WORKFLOW.split("\n  fdroid-mr:\n", 1)[1]
+        self.assertIn("inputs.publish", job.split("\n", 1)[0])
+        self.assertIn("needs: [build, publish]", job)
+        self.assertIn("TAG: ${{ needs.build.outputs.tag }}", job)
+        self.assertIn('--tag "$TAG" --commit-style sha', job)
+        self.assertNotIn("--tag latest", job)
+        self.assertNotIn("contents: write", job)
+        self.assertIn("persist-credentials: false", job)
+        self.assertNotIn("--force", job)
+        self.assertNotIn("${{ secrets.FDROIDDATA_GITLAB_TOKEN }}@", job)
 
     def test_sign_manifest_and_temporary_key_cleanup(self):
         self.sign()
