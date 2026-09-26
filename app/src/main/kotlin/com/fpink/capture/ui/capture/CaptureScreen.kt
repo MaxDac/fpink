@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -36,6 +37,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -151,9 +153,16 @@ fun CaptureScreen(
     ) { padding ->
         val contentModifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
         if (state.previewFile != null || state.cameraCropFile != null || state.cameraChosen && hasPermission) {
+            val liveCamera = state.cameraCropFile == null && state.previewFile == null
+            val shutter = remember { CameraShutter() }
             CaptureImageLayout(
                 modifier = contentModifier,
-                information = { CaptureInformation(state) },
+                information = { wide -> CaptureInformation(state, compact = !wide) },
+                shutter = if (liveCamera) {
+                    { modifier -> ShutterButton(shutter, state.busy, modifier) }
+                } else {
+                    null
+                },
                 image = { modifier ->
                     if (state.cameraCropFile != null) {
                         CameraCropEditor(
@@ -169,7 +178,7 @@ fun CaptureScreen(
                             modifier = modifier,
                         )
                     } else {
-                        CameraPreview(viewModel, state.busy, modifier)
+                        CameraPreview(viewModel, shutter, modifier)
                     }
                 },
                 actions = { compact ->
@@ -219,18 +228,38 @@ fun CaptureScreen(
 }
 
 @Composable
-private fun CaptureInformation(state: CaptureUiState) {
-    Text(state.providerLabel, style = MaterialTheme.typography.bodyMedium)
+private fun CaptureInformation(state: CaptureUiState, compact: Boolean = false) {
+    val typography = MaterialTheme.typography
+    val bodyStyle = if (compact) typography.labelSmall else typography.bodySmall
+    Text(state.providerLabel, style = if (compact) typography.labelMedium else typography.bodyMedium)
     Text(
         if (state.cameraCropFile != null) {
             "Adjust the rectangular crop to the handwriting you want to recognize. The captured photo stays private on this device."
         } else {
             "One image, up to 24 MB. Images are normalized to PNG and downsampled to at most 4 megapixels / 3072 pixels per side. Photograph small handwriting closely; keep the page sharp and well lit."
         },
-        style = MaterialTheme.typography.bodySmall,
+        style = bodyStyle,
     )
-    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-    state.settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+    val errorStyle = if (compact) bodyStyle else LocalTextStyle.current
+    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = errorStyle) }
+    state.settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = errorStyle) }
+}
+
+@Stable
+internal class CameraShutter {
+    var action: (() -> Unit)? by mutableStateOf(null)
+}
+
+@Composable
+private fun ShutterButton(shutter: CameraShutter, busy: Boolean, modifier: Modifier = Modifier) {
+    ActionIconButton(
+        R.drawable.ic_camera,
+        R.string.take_photo,
+        filled = true,
+        modifier = modifier,
+        enabled = shutter.action != null && !busy,
+        onClick = { shutter.action?.invoke() },
+    )
 }
 
 @Composable
@@ -262,9 +291,10 @@ internal fun CameraCropActions(
 @Composable
 internal fun CaptureImageLayout(
     modifier: Modifier = Modifier,
-    information: @Composable () -> Unit,
+    information: @Composable (wide: Boolean) -> Unit,
     image: @Composable (Modifier) -> Unit,
     actions: @Composable (compact: Boolean) -> Unit,
+    shutter: (@Composable (Modifier) -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier) {
         val panelHeight = maxHeight * 0.3f
@@ -273,20 +303,35 @@ internal fun CaptureImageLayout(
             Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 image(Modifier.weight(1f).fillMaxHeight())
                 Column(
-                    Modifier.width(controlsWidth).fillMaxHeight().verticalScroll(rememberScrollState()),
+                    Modifier.width(controlsWidth).fillMaxHeight().verticalScroll(rememberScrollState())
+                        .padding(start = 12.dp, top = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    actions(true)
-                    information()
+                    if (shutter != null) {
+                        // Information first so the shutter lands mid-screen, within reach of the right thumb.
+                        information(true)
+                        shutter(Modifier.align(Alignment.CenterHorizontally))
+                        actions(true)
+                    } else {
+                        actions(true)
+                        information(true)
+                    }
                 }
             }
         } else {
             Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(
                     Modifier.fillMaxWidth().heightIn(max = panelHeight).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) { information() }
-                image(Modifier.weight(1f).fillMaxWidth())
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) { information(false) }
+                if (shutter != null) {
+                    Box(Modifier.weight(1f).fillMaxWidth().padding(top = 4.dp)) {
+                        image(Modifier.fillMaxSize())
+                        shutter(Modifier.align(Alignment.BottomCenter).padding(16.dp))
+                    }
+                } else {
+                    image(Modifier.weight(1f).fillMaxWidth())
+                }
                 Column(
                     Modifier.fillMaxWidth().heightIn(max = panelHeight).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -339,7 +384,7 @@ internal fun CaptureReviewActions(
 }
 
 @Composable
-private fun CameraPreview(viewModel: CaptureViewModel, busy: Boolean, modifier: Modifier = Modifier) {
+private fun CameraPreview(viewModel: CaptureViewModel, shutter: CameraShutter, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val executor = remember(context) { ContextCompat.getMainExecutor(context) }
@@ -401,37 +446,31 @@ private fun CameraPreview(viewModel: CaptureViewModel, busy: Boolean, modifier: 
             }
         }
     }
-    Box(modifier) {
-        AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-        ActionIconButton(
-            R.drawable.ic_camera,
-            R.string.take_photo,
-            filled = true,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
-            enabled = capture != null && !busy,
-            onClick = click@{
-                val imageCapture = capture ?: return@click
-                if (!viewModel.captureStarted()) return@click
-                var pendingFile: File? = null
-                try {
-                    val file = viewModel.newCameraFile().also { pendingFile = it }
-                    imageCapture.targetRotation = requireNotNull(previewView.display).rotation
-                    imageCapture.takePicture(
-                        ImageCapture.OutputFileOptions.Builder(file).build(),
-                        executor,
-                        object : ImageCapture.OnImageSavedCallback {
-                            override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) = viewModel.importCamera(file)
-                            override fun onError(exception: ImageCaptureException) {
-                                viewModel.deleteCameraFile(file)
-                                viewModel.error("The camera could not save the photo. Try again or choose an image.")
-                            }
-                        },
-                    )
-                } catch (_: Exception) {
-                    pendingFile?.let(viewModel::deleteCameraFile)
-                    viewModel.error("Could not start a capture. Check camera access and available storage.")
-                }
-            },
-        )
+    DisposableEffect(shutter, capture) {
+        val imageCapture = capture
+        shutter.action = if (imageCapture == null) null else fun() {
+            if (!viewModel.captureStarted()) return
+            var pendingFile: File? = null
+            try {
+                val file = viewModel.newCameraFile().also { pendingFile = it }
+                imageCapture.targetRotation = requireNotNull(previewView.display).rotation
+                imageCapture.takePicture(
+                    ImageCapture.OutputFileOptions.Builder(file).build(),
+                    executor,
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) = viewModel.importCamera(file)
+                        override fun onError(exception: ImageCaptureException) {
+                            viewModel.deleteCameraFile(file)
+                            viewModel.error("The camera could not save the photo. Try again or choose an image.")
+                        }
+                    },
+                )
+            } catch (_: Exception) {
+                pendingFile?.let(viewModel::deleteCameraFile)
+                viewModel.error("Could not start a capture. Check camera access and available storage.")
+            }
+        }
+        onDispose { shutter.action = null }
     }
+    AndroidView(factory = { previewView }, modifier = modifier)
 }

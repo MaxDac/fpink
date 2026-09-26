@@ -24,6 +24,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -140,6 +141,45 @@ class CaptureOrientationAcceptanceTest {
         compose.onNodeWithText("End of information").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Use image").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithTag("preview").assertIsDisplayed().assertHeightIsAtLeast(136.dp)
+    }
+
+    @Test fun wideCameraLayoutPlacesShutterBesidePreviewBelowInformation() {
+        compose.setContent {
+            MaterialTheme {
+                CaptureImageLayout(
+                    modifier = Modifier.requiredSize(720.dp, 360.dp),
+                    image = { Box(it.testTag("preview")) },
+                    actions = { Button(onClick = {}) { Text("Source") } },
+                    information = { Text("Information", Modifier.testTag("information")) },
+                    shutter = { Box(it.requiredSize(48.dp).testTag("shutter")) },
+                )
+            }
+        }
+        val preview = compose.onNodeWithTag("preview").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val information = compose.onNodeWithTag("information").getUnclippedBoundsInRoot()
+        val shutter = compose.onNodeWithTag("shutter").assertIsDisplayed().getUnclippedBoundsInRoot()
+        val source = compose.onNodeWithText("Source").getUnclippedBoundsInRoot()
+        assertTrue(shutter.left >= preview.right + 24.dp)
+        assertTrue(information.left >= preview.right + 24.dp)
+        assertTrue(shutter.top >= information.bottom)
+        assertTrue(source.top >= shutter.bottom)
+    }
+
+    @Test fun portraitCameraLayoutOverlaysShutterOnPreview() {
+        compose.setContent {
+            MaterialTheme {
+                CaptureImageLayout(
+                    modifier = Modifier.requiredSize(360.dp, 720.dp),
+                    image = { Box(it.testTag("preview")) },
+                    actions = { Button(onClick = {}) { Text("Source") } },
+                    information = { Text("Information") },
+                    shutter = { Box(it.requiredSize(48.dp).testTag("shutter")) },
+                )
+            }
+        }
+        val preview = compose.onNodeWithTag("preview").getUnclippedBoundsInRoot()
+        val shutter = compose.onNodeWithTag("shutter").assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue(shutter.top >= preview.top && shutter.bottom <= preview.bottom)
     }
 
     @Test fun selectedModeRestoresWithoutRestoringAnInFlightCaptureOrRepeatingARequest() {
