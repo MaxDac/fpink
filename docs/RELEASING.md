@@ -97,7 +97,7 @@ release runs from overlapping; GitHub may replace an older *pending* run when
 multiple dispatches queue, so confirm that the intended run actually started.
 
 While the fdroiddata merge request is unmerged, the `fdroid-mr` job pushes the new tag to it
-automatically, once configured. See
+automatically once `FDROIDDATA_GITLAB_TOKEN` is set. See
 [FDROID.md](FDROID.md#while-the-merge-request-is-open).
 
 ## Versioning and output

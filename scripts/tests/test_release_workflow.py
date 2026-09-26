@@ -120,7 +120,9 @@ class WorkflowTests(unittest.TestCase):
 
     def test_fdroid_mr_job_uses_the_published_tag(self):
         job = WORKFLOW.split("\n  fdroid-mr:\n", 1)[1]
-        self.assertIn("inputs.publish", job.split("\n", 1)[0])
+        self.assertEqual(job.split("\n", 1)[0].strip(), "if: ${{ inputs.publish }}")
+        self.assertIn("'MaxDac/fdroiddata'", job)
+        self.assertIn("'com.fpink.capture'", job)
         self.assertIn("needs: [build, publish]", job)
         self.assertIn("TAG: ${{ needs.build.outputs.tag }}", job)
         self.assertIn('--tag "$TAG" --commit-style sha', job)

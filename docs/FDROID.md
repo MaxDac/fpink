@@ -131,18 +131,17 @@ that doesn't supersede the current one.
 
 When a publishing run succeeds, the `fdroid-mr` job in `release.yml` runs the
 script with the exact tag that run just published. You never pick the tag by
-hand. It pushes a commit to the fork's MR branch, whose GitLab CI then runs
-lint and build. The job summary shows the line to post as an MR comment. The job
-is opt-in. To enable it, configure:
+hand. It pushes a commit to the MR's source branch, `com.fpink.capture` on
+[`MaxDac/fdroiddata`](https://gitlab.com/MaxDac/fdroiddata/-/tree/com.fpink.capture),
+whose GitLab CI then runs lint and build. The job summary shows the line to post
+as an MR comment.
 
-- the repository variable `FDROIDDATA_FORK` (for example `MaxDac/fdroiddata`);
-- the repository variable `FDROID_MR_BRANCH` (the MR's source branch); and
-- the secret `FDROIDDATA_GITLAB_TOKEN`, a GitLab project access token on the
-  fork only, with the `write_repository` scope and a short expiry.
-
-The job fails, rather than skipping silently, if the variables are set but the
-token is missing. It never force-pushes. Remove the variables and the secret
-once the MR is merged, when checkupdates takes over.
+The only setup is the repository secret `FDROIDDATA_GITLAB_TOKEN`: a GitLab
+project access token on the fork only, with the `write_repository` scope and a
+short expiry. Without it, the job warns and the release stays green, so update
+the MR manually. It never force-pushes. The variables `FDROIDDATA_FORK` and
+`FDROID_MR_BRANCH` override the fork and branch. Once the MR is merged, delete
+the job and the secret; from then on checkupdates handles new releases.
 
 ### Manual fallback and the mirror
 

@@ -303,12 +303,13 @@ jobs:
               summary.write(f"\nPublished [FPInk {version}](https://github.com/{repo}/releases/tag/{tag}).\n")
           PY
 
-  # While the fdroiddata MR is unmerged, checkupdates does not run for FPInk, so point the
-  # MR at the tag this run just published. Opt-in: set the FDROIDDATA_FORK (e.g.
-  # MaxDac/fdroiddata) and FDROID_MR_BRANCH variables and a FDROIDDATA_GITLAB_TOKEN secret
-  # (a project access token on the fork only, write_repository scope). Remove them once merged.
+  # While the fdroiddata MR (fdroid/fdroiddata!50122, from MaxDac/fdroiddata@com.fpink.capture)
+  # is unmerged, checkupdates does not run for FPInk, so point the MR at the tag this run
+  # just published. Needs the FDROIDDATA_GITLAB_TOKEN secret: a project access token on the
+  # fork only, write_repository scope. Without it the job only warns. Delete this job once
+  # the MR is merged. FDROIDDATA_FORK / FDROID_MR_BRANCH variables override the defaults.
   fdroid-mr:
-    if: ${{ inputs.publish && vars.FDROIDDATA_FORK != '' && vars.FDROID_MR_BRANCH != '' }}
+    if: ${{ inputs.publish }}
     needs: [build, publish]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -316,8 +317,8 @@ jobs:
       contents: read
     env:
       TAG: ${{ needs.build.outputs.tag }}
-      FORK: ${{ vars.FDROIDDATA_FORK }}
-      BRANCH: ${{ vars.FDROID_MR_BRANCH }}
+      FORK: ${{ vars.FDROIDDATA_FORK || 'MaxDac/fdroiddata' }}
+      BRANCH: ${{ vars.FDROID_MR_BRANCH || 'com.fpink.capture' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -330,8 +331,9 @@ jobs:
           GITLAB_TOKEN: ${{ secrets.FDROIDDATA_GITLAB_TOKEN }}
         run: |
           if [[ -z "$GITLAB_TOKEN" ]]; then
-            echo "::error::FDROIDDATA_GITLAB_TOKEN is not set; update the MR manually (docs/FDROID.md)."
-            exit 1
+            echo "::warning::FDROIDDATA_GITLAB_TOKEN is not set; update the fdroiddata MR to $TAG manually (docs/FDROID.md)."
+            echo "fdroiddata MR not updated: set FDROIDDATA_GITLAB_TOKEN or run \`scripts/fdroid_mr_bump.py --tag $TAG\` by hand." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           # The token never lands in a URL or .git/config.
           git config --global credential.helper \
