@@ -116,6 +116,36 @@ Treat every maintainer comment and CI failure as a required evidence change.
 - Before accepting the merge, confirm the diff remains focused and all five
   submission gates are still closed.
 
+## While the merge request is open
+
+Reviewers may leave an approved MR in the test queue for a long time, and
+checkupdates only runs for merged apps. Until the merge, every new installable
+release must be pushed to the MR by hand, so reviewers test the current version:
+
+1. Publish the release as usual (see [Recurring release maintenance](#recurring-release-maintenance)).
+2. Update both recipes from the new tag. The script reads `version.properties`
+   at the tag and rejects a mismatched tag, an empty changelog, or a versionCode
+   that does not supersede the current one. It replaces the single build block
+   instead of appending one, so the MR stays one version:
+
+   ```text
+   git fetch --tags origin
+   python3 scripts/fdroid_mr_bump.py --tag v<versionName>
+   python3 scripts/fdroid_mr_bump.py --tag v<versionName> --commit-style sha \
+     --metadata ../fdroiddata/metadata/com.fpink.capture.yml
+   ```
+
+   The mirror here keeps the tag as `commit`, and the fdroiddata fork uses the
+   full SHA.
+3. In the fork, run `fdroid rewritemeta com.fpink.capture`, `fdroid lint
+   com.fpink.capture` and `fdroid build com.fpink.capture:<versionCode>`, then
+   push the branch. Commit the mirror change here in a PR.
+4. Comment on the MR with the `MR note` line the script prints (tag, SHA,
+   versionName, versionCode) and the validation results.
+
+If you want to help the queue move, you can test other waiting MRs and post the
+results. This is optional.
+
 ## After merge
 
 Record the merged fdroiddata commit and monitor the official build and index
