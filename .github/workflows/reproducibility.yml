@@ -8,6 +8,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/reproducibility.yml'
+      - '.github/workflows/release.yml'
       - 'app/**'
       - 'core/**'
       - 'recognition/**'

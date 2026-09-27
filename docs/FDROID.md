@@ -136,12 +136,25 @@ hand. It pushes a commit to the MR's source branch, `com.fpink.capture` on
 whose GitLab CI then runs lint and build. The job summary shows the line to post
 as an MR comment.
 
-The only setup is the repository secret `FDROIDDATA_GITLAB_TOKEN`: a GitLab
-project access token on the fork only, with the `write_repository` scope and a
-short expiry. Without it, the job warns and the release stays green, so update
-the MR manually. It never force-pushes. The variables `FDROIDDATA_FORK` and
-`FDROID_MR_BRANCH` override the fork and branch. Once the MR is merged, delete
-the job and the secret; from then on checkupdates handles new releases.
+The only setup is the repository secret `FDROIDDATA_DEPLOY_KEY`, the private half
+of an SSH [deploy key](https://docs.gitlab.com/user/project/deploy_keys/) that
+can push to the fork and nothing else. Deploy keys are available on GitLab's free
+tier; project access tokens are not.
+
+```text
+ssh-keygen -t ed25519 -N "" -C fpink-release -f fdroiddata_deploy
+# GitLab: MaxDac/fdroiddata > Settings > Repository > Deploy keys > Add new key
+#   paste fdroiddata_deploy.pub, tick "Grant write permissions to this key"
+gh secret set FDROIDDATA_DEPLOY_KEY -R MaxDac/fpink < fdroiddata_deploy
+rm fdroiddata_deploy fdroiddata_deploy.pub
+```
+
+If `com.fpink.capture` is a protected branch, allow the deploy key to push to it.
+The job pins GitLab's published ed25519 host key and never force-pushes.
+Without the secret, the job warns and the release stays green, so update the MR
+manually. The variables `FDROIDDATA_FORK` and `FDROID_MR_BRANCH` override the
+fork and branch. Once the MR is merged, delete the job, the secret and the
+deploy key; from then on checkupdates handles new releases.
 
 ### Manual fallback and the mirror
 
