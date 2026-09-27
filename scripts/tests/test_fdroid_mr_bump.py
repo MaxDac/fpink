@@ -15,10 +15,28 @@ bumper = importlib.util.module_from_spec(MODULE_SPEC)
 sys.modules[MODULE_SPEC.name] = bumper
 MODULE_SPEC.loader.exec_module(bumper)
 
-MIRROR = (Path(__file__).resolve().parents[2] / "metadata" / "com.fpink.capture.yml").read_text(
-    encoding="utf-8"
-)
 SHA = "d" * 40
+BASELINE = {
+    "versionName": "0.1.0-preview.8",
+    "versionCode": "8",
+    "commit": "v0.1.0-preview.8",
+    "CurrentVersion": "0.1.0-preview.8",
+    "CurrentVersionCode": "8",
+}
+
+
+def pinned_mirror():
+    # The real recipe layout, pinned to preview.8 so the tests don't depend on
+    # which release metadata/com.fpink.capture.yml currently points at.
+    text = (Path(__file__).resolve().parents[2] / "metadata" / "com.fpink.capture.yml").read_text(
+        encoding="utf-8"
+    )
+    for key, pattern in bumper.FIELDS.items():
+        text = pattern.sub(lambda m, v=BASELINE[key]: m.group(1) + v, text, count=1)
+    return text
+
+
+MIRROR = pinned_mirror()
 
 
 def build_fields(text):
