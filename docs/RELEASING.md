@@ -45,6 +45,11 @@ approval, not something a routine CI run should create.
 
 ## Run a release
 
+To have an agent do all of this, prompt Claude Code or Copilot CLI with something
+like "Use the fdroid-release skill to cut the next preview". The skill lives in
+`.claude/skills/fdroid-release/SKILL.md`. It runs the steps below, then updates
+the fdroiddata MR and the recipe mirror.
+
 First declare the release in a release-bump PR. F-Droid's auto-update reads the
 version from `version.properties` at the release tag, so the tagged commit must
 already contain it:
