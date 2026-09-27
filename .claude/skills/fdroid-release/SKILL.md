@@ -82,7 +82,7 @@ and that `git rev-parse "v$V^{commit}"` equals `$MAIN`.
 
 ## 4. Point the fdroiddata MR at the release
 
-The `fdroid-mr` job in the same run does this when `FDROIDDATA_GITLAB_TOKEN` is set:
+The `fdroid-mr` job in the same run does this when the `FDROIDDATA_DEPLOY_KEY` secret (a write deploy key on the fork) is set:
 
 ```bash
 gh run view "$RUN" --json jobs -q '.jobs[] | select(.name=="fdroid-mr") | .conclusion'
