@@ -6,18 +6,6 @@ name: Reproducibility
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - '.github/workflows/reproducibility.yml'
-      - '.github/workflows/release.yml'
-      - 'app/**'
-      - 'core/**'
-      - 'recognition/**'
-      - 'gradle/**'
-      - '*.gradle.kts'
-      - 'gradle.properties'
-      - 'version.properties'
-      - 'metadata/**'
-      - 'scripts/fdroid*'
 
 permissions:
   contents: read
@@ -31,7 +19,39 @@ defaults:
     shell: bash
 
 jobs:
+  # Filtering in the job, not with on.pull_request.paths: the Build and compare checks are
+  # required, and a workflow that never starts leaves them pending forever. Unaffected PRs
+  # still get every check, with each step skipped.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      relevant: ${{ steps.diff.outputs.relevant }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+            echo relevant=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only "$BASE...$HEAD" -- '.github/workflows/reproducibility.yml' '.github/workflows/release.yml' 'app/**' 'core/**' 'recognition/**' 'gradle/**' '*.gradle.kts' 'gradle.properties' 'version.properties' 'metadata/**' 'scripts/fdroid*')"
+          if [[ -n "$files" ]]; then relevant=true; else relevant=false; fi
+          echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
+          echo "Reproducibility build needed: $relevant" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$files"
+
   build:
+    needs: changes
     name: Build (${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 180
@@ -56,6 +76,7 @@ jobs:
             threads: ''
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: needs.changes.outputs.relevant == 'true'
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -63,11 +84,13 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Free disk space
+        if: needs.changes.outputs.relevant == 'true'
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift /usr/local/lib/android
           df -h /
 
       - name: Build
+        if: needs.changes.outputs.relevant == 'true'
         env:
           LITE_BUILD_THREADS: ${{ matrix.threads }}
         run: |
@@ -86,7 +109,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: always()
+        if: always() && needs.changes.outputs.relevant == 'true'
         with:
           name: rb-${{ strategy.job-index }}
           path: out/
@@ -94,16 +117,18 @@ jobs:
           retention-days: 14
 
   compare:
-    needs: build
+    needs: [changes, build]
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        if: needs.changes.outputs.relevant == 'true'
         with:
           pattern: rb-*
           path: builds
 
       - name: Compare APKs
+        if: needs.changes.outputs.relevant == 'true'
         run: |
           sha256sum builds/*/unsigned.apk | tee -a "$GITHUB_STEP_SUMMARY"
           reference=builds/rb-0/unsigned.apk
@@ -127,7 +152,7 @@ jobs:
           exit $status
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: failure()
+        if: failure() && needs.changes.outputs.relevant == 'true'
         with:
           name: diffoscope
           path: diffoscope-*
