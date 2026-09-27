@@ -130,7 +130,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("contents: write", job)
         self.assertIn("persist-credentials: false", job)
         self.assertNotIn("--force", job)
-        self.assertNotIn("${{ secrets.FDROIDDATA_GITLAB_TOKEN }}@", job)
+        self.assertIn("DEPLOY_KEY: ${{ secrets.FDROIDDATA_DEPLOY_KEY }}", job)
+        self.assertIn('"git@gitlab.com:$FORK.git"', job)
+        self.assertIn("StrictHostKeyChecking=yes", job)
+        self.assertNotIn("StrictHostKeyChecking=no", job)
+        self.assertNotIn("ssh-keyscan", job)
+        self.assertIn(
+            "gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf", job
+        )
 
     def test_sign_manifest_and_temporary_key_cleanup(self):
         self.sign()

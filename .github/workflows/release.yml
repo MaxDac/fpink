@@ -305,8 +305,8 @@ jobs:
 
   # While the fdroiddata MR (fdroid/fdroiddata!50122, from MaxDac/fdroiddata@com.fpink.capture)
   # is unmerged, checkupdates does not run for FPInk, so point the MR at the tag this run
-  # just published. Needs the FDROIDDATA_GITLAB_TOKEN secret: a project access token on the
-  # fork only, write_repository scope. Without it the job only warns. Delete this job once
+  # just published. Needs the FDROIDDATA_DEPLOY_KEY secret: the private half of an SSH deploy
+  # key with write access on the fork only. Without it the job only warns. Delete this job once
   # the MR is merged. FDROIDDATA_FORK / FDROID_MR_BRANCH variables override the defaults.
   fdroid-mr:
     if: ${{ inputs.publish }}
@@ -328,17 +328,23 @@ jobs:
 
       - name: Push the published release to the fdroiddata MR branch
         env:
-          GITLAB_TOKEN: ${{ secrets.FDROIDDATA_GITLAB_TOKEN }}
+          DEPLOY_KEY: ${{ secrets.FDROIDDATA_DEPLOY_KEY }}
         run: |
-          if [[ -z "$GITLAB_TOKEN" ]]; then
-            echo "::warning::FDROIDDATA_GITLAB_TOKEN is not set; update the fdroiddata MR to $TAG manually (docs/FDROID.md)."
-            echo "fdroiddata MR not updated: set FDROIDDATA_GITLAB_TOKEN or run \`scripts/fdroid_mr_bump.py --tag $TAG\` by hand." >> "$GITHUB_STEP_SUMMARY"
+          if [[ -z "$DEPLOY_KEY" ]]; then
+            echo "::warning::FDROIDDATA_DEPLOY_KEY is not set; update the fdroiddata MR to $TAG manually (docs/FDROID.md)."
+            echo "fdroiddata MR not updated: set FDROIDDATA_DEPLOY_KEY or run \`scripts/fdroid_mr_bump.py --tag $TAG\` by hand." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          # The token never lands in a URL or .git/config.
-          git config --global credential.helper \
-            '!f() { test "$1" = get && echo username=oauth2 && echo "password=$GITLAB_TOKEN"; }; f'
-          git clone --quiet --single-branch --branch "$BRANCH" "https://gitlab.com/$FORK.git" "$RUNNER_TEMP/fdroiddata"
+          # Deploy key: only this fork accepts it. Host key pinned to GitLab's published
+          # ed25519 fingerprint SHA256:eUXGGm1YGsMAS7vkcx6JOJdOGHPem5gQp4taiCfCLB8.
+          ssh_dir="$RUNNER_TEMP/fdroiddata-ssh"
+          install -d -m 700 "$ssh_dir"
+          printf '%s\n' "$DEPLOY_KEY" > "$ssh_dir/key"
+          chmod 600 "$ssh_dir/key"
+          echo 'gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf' > "$ssh_dir/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts -o StrictHostKeyChecking=yes"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          git clone --quiet --single-branch --branch "$BRANCH" "git@gitlab.com:$FORK.git" "$RUNNER_TEMP/fdroiddata"
           recipe="$RUNNER_TEMP/fdroiddata/metadata/com.fpink.capture.yml"
           note=$(python3 scripts/fdroid_mr_bump.py --tag "$TAG" --commit-style sha --metadata "$recipe" | grep '^MR note:')
           cd "$RUNNER_TEMP/fdroiddata"
