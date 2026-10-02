@@ -192,7 +192,7 @@ class ImageImportStore(context: Context) {
             val selection = File(sourceDirectory(sourceId), "selection")
             require(selection.isFile) { "Confirm this image again before processing it." }
             FileInputStream(selection).use { properties.load(it) }
-            // Jobs confirmed before strategies existed stored "provider" (kraken, paddle or a plugin).
+            // Jobs confirmed before strategies existed stored "provider" (a retired built-in or a plugin).
             val stored = properties.getProperty("strategy") ?: properties.getProperty("provider")
                 ?: throw RecognitionError.Configuration("This job has no valid recognition selection. Choose the image again.")
             val strategy = storedStrategyId(stored)

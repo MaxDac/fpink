@@ -58,7 +58,7 @@ class NoteSerializationTest {
                         ImagePoint(0.9f, 0.4f),
                         ImagePoint(0.1f, 0.4f),
                     ),
-                    recognitionProvider = "PADDLE",
+                    recognitionProvider = "cursive",
                     recognitionModelVersion = "PP-OCRv5_mobile",
                     inkColorOrigin = origin,
                     zettelkastenCategory = category,

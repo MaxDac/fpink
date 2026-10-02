@@ -19,7 +19,7 @@ class MarkdownVaultExportTest {
             inkColorName = "Blue \"Black\"",
             sourceId = "src",
             paragraphIndex = 1,
-            recognitionProvider = "PADDLE",
+            recognitionProvider = "cursive",
             recognitionModelVersion = "v5",
             confidence = 0.5f,
             userEdited = true,
@@ -41,7 +41,7 @@ class MarkdownVaultExportTest {
             ink-color-name: "Blue \"Black\""
             source: "src"
             paragraph: 1
-            recognition: "PADDLE v5"
+            recognition: "cursive v5"
             confidence: 0.5
             user-edited: true
             ---

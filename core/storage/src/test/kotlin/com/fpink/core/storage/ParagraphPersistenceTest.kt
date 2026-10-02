@@ -33,7 +33,7 @@ class ParagraphPersistenceTest {
                 sourceId = source,
                 paragraphIndex = index,
                 paragraphPolygon = listOf(ImagePoint(.1f, .2f), ImagePoint(.8f, .2f), ImagePoint(.8f, .9f)),
-                recognitionProvider = "paddle",
+                recognitionProvider = "cursive",
                 recognitionModelVersion = "v5",
                 inkColorOrigin = InkColorOrigin.DETECTED,
             )

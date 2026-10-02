@@ -14,7 +14,7 @@ the export's inference.yml)
   Official PaddlePaddle ONNX export, Apache-2.0
   https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx
   revision 50c7eacafc52fa7bcf4194e8cd08e46f8558504b
-  Licence text: licenses/PaddleOCR-models-APACHE-2.0.txt
+  Licence text: licenses/PP-OCRv6-models-APACHE-2.0.txt
 
 Kraken PP-OCRv6 medium recognizer (kraken/ppocrv6-medium-recognition.onnx and
 kraken/ppocrv6-medium-alphabet.txt), an ONNX export made for FPInk

@@ -44,9 +44,8 @@ No NDK, CMake or C++ compiler is needed: the app has no native sources of its ow
 
 With `subdir: app`, fdroidserver runs Gradle in `app/`. The full recipe is
 mirrored in [`metadata/com.fpink.capture.yml`](../metadata/com.fpink.capture.yml).
-Older build entries (up to 0.1.0-preview.11) rebuilt the former Paddle Lite
-runtime from source; keep those entries unchanged in fdroiddata, because their
-tagged sources still need it.
+Older build entries (up to 0.1.0-preview.11) used a different build setup; keep
+those entries unchanged in fdroiddata, because their tagged sources still need it.
 
 The `recognition:models` build verifies every bundled model, dictionary and
 licence against `recognition/models/artifacts.lock.json` before packaging.

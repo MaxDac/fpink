@@ -60,7 +60,7 @@ def main() -> None:
         raise SystemExit("Dictionary entries must be non-empty and single-line")
     import onnxruntime  # noqa: PLC0415 - only needed for the shape check
     classes = onnxruntime.InferenceSession(str(rec_model)).get_outputs()[0].shape[-1]
-    # PaddleOCR CTCLabelDecode: class 0 is the CTC blank, then the dictionary, then a space.
+    # PP-OCR CTCLabelDecode: class 0 is the CTC blank, then the dictionary, then a space.
     if classes != len(characters) + 2:
         raise SystemExit(f"Recognizer has {classes} classes but the dictionary implies {len(characters) + 2}")
     shutil.copyfile(rec_model, args.output_dir / "PP-OCRv6_medium_rec.onnx")

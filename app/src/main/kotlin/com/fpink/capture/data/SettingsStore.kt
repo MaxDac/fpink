@@ -39,7 +39,7 @@ private val STRATEGY_KEY = stringPreferencesKey("recognition_strategy")
 
 /**
  * Maps a stored strategy, or a provider id saved before strategies existed, to a strategy id.
- * The retired on-device providers (Kraken, PaddleOCR) and a missing value map to the default;
+ * Ids of retired on-device providers and a missing value map to the default;
  * any other id is a plugin strategy and is kept as is.
  */
 internal fun storedStrategyId(stored: String?): RecognitionStrategyId = when (stored) {

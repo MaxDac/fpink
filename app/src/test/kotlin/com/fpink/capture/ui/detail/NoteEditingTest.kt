@@ -14,7 +14,7 @@ class NoteEditingTest {
         id = "source-0", capturedAt = Instant.fromEpochMilliseconds(1000),
         imagePath = "images/source.png", text = "Original paragraph",
         inkColorHex = "#000000", inkColorName = "Black", inkColorOrigin = InkColorOrigin.DEFAULTED,
-        sourceId = "source", paragraphIndex = 0, recognitionProvider = "PADDLE",
+        sourceId = "source", paragraphIndex = 0, recognitionProvider = "cursive",
     )
 
     @Test

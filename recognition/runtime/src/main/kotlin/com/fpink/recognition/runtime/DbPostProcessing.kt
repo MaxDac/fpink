@@ -10,7 +10,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-/** Thresholds of PaddleOCR's `DBPostProcess`, taken from a model's pinned `inference.yml`. */
+/** Thresholds of the PP-OCR `DBPostProcess` step, taken from a model's pinned `inference.yml`. */
 data class DbParameters(
     val threshold: Float,
     val boxThreshold: Float,
@@ -26,8 +26,8 @@ data class DbParameters(
 
 /**
  * Differentiable-binarization post-processing: turns a detector probability map into rotated
- * text-line rectangles. Kotlin port of the reviewed `ocr_geometry.cpp` that shipped with the
- * former Paddle Lite runtime: 8-connected components, convex hull, minimum-area rectangle,
+ * text-line rectangles. Kotlin port of the previously reviewed native geometry code:
+ * 8-connected components, convex hull, minimum-area rectangle,
  * mean-score filter and DB unclip expansion of the rectangle.
  */
 object DbPostProcessing {

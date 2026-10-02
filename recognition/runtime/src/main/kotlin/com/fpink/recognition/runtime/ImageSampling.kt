@@ -47,7 +47,7 @@ object ImageSampling {
     /**
      * Rectifies [line] into an upright crop. A detector rectangle maps to an affine
      * quadrilateral in the image, so bilinear interpolation between its vertices is exact.
-     * Lines at least 1.5 times taller than wide are rotated (PaddleOCR's rotate-crop convention;
+     * Lines at least 1.5 times taller than wide are rotated (the PP-OCR rotate-crop convention;
      * no orientation classifier is bundled). Returns null for degenerate quads.
      */
     fun cropLine(pixels: IntArray, width: Int, height: Int, line: DetectedLine): LineCrop? {
@@ -96,7 +96,7 @@ object ImageSampling {
 
     /**
      * Resizes the page to [inputWidth] x [inputHeight] and packs it as a 1x3xHxW BGR tensor
-     * normalised with `(value / 255 - mean[c]) / std[c]`, matching PaddleOCR's `NormalizeImage`
+     * normalised with `(value / 255 - mean[c]) / std[c]`, matching the PP-OCR `NormalizeImage`
      * applied to an OpenCV BGR image.
      */
     fun detectorTensor(

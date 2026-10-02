@@ -56,7 +56,7 @@ mutex serialises jobs. Its `modelVersion` is `"<detector>+<recognizer>"`.
 Cursive is selected by default; Printed is the second public, fully offline
 strategy. See recognition/models/README.md for model provenance and exactly what
 has and hasn't been measured. Settings stores the default as `recognition_strategy`;
-legacy `recognition_provider` values `kraken`/`paddle` migrate to Cursive. The
+legacy built-in `recognition_provider` values migrate to Cursive. The
 camera route offers a per-capture strategy picker with the default preselected;
 gallery, file and share imports use the default.
 `RecognitionStrategyId` is an open identifier, and
