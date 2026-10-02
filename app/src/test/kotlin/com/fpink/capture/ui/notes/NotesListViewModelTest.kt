@@ -548,6 +548,25 @@ class NotesListViewModelTest {
         assertEquals(setOf("b"), model.uiState.value.selectedIds)
     }
 
+    @Test fun `hiding a pending deletion target cancels the deletion request`() = runTest(dispatcher) {
+        val fixture = categorizedFixture()
+        val enabled = MutableStateFlow(false)
+        val model = model(fixture.repository, enabled)
+        runCurrent()
+        model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
+        model.toggleSelectAll()
+        model.requestDeletion()
+        assertEquals(listOf("a", "b", "c"), model.uiState.value.pendingDeletionIds.sorted())
+
+        enabled.value = true
+        runCurrent()
+        assertTrue(model.uiState.value.pendingDeletionIds.isEmpty())
+        assertEquals(setOf("a"), model.uiState.value.selectedIds)
+        model.confirmDeletion()
+        advanceUntilIdle()
+        assertEquals(3, fixture.repository.list().getOrThrow().size)
+    }
+
     private suspend fun categorizedFixture(): Fixture {
         val fixture = fixture(listOf("a", "b", "c"))
         fixture.repository.save(note("a").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT)).getOrThrow()

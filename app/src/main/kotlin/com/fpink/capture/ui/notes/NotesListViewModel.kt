@@ -231,11 +231,17 @@ class NotesListViewModel(
         _uiState.update { it.copy(categoryFilter = emptySet()) }
     }
 
-    /** Hidden notes are deselected so bulk actions never affect notes the user cannot see. */
+    /**
+     * Hidden notes are deselected so bulk actions never affect notes the user cannot see. A pending
+     * deletion confirmation is cancelled if any of its targets became hidden.
+     */
     private fun NotesListUiState.pruned(): NotesListUiState {
-        if (selectedIds.isEmpty()) return this
+        if (selectedIds.isEmpty() && pendingDeletionIds.isEmpty()) return this
         val visible = visibleNotes.mapTo(mutableSetOf()) { it.id }
-        return copy(selectedIds = selectedIds.intersect(visible))
+        return copy(
+            selectedIds = selectedIds.intersect(visible),
+            pendingDeletionIds = if (pendingDeletionIds.all { it in visible }) pendingDeletionIds else emptyList(),
+        )
     }
 
     private suspend fun loadNotes() {
