@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -75,7 +76,8 @@ sealed interface NotesListError {
 
 class NotesListViewModel(
     private val noteRepository: NoteRepository,
-    private val settingsStore: SettingsStore? = null,
+    settingsStore: SettingsStore? = null,
+    zettelkastenEnabled: Flow<Boolean>? = settingsStore?.zettelkastenEnabled,
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     companion object {
@@ -89,9 +91,9 @@ class NotesListViewModel(
 
     init {
         refresh()
-        settingsStore?.let { store ->
+        zettelkastenEnabled?.let { flow ->
             viewModelScope.launch {
-                store.zettelkastenEnabled.collect { enabled ->
+                flow.collect { enabled ->
                     _uiState.update { it.copy(zettelkastenEnabled = enabled).pruned() }
                 }
             }
@@ -236,13 +238,16 @@ class NotesListViewModel(
         scheduleSearch(debounce = true)
     }
 
+    // Filter changes are blocked while selection is locked so an in-flight delete or move keeps its selection for retry.
     fun toggleCategoryFilter(category: ZettelkastenCategory) {
+        if (!_uiState.value.canChangeSelection) return
         _uiState.update {
             it.copy(categoryFilter = if (category in it.categoryFilter) it.categoryFilter - category else it.categoryFilter + category).pruned()
         }
     }
 
     fun clearFilters() {
+        if (!_uiState.value.canChangeSelection) return
         _uiState.update { it.copy(query = "", categoryFilter = emptySet()) }
         scheduleSearch(debounce = false)
     }
@@ -272,8 +277,10 @@ class NotesListViewModel(
     private fun NotesListUiState.pruned(): NotesListUiState {
         if (selectedIds.isEmpty() && pendingDeletionIds.isEmpty()) return this
         val visible = visibleNotes.mapTo(mutableSetOf()) { it.id }
-        val pending = if (pendingDeletionIds.all { it in visible }) pendingDeletionIds else emptyList()
-        return copy(selectedIds = selectedIds.intersect(visible), pendingDeletionIds = pending)
+        return copy(
+            selectedIds = selectedIds.intersect(visible),
+            pendingDeletionIds = if (pendingDeletionIds.all { it in visible }) pendingDeletionIds else emptyList(),
+        )
     }
 
     private suspend fun loadNotes() {
