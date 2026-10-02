@@ -2,8 +2,10 @@
 
 An Android app for capturing handwritten fountain-pen notes, recognizing text,
 and preserving detected ink colours. This public build is 100% offline and
-FOSS: bundled PaddleOCR is the default recognition provider, and the Settings
-screen also exposes a Kraken OCR provider slot for reviewed ONNX assets.
+FOSS: two bundled on-device recognition strategies are available. **Cursive**
+(the default) targets handwriting and **Printed** targets printed text. Choose
+the default under Settings → Default recognition; when capturing with the camera,
+you can also pick a strategy for that one photo.
 
 ## Correcting captured notes
 
@@ -53,18 +55,18 @@ writes to the location you pick.
 
 ## Build and releases
 
-Use JDK 17, Android SDK 37, NDK `28.2.13676358`, and CMake `3.22.1`.
+Use JDK 17 and Android SDK 37.
 Run `.\gradlew.bat build` on Windows or `./gradlew build` on Linux.
 The published APK contains `arm64-v8a` native code only, so it installs on
-ARM64 devices. Both offline recognizers run on it: Paddle Lite and the
-Python-free, ONNX Runtime-based Kraken provider, which ships a
-reviewed, pinned ONNX export of a Kraken-compatible recognizer as a bundled
-asset, and never downloads or substitutes model bytes at runtime. The public
+ARM64 devices. Both strategies run on ONNX Runtime with bundled, SHA-256-pinned
+models: the official PP-OCRv6 small detector and medium recognizer (Printed),
+and a Kraken PP-OCRv6-medium recognizer (Cursive). The app never downloads or
+substitutes model bytes at runtime. The public
 build requests no network permissions, and ONNX Runtime's bundled telemetry
 initializer is removed from every build. Release builds are shrunk with R8.
 
-See [architecture](docs/ARCHITECTURE.md), [Paddle offline recognition](recognition/paddle/README.md),
-[Kraken OCR integration](recognition/kraken/README.md),
+See [architecture](docs/ARCHITECTURE.md), [bundled recognition models](recognition/models/README.md),
+[recognition strategies](recognition/strategies/README.md),
 [release setup and versioning](docs/RELEASING.md), and the
 [F-Droid submission and maintenance runbook](docs/FDROID.md).
 
@@ -79,9 +81,8 @@ merchantability or fitness for a particular purpose. See [LICENSE](LICENSE) for
 the complete terms.
 
 Third-party dependencies and bundled assets retain their own licenses; this
-does not relicense their authors' work. Paddle runtime/model provenance and
-bundled notices are documented in [recognition/paddle](recognition/paddle/README.md).
-Kraken/ONNX provenance and current export limitations are documented in
-[recognition/kraken](recognition/kraken/README.md).
+does not relicense their authors' work. Model provenance, licences, bundled
+notices and current limitations are documented in
+[recognition/models](recognition/models/README.md).
 When distributing an APK, provide its corresponding source and preserve those
 notices; the release workflow links each APK to its exact tagged source.

@@ -1,5 +1,6 @@
 import com.android.build.api.artifact.SingleArtifact
 import java.util.Properties
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -55,12 +56,16 @@ android {
         versionCode = resolvedVersionCode
         versionName = resolvedVersionName
         testInstrumentationRunner = "com.fpink.capture.acceptance.AcceptanceTestRunner"
-        // Paddle Lite ships arm64-v8a only; one ABI keeps every OCR provider available on every
-        // device the APK installs on and stops ONNX Runtime from bloating the APK with other ABIs.
+        // Release APKs ship arm64-v8a only so ONNX Runtime does not bloat them with other ABIs.
         ndk { abiFilters += "arm64-v8a" }
     }
 
     buildTypes {
+        debug {
+            // Lets instrumentation tests run the on-device models natively on x86_64 emulators
+            // instead of failing closed under ARM translation.
+            ndk { abiFilters += "x86_64" }
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -89,7 +94,7 @@ android {
 
     flavorDimensions += "distribution"
     productFlavors {
-        // Public/F-Droid default: bundled Paddle OCR only, no proprietary code or binaries.
+        // Public/F-Droid default: bundled on-device recognition only, no proprietary code or binaries.
         create("foss") {
             dimension = "distribution"
         }
@@ -101,10 +106,9 @@ android {
         }
     }
 
-    packaging {
-        // Preserve the reviewed runtime bytes for APK provenance verification.
-        jniLibs.keepDebugSymbols += "**/libpaddle_light_api_shared.so"
-    }
+
+    // Model weights barely compress; storing them keeps the first-run copy out of the APK fast.
+    androidResources { noCompress += "onnx" }
 
     // Reproducible builds: F-Droid compares its rebuild with our signed release. This block is
     // only added when AGP signs (we sign externally), but keep it out explicitly.
@@ -137,8 +141,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:ai"))
     implementation(project(":core:storage"))
-    implementation(project(":recognition:paddle"))
-    implementation(project(":recognition:kraken"))
+    implementation(project(":recognition:strategies"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.exifinterface)
@@ -214,16 +217,15 @@ androidComponents {
             doLast {
                 val apks = apkDirectory.get().asFile.listFiles()?.filter { it.extension == "apk" }.orEmpty()
                 check(apks.isNotEmpty()) { "No APK found for offline recognition package verification" }
+                val allowedAbis = if (variant.buildType == "debug") setOf("arm64-v8a", "x86_64") else setOf("arm64-v8a")
                 val requiredEntries = listOf(
-                    "assets/paddle/PP-OCRv5_mobile_det.nb",
-                    "assets/paddle/PP-OCRv5_mobile_rec.nb",
-                    "assets/paddle/ppocr_keys_ocrv5.txt",
-                    "assets/paddle/NOTICE.txt",
-                    "assets/kraken/NOTICE.txt",
-                    "lib/arm64-v8a/libfpink_paddle.so",
-                    "lib/arm64-v8a/libpaddle_light_api_shared.so",
-                    "lib/arm64-v8a/libc++_shared.so",
-                )
+                    "assets/recognition/NOTICE.txt",
+                    "assets/recognition/ppocrv6/PP-OCRv6_small_det.onnx",
+                    "assets/recognition/ppocrv6/PP-OCRv6_medium_rec.onnx",
+                    "assets/recognition/ppocrv6/PP-OCRv6_medium_rec_dict.txt",
+                    "assets/recognition/kraken/ppocrv6-medium-recognition.onnx",
+                    "assets/recognition/kraken/ppocrv6-medium-alphabet.txt",
+                ) + allowedAbis.map { "lib/$it/libonnxruntime.so" }
                 apks.forEach { apk ->
                     ZipFile(apk).use { archive ->
                         requiredEntries.forEach { name ->
@@ -235,10 +237,13 @@ androidComponents {
                             .map { it.name }
                             .filter { it.startsWith("lib/") }
                             .map { it.removePrefix("lib/").substringBefore('/') }
-                            .filter { it != "arm64-v8a" }
+                            .filter { it !in allowedAbis }
                             .toSortedSet()
                         check(unexpectedAbis.isEmpty()) {
-                            "${apk.name} must ship native libraries for arm64-v8a only, but also contains lib/$unexpectedAbis"
+                            "${apk.name} must ship native libraries for $allowedAbis only, but also contains lib/$unexpectedAbis"
+                        }
+                        check(archive.getEntry("assets/recognition/ppocrv6/PP-OCRv6_medium_rec.onnx").method == ZipEntry.STORED) {
+                            "${apk.name} must store ONNX models uncompressed"
                         }
                     }
                 }

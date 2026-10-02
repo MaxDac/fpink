@@ -59,21 +59,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: replay, all cores
+          - name: replay
             builder: replay
-            threads: ''
           # Also runs the release workflow's check tasks, which must not change the APK.
-          - name: replay, 2 threads, release checks
+          - name: replay, release checks
             builder: replay
-            threads: '2'
             checks: >-
               --check-task :app:testFossDebugUnitTest --check-task :core:ai:test --check-task :core:model:test
-              --check-task :core:storage:test --check-task :recognition:paddle:test --check-task :recognition:kraken:test
+              --check-task :core:storage:test --check-task :recognition:runtime:test --check-task :recognition:models:test
+              --check-task :recognition:strategies:test
               --check-task :app:lintFossRelease --check-task :app:verifyFossReleaseRecognitionPackage
               --check-task :app:verifyFossReleaseOfflineManifest
           - name: fdroid build
             builder: fdroidserver
-            threads: ''
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: needs.changes.outputs.relevant == 'true'
@@ -91,8 +89,6 @@ jobs:
 
       - name: Build
         if: needs.changes.outputs.relevant == 'true'
-        env:
-          LITE_BUILD_THREADS: ${{ matrix.threads }}
         run: |
           if [[ "${{ matrix.builder }}" == replay ]]; then
             bash scripts/fdroid-rb-docker.sh out ${{ matrix.checks }}
@@ -104,7 +100,6 @@ jobs:
             echo "### ${{ matrix.name }}"
             echo '```'
             cat out/SHA256SUMS
-            if [[ -f out/paddle-runtime-SHA256SUMS ]]; then cat out/paddle-runtime-SHA256SUMS; fi
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

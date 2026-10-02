@@ -26,7 +26,7 @@ import com.fpink.capture.ui.settings.SettingsScreen
 import com.fpink.capture.ui.settings.SettingsViewModel
 import com.fpink.capture.ui.theme.FPInkTheme
 import com.fpink.capture.ui.theme.ThemeViewModel
-import com.fpink.core.ai.RecognitionProviderId
+import com.fpink.core.ai.RecognitionStrategyId
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -87,7 +87,7 @@ class AppearanceAcceptanceTest {
         compose.waitUntil(10_000) { !theme.uiState.value.saving }
         runBlocking {
             assertEquals(ThemeMode.DARK, storage.settings.themeMode.first())
-            assertEquals(RecognitionProviderId.PADDLE, storage.settings.recognitionSettings.first().provider)
+            assertEquals(RecognitionStrategyId.CURSIVE, storage.settings.recognitionSettings.first().strategy)
             assertTrue(storage.settings.recognitionSettings.first().config.isEmpty())
         }
     }

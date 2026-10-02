@@ -5,8 +5,8 @@ import com.fpink.core.ai.ParagraphDraft
 import com.fpink.core.ai.PreparedImage
 import com.fpink.core.ai.RecognitionDocument
 import com.fpink.core.ai.RecognitionError
-import com.fpink.core.ai.RecognitionProvider
-import com.fpink.core.ai.RecognitionProviderId
+import com.fpink.core.ai.RecognitionStrategy
+import com.fpink.core.ai.RecognitionStrategyId
 import com.fpink.core.ai.RecognitionSettings
 import com.fpink.core.model.InkColorOrigin
 import com.fpink.core.model.ZettelkastenCategory
@@ -31,10 +31,10 @@ import org.junit.jupiter.api.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class RecognitionCoordinatorTest {
     private val image = PreparedImage(byteArrayOf(1), "image/png", 1, 1, intArrayOf(-1))
-    private val document = RecognitionDocument(emptyList(), RecognitionProviderId.PADDLE, "fixture")
+    private val document = RecognitionDocument(emptyList(), RecognitionStrategyId.CURSIVE, "fixture")
     private val sourceId = "4d3c1a1f-5449-4113-a22b-6a93d0971885"
     private fun draft(text: String) = ParagraphDraft(text, emptyList(), "#000000", "Black", InkColorOrigin.DEFAULTED)
-    private val cloudProvider = RecognitionProviderId("cloud")
+    private val cloudProvider = RecognitionStrategyId("cloud")
     private fun cloudSettings() = RecognitionSettings(cloudProvider, mapOf("endpoint" to "https://test.example", "apiKey" to "fixture-key"))
 
     @Test
@@ -78,15 +78,34 @@ class RecognitionCoordinatorTest {
     }
 
     @Test
-    fun `job keeps confirmed offline provider when global settings change`() = runTest {
+    fun `job keeps confirmed on-device strategy when global settings change`() = runTest {
         val fixture = Fixture(this)
         val coordinator = fixture.coordinator()
         coordinator.confirm(sourceId)
         fixture.settings = cloudSettings()
         coordinator.start(sourceId)
         advanceUntilIdle()
-        assertEquals(listOf(RecognitionProviderId.PADDLE), fixture.selectedProviders)
-        assertEquals(RecognitionProviderId.PADDLE, fixture.savedSelection?.provider)
+        assertEquals(listOf(RecognitionStrategyId.CURSIVE), fixture.selectedProviders)
+        assertEquals(RecognitionStrategyId.CURSIVE, fixture.savedSelection?.strategy)
+    }
+
+    @Test
+    fun `camera override of a built-in strategy is snapshotted without stored config`() = runTest {
+        val fixture = Fixture(this).apply { settings = cloudSettings() }
+        val coordinator = fixture.coordinator()
+        assertEquals(RecognitionSettings(RecognitionStrategyId.PRINTED), coordinator.confirm(sourceId, RecognitionStrategyId.PRINTED))
+        coordinator.start(sourceId)
+        advanceUntilIdle()
+        assertEquals(listOf(RecognitionStrategyId.PRINTED), fixture.selectedProviders)
+        assertTrue(fixture.repository.list().getOrThrow().all { it.recognitionProvider == "printed" })
+    }
+
+    @Test
+    fun `override of an unconfigured plugin strategy is rejected before the job is remembered`() = runTest {
+        val fixture = Fixture(this)
+        val failure = runCatching { fixture.coordinator().confirm(sourceId, RecognitionStrategyId("other")) }.exceptionOrNull()
+        assertInstanceOf(RecognitionError.Configuration::class.java, failure)
+        assertEquals(null, fixture.savedSelection)
     }
 
     @Test
@@ -145,7 +164,7 @@ class RecognitionCoordinatorTest {
         coordinator.confirm(sourceId)
         coordinator.start(sourceId)
         advanceUntilIdle()
-        assertEquals(listOf(RecognitionProviderId.PADDLE), fixture.selectedProviders)
+        assertEquals(listOf(RecognitionStrategyId.CURSIVE), fixture.selectedProviders)
         assertFalse((coordinator.state(sourceId).value as RecognitionJobState.Failed).retryable)
         assertTrue(fixture.repository.list().getOrThrow().isEmpty())
     }
@@ -216,7 +235,7 @@ class RecognitionCoordinatorTest {
 
     @Test
     fun `persisted cancel prevents provider image processor and save for either provider`() = runTest {
-        for (provider in listOf(RecognitionProviderId.PADDLE, cloudProvider)) {
+        for (provider in listOf(RecognitionStrategyId.CURSIVE, cloudProvider)) {
             val fixture = Fixture(this)
             fixture.savedSelection = RecognitionSettings(
                 provider, mapOf("endpoint" to "https://test.example", "apiKey" to "fixture-key"),
@@ -265,7 +284,7 @@ class RecognitionCoordinatorTest {
         var processingCalls = 0
         var cleanupFailure: IOException? = null
         val cancelledSources = mutableSetOf<String>()
-        val selectedProviders = mutableListOf<RecognitionProviderId>()
+        val selectedProviders = mutableListOf<RecognitionStrategyId>()
         var paragraphs = listOf(draft("Wrapped paragraph stays together."), draft("Second paragraph."))
         var recognize: suspend () -> Result<RecognitionDocument> = { Result.success(document) }
         var categoryColors: Map<ZettelkastenCategory, List<String>> = emptyMap()
@@ -285,12 +304,13 @@ class RecognitionCoordinatorTest {
                     return Result.success(paragraphs)
                 }
             },
-            providerFactory = { selected ->
-                selectedProviders += selected.provider
-                object : RecognitionProvider {
+            strategyFactory = { selected ->
+                selectedProviders += selected.strategy
+                object : RecognitionStrategy {
+                    override val id = selected.strategy
                     override suspend fun recognize(image: PreparedImage): Result<RecognitionDocument> {
                         calls++
-                        return this@Fixture.recognize()
+                        return this@Fixture.recognize().map { it.copy(strategy = selected.strategy) }
                     }
                 }
             },

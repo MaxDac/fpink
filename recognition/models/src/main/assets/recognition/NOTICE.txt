@@ -1,0 +1,25 @@
+FPInk on-device recognition models
+
+This app bundles the following pinned model files under assets/recognition.
+They run locally through ONNX Runtime; nothing is downloaded at runtime.
+
+PP-OCRv6 small text detection (ppocrv6/PP-OCRv6_small_det.onnx)
+  Official PaddlePaddle ONNX export, Apache-2.0
+  https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx
+  revision 28fe5895c24fd108c19eb3e8479f4ab385fbfc62
+
+PP-OCRv6 medium text recognition (ppocrv6/PP-OCRv6_medium_rec.onnx and
+ppocrv6/PP-OCRv6_medium_rec_dict.txt, the dictionary extracted unchanged from
+the export's inference.yml)
+  Official PaddlePaddle ONNX export, Apache-2.0
+  https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx
+  revision 50c7eacafc52fa7bcf4194e8cd08e46f8558504b
+  Licence text: licenses/PaddleOCR-models-APACHE-2.0.txt
+
+Kraken PP-OCRv6 medium recognizer (kraken/ppocrv6-medium-recognition.onnx and
+kraken/ppocrv6-medium-alphabet.txt), an ONNX export made for FPInk
+  Kraken engine: Apache-2.0, https://github.com/mittagessen/kraken
+  Model: canonical Zenodo DOI 10.5281/zenodo.21788410, mirrored at
+  https://huggingface.co/small-models-for-glam/kraken-ppocrv6-medium
+  revision 01b574f071bf21cff7d7e2a4f38966925dddc30a
+  Licence text: licenses/Kraken-APACHE-2.0.txt

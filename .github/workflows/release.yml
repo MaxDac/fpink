@@ -73,7 +73,7 @@ jobs:
       - name: Test release tooling
         run: python3 -m unittest discover -s scripts/tests -v
 
-      - name: Free disk space for the buildserver image and Paddle build
+      - name: Free disk space for the buildserver image
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift
           df -h /
@@ -84,7 +84,8 @@ jobs:
         run: |
           bash scripts/fdroid-rb-docker.sh rb-output \
             --check-task :app:testFossDebugUnitTest --check-task :core:ai:test --check-task :core:model:test \
-            --check-task :core:storage:test --check-task :recognition:paddle:test --check-task :recognition:kraken:test \
+            --check-task :core:storage:test --check-task :recognition:runtime:test --check-task :recognition:models:test \
+            --check-task :recognition:strategies:test \
             --check-task :app:lintFossRelease --check-task :app:verifyFossReleaseRecognitionPackage \
             --check-task :app:verifyFossReleaseOfflineManifest
           cat rb-output/build-env.txt >> "$GITHUB_STEP_SUMMARY"
@@ -106,8 +107,7 @@ jobs:
           python3 scripts/verify_release_apk.py \
             --apk rb-output/unsigned.apk \
             --version-name "$VERSION_NAME" --version-code "$VERSION_CODE" \
-            --build-tools "$ANDROID_HOME/build-tools/36.0.0" \
-            --source-runtime-sums rb-output/paddle-runtime-SHA256SUMS
+            --build-tools "$ANDROID_HOME/build-tools/36.0.0"
           mkdir release-staging
           cp rb-output/unsigned.apk release-staging/unsigned.apk
           cp rb-output/build-env.txt release-metadata.json LICENSE release-staging/
@@ -271,7 +271,7 @@ jobs:
           notes.write_text(
               ("Pre-release: not production-ready.\n\n" if prerelease else "") +
               f"Signed APK for Android 8.0+. Version code: {manifest['versionCode']}.\n\n"
-              "Offline PaddleOCR requires ARM64. Physical ARM64/16 KB-device qualification and representative "
+              "Offline recognition requires ARM64. Physical ARM64/16 KB-device qualification and representative "
               "handwriting-quality testing remain separate from CI; see the recognition documentation.\n\n"
               f"License: GPL-3.0-only for FPInk code; third-party components retain their licenses. "
               f"[Corresponding source](https://github.com/{repo}/archive/refs/tags/{tag}.tar.gz) "

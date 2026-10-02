@@ -50,9 +50,11 @@ import com.fpink.capture.ui.capture.CaptureReviewActions
 import com.fpink.capture.ui.capture.CaptureScreen
 import com.fpink.capture.ui.capture.CaptureViewModel
 import com.fpink.core.ai.DefaultNoteProcessor
-import com.fpink.core.ai.RecognitionProviderId
+import com.fpink.core.ai.RecognitionStrategyId
 import com.fpink.core.storage.NoteRepository
 import java.io.File
+import java.util.Properties
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -169,7 +171,7 @@ class CaptureReviewActionsAcceptanceTest {
         val staged = showReview()
         val testStorage = requireNotNull(storage)
         runBlocking {
-            testStorage.preferences.edit { it[stringPreferencesKey("recognition_provider")] = "OTHER" }
+            testStorage.preferences.edit { it[stringPreferencesKey("recognition_strategy")] = "OTHER" }
         }
         compose.waitUntil(10_000) { !viewModel.uiState.value.providerAvailable }
         compose.onNodeWithText(chooseAnother).assertIsEnabled()
@@ -178,7 +180,7 @@ class CaptureReviewActionsAcceptanceTest {
             assertTrue(confirmed.isEmpty())
             assertFalse(File(staged.file.parentFile, "selection").exists())
         }
-        runBlocking { testStorage.settings.save(RecognitionProviderId.PADDLE) }
+        runBlocking { testStorage.settings.save(RecognitionStrategyId.CURSIVE) }
         compose.waitUntil(10_000) { viewModel.uiState.value.providerAvailable }
         compose.onNodeWithText(useImage).assertIsEnabled().performClick()
         compose.waitUntil(10_000) { confirmed.isNotEmpty() }
@@ -189,6 +191,54 @@ class CaptureReviewActionsAcceptanceTest {
             assertTrue(staged.file.isFile)
             assertTrue(File(staged.file.parentFile, "selection").isFile)
             assertTrue(launches.isEmpty())
+        }
+    }
+
+    @Test fun cameraCaptureOffersStrategyPickerWithDefaultPreselectedAndConfirmsTheChoice() {
+        val staged = showReview()
+        compose.runOnIdle {
+            assertTrue(viewModel.uiState.value.showStrategyPicker)
+            assertEquals(RecognitionStrategyId.CURSIVE, viewModel.uiState.value.selectedStrategy)
+        }
+        compose.onNodeWithText("Recognition: Cursive ▾").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Printed").performClick()
+        compose.waitUntil(10_000) { viewModel.uiState.value.selectedStrategy == RecognitionStrategyId.PRINTED }
+        compose.onNodeWithText("Recognition: Printed ▾").assertIsDisplayed()
+        compose.onNodeWithText(useImage).assertIsEnabled().performClick()
+        compose.waitUntil(10_000) { confirmed.isNotEmpty() }
+        val selection = Properties().apply {
+            File(staged.file.parentFile, "selection").inputStream().use { load(it) }
+        }
+        assertEquals("printed", selection.getProperty("strategy"))
+        runBlocking {
+            assertEquals(
+                "The camera choice must not change the default",
+                RecognitionStrategyId.CURSIVE,
+                requireNotNull(storage).settings.storedSettings.first().settings.strategy,
+            )
+        }
+    }
+
+    @Test fun nonCameraSourceHidesThePickerAndUsesTheDefault() {
+        showReview()
+        val sourceId = requireNotNull(viewModel.uiState.value.sourceId)
+        compose.runOnIdle {
+            // The gallery/file/share route restores a staged source without the camera flag.
+            savedState.remove<Boolean>("fromCamera")
+            savedState["strategy"] = RecognitionStrategyId.PRINTED.id
+            val testStorage = requireNotNull(storage)
+            val coordinator = RecognitionCoordinator(
+                testStorage.images, testStorage.settings, NoteRepository(AndroidFileStore(testStorage.context)),
+                DefaultNoteProcessor(), { error("Review tests must never run recognition") },
+            )
+            viewModel = CaptureViewModel(testStorage.images, coordinator, testStorage.settings, savedState)
+            viewModels.put("capture-gallery", viewModel)
+        }
+        compose.waitUntil(10_000) { viewModel.uiState.value.providerAvailable }
+        compose.runOnIdle {
+            assertEquals(sourceId, viewModel.uiState.value.sourceId)
+            assertFalse(viewModel.uiState.value.showStrategyPicker)
+            assertEquals(RecognitionStrategyId.CURSIVE, viewModel.uiState.value.selectedStrategy)
         }
     }
 
@@ -307,6 +357,9 @@ class CaptureReviewActionsAcceptanceTest {
             }
             viewModel.importCamera(file)
         }
+        // Camera photos stop at the crop stage first; keep the full frame to reach review.
+        compose.waitUntil(15_000) { viewModel.uiState.value.cameraCropFile != null && !viewModel.uiState.value.busy }
+        compose.runOnIdle { viewModel.applyCrop() }
         compose.waitUntil(15_000) { viewModel.uiState.value.previewFile != null && !viewModel.uiState.value.busy }
         compose.onNodeWithText(chooseAnother).assertIsDisplayed()
         return viewModel.uiState.value.let { StagedImage(requireNotNull(it.sourceId), requireNotNull(it.previewFile)) }

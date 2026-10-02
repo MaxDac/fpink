@@ -7,10 +7,11 @@ clean Linux environment. It does not create or submit fdroiddata changes.
 
 Run this procedure only after:
 
-1. **#27** has made the Paddle Lite runtime source-buildable (done: the recipe
-   rebuilds it with `build-runtime.sh`).
+1. **#27** has an F-Droid-acceptable OCR runtime path. Recognition uses the
+   `com.microsoft.onnxruntime:onnxruntime-android` AAR from Maven Central; an
+   F-Droid maintainer must confirm that dependency is acceptable.
 2. **#28** has resolved model, dictionary, and license provenance (done:
-   `recognition/paddle/models-provenance.lock.json`).
+   `recognition/models/artifacts.lock.json` and `recognition/models/README.md`).
 3. **#31** has produced finalized metadata for an immutable release commit.
 4. **#30** has supplied the upstream Fastlane listing metadata and changelog
    required by the release being validated.
@@ -29,44 +30,26 @@ Use a fresh Debian-based host or an F-Droid buildserver VM. Record:
   the isolated buildserver VM was used.
 - JDK 17 or 21 (Gradle toolchains are not used; Kotlin/Java target 17).
 - Android platform 37 and build-tools 36.0.0.
-- NDK `28.2.13676358`.
-- CMake 3.22.1 (app JNI) and CMake 3.31 (Paddle Lite source build), plus a
-  GCC-compatible C++17 compiler.
-- Paddle Lite source-build host tools: `bash`, `git`, `python3`, `cmake`,
-  `make`, coreutils, `sed`, `grep`, `awk`, `binutils` (`readelf`).
 - Gradle wrapper version and distribution checksum.
 
-### Paddle Lite runtime in the recipe
+No NDK, CMake or C++ compiler is needed: the app has no native sources of its own.
 
-Build the runtime in two phases so the network fetch happens in `prebuild`
-and compilation happens in `build`, after the F-Droid source scan (a `.so`
-produced in `prebuild` would be flagged by the scanner):
+### Recipe build block
 
 ```yaml
     subdir: app
-    sudo:
-      - apt-get update
-      - apt-get install -y binutils cmake g++ gcc git make python3
     gradle:
       - foss
-    rm:
-      - recognition/paddle/native/arm64-v8a/libpaddle_light_api_shared.so
-    prebuild: bash -x ../recognition/paddle/scripts/build-runtime.sh fetch
-    build: NDK_ROOT=$$NDK$$ bash -x ../recognition/paddle/scripts/build-runtime.sh build
-    ndk: 28.2.13676358
-    gradleprops:
-      - paddleRuntimeBuiltFromSource
 ```
 
-With `subdir: app`, fdroidserver runs `prebuild`, `build` and Gradle in `app/`
-(hence `../`), while `rm` stays relative to the repository root. The full
-recipe is mirrored in [`metadata/com.fpink.capture.yml`](../metadata/com.fpink.capture.yml).
+With `subdir: app`, fdroidserver runs Gradle in `app/`. The full recipe is
+mirrored in [`metadata/com.fpink.capture.yml`](../metadata/com.fpink.capture.yml).
+Older build entries (up to 0.1.0-preview.11) rebuilt the former Paddle Lite
+runtime from source; keep those entries unchanged in fdroiddata, because their
+tagged sources still need it.
 
-`paddleRuntimeBuiltFromSource` makes Gradle verify
-`recognition/paddle/build/source-output/PROVENANCE` and `SHA256SUMS` against
-`recognition/paddle/source-runtime.lock.json`, including `build.expectedSha256`.
-It does not rebuild the runtime. The checked-in runtime that the recipe removes
-is the same pinned source build, so dev and CI builds use the shipped bytes.
+The `recognition:models` build verifies every bundled model, dictionary and
+licence against `recognition/models/artifacts.lock.json` before packaging.
 
 Acquire only public sources declared by the metadata and provenance records.
 Record every URL, revision, archive hash, SDK package, and tool version. After
@@ -153,11 +136,11 @@ entry/hash report. The APK must satisfy all of the following:
   `ai.onnxruntime.TelemetryInitializer` (`:app:verifyFossReleaseOfflineManifest`,
   part of `check`, enforces this on the merged manifest). `CAMERA` and
   AndroidX's signature-level `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` remain.
-- Its dex carries an R8 marker (`~~R8{...}`), and the packaged
-  `lib/arm64-v8a/libpaddle_light_api_shared.so` is byte-identical to the
-  verified runtime (debug symbols are kept for it on purpose).
-- It contains both OCR models, the dictionary, notices, and license texts
-  required by the finalized provenance record.
+- Its dex carries an R8 marker (`~~R8{...}`), and it packages ONNX Runtime's
+  `lib/arm64-v8a/libonnxruntime.so` and `libonnxruntime4j_jni.so`.
+- It contains the three models (PP-OCRv6 small detector, PP-OCRv6 medium
+  recognizer, Kraken recognizer), both dictionaries, notices, and license texts,
+  byte-identical to `recognition/models/artifacts.lock.json`.
 - Native and ZIP alignment checks pass, including the project's 16 KB checks.
 - No runtime download is needed after installation.
 
@@ -168,8 +151,7 @@ python3 scripts/verify_release_apk.py \
   --apk <fdroidserver-output-apk> \
   --version-name <metadata-version-name> \
   --version-code <metadata-version-code> \
-  --build-tools "$ANDROID_HOME/build-tools/36.0.0" \
-  --source-runtime-sums <build-dir>/recognition/paddle/build/source-output/SHA256SUMS
+  --build-tools "$ANDROID_HOME/build-tools/36.0.0"
 ```
 
 If the runtime/model implementation changes under #27 or #28, port the same
@@ -192,12 +174,12 @@ test activity manifest, and applies `app/proguard-release-instrumentation.pro`,
 which keeps the classes the test APK calls directly. Because those extra keeps
 mask shrinking of FPInk's own classes, also smoke-test the exact
 `:app:assembleFossRelease` output (re-signed only with `apksigner`): launch it,
-confirm Settings lists both PaddleOCR and Kraken OCR as ready, and recognize an
-imported page with each provider. On x86_64 emulators with ARM64 native-bridge
-translation, the arm64 ONNX Runtime crashes in its static initializers, so
-Kraken detects the translation layer and fails closed as an unsupported device
-(its acceptance test is skipped there); validate Kraken on real ARM64 hardware.
-Paddle works under translation.
+confirm Settings lists both Printed and Cursive as ready, and recognize an
+imported page with each strategy. On x86_64 emulators with ARM64 native-bridge
+translation, the arm64 ONNX Runtime crashes in its static initializers, so both
+strategies detect the translation layer and fail closed as an unsupported device
+(their acceptance tests are skipped there); validate them on real ARM64 hardware
+or with the x86_64 debug build.
 
 ## Reproducible builds
 
@@ -218,8 +200,7 @@ apksigcopier compare FPInk-<version>.apk --unsigned out/unsigned.apk
 ```
 
 The builders use the digest-pinned `fdroidserver:buildserver-trixie` image, so
-the toolchain matches: OpenJDK 21, gradlew-fdroid, NDK 28.2.13676358 and
-Debian's CMake and compilers. The build path is F-Droid's
+the toolchain matches: OpenJDK 21 and gradlew-fdroid. The build path is F-Droid's
 `/home/vagrant/build/com.fpink.capture` and `SOURCE_DATE_EPOCH` is the source
 commit time. When bumping the image digest in `scripts/fdroid-rb-docker.sh`,
 rerun the Reproducibility workflow.
@@ -229,8 +210,7 @@ attaches reports) and look at the first differing entry:
 
 | Differing entry | Usual cause | Fix |
 | --- | --- | --- |
-| `lib/arm64-v8a/libpaddle_light_api_shared.so` | Paddle build embeds paths, timestamps or parallel-build ordering | `-ffile-prefix-map`, `SOURCE_DATE_EPOCH`, `--build-id=none` and stripping in `build-runtime.sh`; pinned by `build.expectedSha256` |
-| `lib/arm64-v8a/libfpink_paddle.so` | Absolute source paths or build ID | Prefix map and `--build-id=none` in `src/main/cpp/CMakeLists.txt` |
+| `lib/arm64-v8a/libonnxruntime*.so` | Different ONNX Runtime AAR or AGP stripping behaviour | Check the resolved `onnxruntime-android` version in `gradle/libs.versions.toml` |
 | `classes*.dex` | R8 nondeterminism or a different JDK/AGP | Same image and JDK; check keep rules |
 | `assets/dexopt/baseline.prof*` | Profile ordering | Compare with a rebuild on the same side first |
 | `META-INF/version-control-info.textproto` or dependency metadata | Checkout state, `dependenciesInfo` | Build a clean checkout; `dependenciesInfo` is disabled |
@@ -251,7 +231,7 @@ Use these blocker paths:
 | YAML, unsupported field, or semantic rewrite | Fix metadata in **#31** |
 | Listing, license, category, or link lint issue | Fix metadata or coordinate with **#30** |
 | Native runtime, model, dictionary, license, or scanner finding | Resolve in **#27/#28**; never suppress it |
-| Missing SDK, NDK, CMake, JDK, or compiler | Add a public, justified prerequisite to the recipe |
+| Missing SDK or JDK | Add a public, justified prerequisite to the recipe |
 | Gradle version/property or wrong APK output | Fix the build block in **#31** |
 | Private path, credential, signing material, or hidden network request | Stop, remove the hidden input, and rerun clean |
 | Reproducible buildserver/VM failure | Capture host and guest logs and classify it as infrastructure |

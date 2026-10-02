@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 import re
 import subprocess
-import tempfile
 import zipfile
 
 
@@ -28,50 +27,29 @@ def verify_identity(badging, version_name, version_code):
         raise ValueError("A debuggable APK cannot be released.")
 
 
-RUNTIME_SOURCE = "native/arm64-v8a/libpaddle_light_api_shared.so"
-RUNTIME_ENTRY = "lib/arm64-v8a/libpaddle_light_api_shared.so"
+NATIVE_LIBRARIES = ("lib/arm64-v8a/libonnxruntime.so", "lib/arm64-v8a/libonnxruntime4j_jni.so")
 
 
-def source_runtime_digest(sums_path):
-    """The runtime digest from build-runtime.sh's SHA256SUMS (a source-built runtime)."""
-    for line in Path(sums_path).read_text(encoding="utf-8").splitlines():
-        digest, _, path = line.partition("  ")
-        if path == RUNTIME_SOURCE:
-            return digest
-    raise ValueError(f"{sums_path} does not list {RUNTIME_SOURCE}.")
-
-
-def verify_assets(apk, root=ROOT, source_runtime_sha256=None):
-    paddle = root / "recognition" / "paddle"
-    artifacts = json.loads((paddle / "artifacts.lock.json").read_text())
-    licenses = json.loads((paddle / "licenses.lock.json").read_text())
-    source_runtime = json.loads((paddle / "source-runtime.lock.json").read_text())
-    pinned_runtime = source_runtime["build"]["expectedSha256"][RUNTIME_SOURCE]
-    if source_runtime_sha256 is not None and source_runtime_sha256 != pinned_runtime:
-        raise ValueError("The source-built Paddle runtime is not the one pinned in source-runtime.lock.json.")
-    expected = {}
-    for archive in artifacts["archives"]:
-        for item in archive["files"]:
-            destination = item["destination"]
-            if destination.startswith("src/main/assets/"):
-                expected[destination.removeprefix("src/main/")] = item
-    for item in licenses:
-        expected["assets/paddle/licenses/" + item["name"]] = item
-    # The checked-in, F-Droid and release runtimes are all the reproducible source build.
-    expected[RUNTIME_ENTRY] = {"sha256": pinned_runtime}
+def verify_assets(apk, root=ROOT):
+    models = json.loads((root / "recognition" / "models" / "artifacts.lock.json").read_text())
+    expected = {
+        item["destination"].removeprefix("src/main/"): item
+        for item in models["packagedFiles"]
+    }
     with zipfile.ZipFile(apk) as archive:
         if len(archive.namelist()) != len(set(archive.namelist())):
             raise ValueError("APK contains duplicate ZIP entries.")
         for name, item in expected.items():
             data = archive.read(name)
-            if ("bytes" in item and len(data) != item["bytes"]) or \
-                    hashlib.sha256(data).hexdigest() != item["sha256"]:
+            if len(data) != item["bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
                 raise ValueError(f"Packaged artifact does not match its pinned content: {name}")
-        for name in (
-            "assets/paddle/NOTICE.txt",
-            "lib/arm64-v8a/libfpink_paddle.so",
-            "lib/arm64-v8a/libc++_shared.so",
-        ):
+        unpinned = sorted(
+            name for name in archive.namelist()
+            if name.startswith("assets/recognition/") and name not in expected
+        )
+        if unpinned:
+            raise ValueError(f"Unpinned recognition assets in APK: {unpinned}")
+        for name in NATIVE_LIBRARIES:
             if not archive.read(name):
                 raise ValueError(f"Empty required APK entry: {name}")
 
@@ -82,10 +60,6 @@ def main():
     parser.add_argument("--version-name", required=True)
     parser.add_argument("--version-code", type=int, required=True)
     parser.add_argument("--build-tools", type=Path, required=True)
-    parser.add_argument(
-        "--source-runtime-sums", type=Path,
-        help="SHA256SUMS from build-runtime.sh; its runtime digest must equal the pinned one",
-    )
     args = parser.parse_args()
     suffix = ".exe" if os.name == "nt" else ""
     badging = subprocess.check_output(
@@ -94,25 +68,11 @@ def main():
         encoding="utf-8",
     )
     verify_identity(badging, args.version_name, args.version_code)
-    verify_assets(
-        args.apk,
-        source_runtime_sha256=source_runtime_digest(args.source_runtime_sums) if args.source_runtime_sums else None,
-    )
+    verify_assets(args.apk)
     subprocess.run(
         [str(args.build_tools / ("zipalign" + suffix)), "-c", "-P", "16", "4", str(args.apk)],
         check=True,
     )
-    with tempfile.TemporaryDirectory(prefix="fpink-elf-") as directory:
-        with zipfile.ZipFile(args.apk) as archive:
-            for name in ("libfpink_paddle.so", "libpaddle_light_api_shared.so", "libc++_shared.so"):
-                library = Path(directory) / name
-                library.write_bytes(archive.read("lib/arm64-v8a/" + name))
-                subprocess.run(
-                    ["pwsh", "-NoProfile", "-File",
-                     str(ROOT / "recognition" / "paddle" / "scripts" / "verify-elf.ps1"),
-                     "-Path", str(library)],
-                    check=True,
-                )
     print("Release APK identity, pinned assets, notices and native alignment verified.")
 
 

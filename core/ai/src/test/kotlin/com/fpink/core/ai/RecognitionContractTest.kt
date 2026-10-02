@@ -9,9 +9,23 @@ import org.junit.jupiter.api.Test
 class RecognitionContractTest {
     @Test
     fun `settings default to offline and never print the key`() {
-        assertEquals(RecognitionProviderId.PADDLE, RecognitionSettings().provider)
-        assertEquals("kraken", RecognitionProviderId.KRAKEN.id)
-        assertFalse(RecognitionSettings(RecognitionProviderId("cloud"), mapOf("apiKey" to "private-key")).toString().contains("private-key"))
+        assertEquals(RecognitionStrategyId.CURSIVE, RecognitionSettings().strategy)
+        assertEquals("printed", RecognitionStrategyId.PRINTED.id)
+        assertEquals("cursive", RecognitionStrategyId.CURSIVE.id)
+        assertFalse(RecognitionSettings(RecognitionStrategyId("cloud"), mapOf("apiKey" to "private-key")).toString().contains("private-key"))
+    }
+
+    @Test
+    fun `registry never shadows built-in strategies`() {
+        assertEquals(null, RecognitionStrategyRegistry.find(RecognitionStrategyId.CURSIVE))
+        assertEquals(emptyList<RecognitionStrategyPlugin>(), RecognitionStrategyRegistry.all())
+    }
+
+    @Test
+    fun `detected lines are quadrilaterals and crops match their pixels`() {
+        assertThrows(IllegalArgumentException::class.java) { DetectedLine(listOf(PixelPoint(0f, 0f)), 1f) }
+        assertThrows(IllegalArgumentException::class.java) { LineCrop(2, 2, IntArray(3)) }
+        assertThrows(IllegalArgumentException::class.java) { PixelPoint(Float.NaN, 0f) }
     }
 
     @Test

@@ -8,9 +8,9 @@ import java.util.ServiceLoader
  * Extension point for the Settings screen, populated only in the `full` flavor by the private
  * app-overlay (never present in FOSS/F-Droid builds; see docs/ARCHITECTURE.md's "Public/private
  * flavor split"). When no implementation is discovered, [SettingsScreen] renders exactly as it
- * does today: Appearance and Zettelkasten only, with recognition always PaddleOCR.
+ * does today: Appearance, the built-in Printed/Cursive recognition choice and Zettelkasten only.
  *
- * Mirrors the [com.fpink.core.ai.RecognitionProviderPlugin] seam: discovered via
+ * Mirrors the [com.fpink.core.ai.RecognitionStrategyPlugin] seam: discovered via
  * [ServiceLoader], so this module never depends on private code, even by interface name.
  */
 interface SettingsExtension {

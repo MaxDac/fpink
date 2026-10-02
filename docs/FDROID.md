@@ -12,8 +12,8 @@ Keep their evidence current:
 
 | Gate | Required evidence |
 |---|---|
-| #27 | The OCR runtime has an F-Droid-acceptable source-build path or an explicit maintainer-approved dependency path. |
-| #28 | Model sources, licenses, redistribution rights, and regeneration limits are recorded in `recognition/paddle/models-provenance.lock.json`; the runtime source build in `source-runtime.lock.json`. |
+| #27 | The OCR runtime has an F-Droid-acceptable source-build path or an explicit maintainer-approved dependency path. Recognition now uses the `com.microsoft.onnxruntime:onnxruntime-android` AAR from Maven Central; confirm F-Droid accepts it. |
+| #28 | Model sources, licenses, redistribution rights, and regeneration limits are recorded in `recognition/models/artifacts.lock.json` and `recognition/models/README.md`. |
 | #30 | `fastlane/metadata/android/en-US/` contains truthful listing text, rights-cleared graphics, and version-code-named changelogs. |
 | #31 | `metadata/com.fpink.capture.yml` is finalized against an immutable installable release without guessed scanner exemptions. |
 | #32 | Clean Linux `fdroid readmeta`, `fdroid rewritemeta`, `fdroid lint`, and `fdroid build` validation succeeds. |
@@ -91,7 +91,7 @@ branch with a focused title such as **New app: FPInk**. Include:
   permission, and ONNX Runtime's bundled 1DS telemetry initializer is removed
   from the merged manifest);
 - that release builds are shrunk with R8 (`proguard-android-optimize.txt` plus
-  `app/proguard-rules.pro`) while `libpaddle_light_api_shared.so` keeps its
+  `app/proguard-rules.pro`) while the SHA-256-pinned model assets keep their
   exact verified bytes;
 - the optional cloud-recognition-provider network behavior (present only in privately
   built, non-public variants) and any applicable `NonFreeNet` discussion;

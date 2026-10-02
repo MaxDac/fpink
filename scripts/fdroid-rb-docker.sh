@@ -2,8 +2,7 @@
 # Run scripts/fdroid_rb_build.py in the pinned F-Droid buildserver image.
 #
 # Usage: scripts/fdroid-rb-docker.sh OUTPUT_DIR [fdroid_rb_build.py options...]
-# Environment: LITE_BUILD_THREADS (optional, to vary the build when checking
-# reproducibility), FDROID_BUILDSERVER_IMAGE (override the pinned image).
+# Environment: FDROID_BUILDSERVER_IMAGE (override the pinned image).
 #
 # The image is the one fdroiddata's `fdroid build` CI job uses. Keep the digest
 # in sync with docs/FDROID_VALIDATION.md when bumping it.
@@ -30,6 +29,5 @@ fi
 docker run --rm \
   --volume "$root:/src:ro" \
   --volume "$output:/out" \
-  ${LITE_BUILD_THREADS:+--env "LITE_BUILD_THREADS=$LITE_BUILD_THREADS"} \
   "$image" \
   python3 /src/scripts/fdroid_rb_build.py --output /out "$@"

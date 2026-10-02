@@ -6,9 +6,12 @@ import androidx.lifecycle.viewModelScope
 import com.fpink.capture.data.CropRect
 import com.fpink.capture.data.ImageImportStore
 import com.fpink.capture.data.RecognitionCoordinator
+import com.fpink.capture.data.RecognitionOption
 import com.fpink.capture.data.SettingsStore
+import com.fpink.capture.data.StoredRecognitionSettings
+import com.fpink.capture.ui.settings.builtInRecognitionOptions
 import com.fpink.core.ai.RecognitionError
-import com.fpink.core.ai.RecognitionProviderId
+import com.fpink.core.ai.RecognitionStrategyId
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -30,23 +33,42 @@ data class CaptureUiState(
     val busy: Boolean = false,
     val error: String? = null,
     val settingsError: String? = null,
-    val providerLabel: String = "PaddleOCR · offline · English · requires ARM64",
+    val providerLabel: String = recognitionLabel(RecognitionOption(RecognitionStrategyId.DEFAULT, "Cursive", false)),
     val providerAvailable: Boolean = false,
     val confirmedSourceId: String? = null,
-)
+    /** Strategies the camera picker offers: the built-ins plus the default when it is a plugin. */
+    val strategyOptions: List<RecognitionOption> = emptyList(),
+    /** The strategy this capture will use; the camera picker can change it, other sources use the default. */
+    val selectedStrategy: RecognitionStrategyId = RecognitionStrategyId.DEFAULT,
+    /** True once a photo was taken with the camera, so the picker stays through crop and review. */
+    val fromCamera: Boolean = false,
+) {
+    /** The picker is offered on the camera viewfinder and kept through crop and review. */
+    val showStrategyPicker: Boolean get() = fromCamera || (cameraChosen && sourceId == null)
+}
+
+internal fun recognitionLabel(option: RecognitionOption): String = when {
+    option.id == RecognitionStrategyId.PRINTED -> "Printed · on-device · requires ARM64"
+    option.id == RecognitionStrategyId.CURSIVE -> "Cursive · on-device · requires ARM64"
+    option.requiresNetwork -> "${option.label} · this image will be uploaded to the selected service"
+    else -> option.label
+}
 
 class CaptureViewModel(
     private val images: ImageImportStore,
     private val coordinator: RecognitionCoordinator,
     settings: SettingsStore,
     private val savedState: SavedStateHandle,
+    private val options: List<RecognitionOption> = builtInRecognitionOptions(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         CaptureUiState(
             cameraChosen = savedState.get<Boolean>("cameraChosen") == true,
             cropRect = restoredCropRect(),
+            fromCamera = savedState.get<Boolean>("fromCamera") == true,
         ),
     )
+    private var stored: StoredRecognitionSettings? = null
     val uiState = _uiState.asStateFlow()
     private var operation: Job? = null
     private var cleared = false
@@ -80,24 +102,9 @@ class CaptureViewModel(
         }
         viewModelScope.launch {
             try {
-                settings.storedSettings.collect { stored ->
-                    val selection = stored.settings
-                    val settingsError = if (selection.provider in setOf(RecognitionProviderId.PADDLE, RecognitionProviderId.KRAKEN)) null else {
-                        stored.keyError ?: if (selection.config.isEmpty()) {
-                            "Configure the selected provider's settings before using this image."
-                        } else null
-                    }
-                    _uiState.update {
-                        it.copy(
-                            providerAvailable = settingsError == null,
-                            settingsError = settingsError,
-                            providerLabel = when (selection.provider) {
-                                RecognitionProviderId.PADDLE -> "PaddleOCR · offline · English · requires ARM64"
-                                RecognitionProviderId.KRAKEN -> "Kraken OCR · offline · cursive-focused · ONNX"
-                                else -> "Cloud recognition · this image will be uploaded to the selected provider"
-                            },
-                        )
-                    }
+                settings.storedSettings.collect {
+                    stored = it
+                    refreshRecognition()
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -106,6 +113,41 @@ class CaptureViewModel(
                     it.copy(providerAvailable = false, settingsError = "Recognition settings are unavailable. Open Settings before using this image.")
                 }
             }
+        }
+    }
+
+    /** Camera only: picks the strategy for this capture without changing the default in Settings. */
+    fun selectStrategy(strategy: RecognitionStrategyId) {
+        val state = _uiState.value
+        if (state.busy || !state.showStrategyPicker || state.strategyOptions.none { it.id == strategy }) return
+        savedState["strategy"] = strategy.id
+        refreshRecognition()
+    }
+
+    private fun refreshRecognition() {
+        val current = stored ?: return
+        val default = current.settings.strategy
+        val choices = options.filter { it.id in RecognitionStrategyId.BUILT_IN || it.id == default }
+        _uiState.update { state ->
+            val picked = savedState.get<String>("strategy")?.let(::RecognitionStrategyId)
+                ?.takeIf { id -> state.showStrategyPicker && choices.any { it.id == id } }
+            val strategy = picked ?: default
+            val settingsError = when {
+                strategy in RecognitionStrategyId.BUILT_IN -> null
+                choices.none { it.id == strategy } -> "The default recognition is not available in this build. Choose another in Settings."
+                else -> current.keyError ?: if (current.settings.config.isEmpty()) {
+                    "Configure the selected recognition service's settings before using this image."
+                } else null
+            }
+            state.copy(
+                strategyOptions = choices,
+                selectedStrategy = strategy,
+                providerAvailable = settingsError == null,
+                settingsError = settingsError,
+                providerLabel = recognitionLabel(
+                    choices.firstOrNull { it.id == strategy } ?: RecognitionOption(strategy, strategy.id, requiresNetwork = true),
+                ),
+            )
         }
     }
 
@@ -124,10 +166,12 @@ class CaptureViewModel(
         if (!canChooseCamera()) return
         savedState["cameraChosen"] = true
         _uiState.update { it.copy(cameraChosen = true, error = null) }
+        refreshRecognition()
     }
     fun chooseOtherSource() {
         savedState["cameraChosen"] = false
         _uiState.update { it.copy(cameraChosen = false, busy = false) }
+        refreshRecognition()
     }
     fun captureStarted(): Boolean {
         if (_uiState.value.busy || _uiState.value.previewFile != null || _uiState.value.cameraCropFile != null) return false
@@ -150,6 +194,7 @@ class CaptureViewModel(
                     savedState["sourceId"] = image.sourceId
                     savedState["transferred"] = false
                     savedState["cameraCropPending"] = true
+                    savedState["fromCamera"] = true
                     saveCropRect(CropRect.Full)
                     _uiState.update {
                         it.copy(
@@ -158,6 +203,7 @@ class CaptureViewModel(
                             cameraCropFile = image.file,
                             cropRect = CropRect.Full,
                             busy = false,
+                            fromCamera = true,
                         )
                     }
                 } catch (cancelled: CancellationException) {
@@ -213,9 +259,11 @@ class CaptureViewModel(
                         cameraCropFile = null,
                         cropRect = CropRect.Full,
                         cameraChosen = true,
+                        fromCamera = false,
                         error = null,
                     )
                 }
+                refreshRecognition()
             } catch (_: Exception) {
                 error("Could not remove the captured photo. Check free storage and retry.")
             }
@@ -232,7 +280,9 @@ class CaptureViewModel(
                 savedState["sourceId"] = image.sourceId
                 savedState["transferred"] = false
                 savedState["cameraCropPending"] = false
-                _uiState.update { it.copy(sourceId = image.sourceId, previewFile = image.file, busy = false) }
+                savedState["fromCamera"] = false
+                _uiState.update { it.copy(sourceId = image.sourceId, previewFile = image.file, busy = false, fromCamera = false) }
+                refreshRecognition()
                 if (previous != null) images.discard(previous)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -252,6 +302,7 @@ class CaptureViewModel(
             try {
                 _uiState.value.sourceId?.let { images.discard(it) }
                 clearSavedSource()
+                savedState.remove<String>("strategy")
                 savedState["cameraChosen"] = false
                 _uiState.update {
                     it.copy(
@@ -260,9 +311,11 @@ class CaptureViewModel(
                         cameraCropFile = null,
                         cropRect = CropRect.Full,
                         cameraChosen = false,
+                        fromCamera = false,
                         error = null,
                     )
                 }
+                refreshRecognition()
             } catch (_: Exception) {
                 error("Could not remove the previous staged image. Check free storage and retry.")
             }
@@ -275,7 +328,8 @@ class CaptureViewModel(
         operation = viewModelScope.launch {
             _uiState.update { it.copy(busy = true, error = null) }
             try {
-                coordinator.confirm(sourceId)
+                val state = _uiState.value
+                coordinator.confirm(sourceId, state.selectedStrategy.takeIf { state.showStrategyPicker })
                 savedState["transferred"] = true
                 _uiState.update { it.copy(confirmedSourceId = sourceId, busy = false) }
             } catch (cancelled: CancellationException) {
@@ -334,6 +388,7 @@ class CaptureViewModel(
     private fun clearSavedSource() {
         savedState.remove<String>("sourceId")
         savedState.remove<Boolean>("cameraCropPending")
+        savedState.remove<Boolean>("fromCamera")
         clearSavedCrop()
     }
 }

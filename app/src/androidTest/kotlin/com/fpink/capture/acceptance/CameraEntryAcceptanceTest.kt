@@ -193,6 +193,8 @@ class CameraEntryAcceptanceTest {
             }
             current.importCamera(file)
         }
+        compose.waitUntil(10_000) { current.uiState.value.cameraCropFile != null && !current.uiState.value.busy }
+        compose.runOnIdle { current.applyCrop() }
         compose.waitUntil(10_000) { current.uiState.value.previewFile != null && !current.uiState.value.busy }
         val source = current.uiState.value.sourceId
         compose.runOnIdle {
