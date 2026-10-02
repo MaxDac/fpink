@@ -40,13 +40,6 @@ jobs:
       - name: Check the declared release and its changelog
         run: python3 scripts/release_version.py --check-version-properties
 
-      - name: Verify OCR model and dictionary provenance
-        # Downloads the pinned upstream inference.yml and checks that the bundled
-        # dictionary is exactly its PostProcess.character_dict.
-        run: >-
-          python3 recognition/paddle/scripts/verify-model-provenance.py
-          --check-files --fetch-dictionary-source
-
       - name: Set up JDK 17
         uses: actions/setup-java@v6
         with:
@@ -56,7 +49,7 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
         with:
-          packages: platform-tools platforms;android-36 ndk;28.2.13676358 cmake;3.22.1
+          packages: platform-tools platforms;android-36
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
@@ -67,8 +60,9 @@ jobs:
       - name: Build, run JVM unit tests, and compile instrumentation APKs
         run: >-
           ./gradlew --continue --console=plain --stacktrace
-          :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test
-          :app:assembleFossDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest
+          :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test
+          :recognition:runtime:test :recognition:models:test :recognition:strategies:test
+          :app:assembleFossDebugAndroidTest :recognition:strategies:assembleDebugAndroidTest
           :app:verifyFossDebugRecognitionPackage :app:verifyFossDebugOfflineManifest
 
       - name: Upload verification reports
@@ -82,38 +76,3 @@ jobs:
             **/build/reports/lint-results*
           if-no-files-found: warn
           retention-days: 14
-
-  native-unit-tests:
-    name: Native C++ unit tests
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - name: Compile and run native unit tests
-        shell: pwsh
-        run: ./recognition/paddle/scripts/test-geometry.ps1 -Cxx g++
-
-      - name: Verify duplicate compiler PATH resolution
-        shell: pwsh
-        run: |
-          $compiler = (Get-Command -Name g++ -CommandType Application -TotalCount 1 -ErrorAction Stop).Source
-          $fixtureDirectory = Join-Path $env:RUNNER_TEMP 'fpink-duplicate-compiler'
-          New-Item -ItemType Directory -Path $fixtureDirectory | Out-Null
-          $compilerLink = Join-Path $fixtureDirectory 'g++'
-          New-Item -ItemType SymbolicLink -Path $compilerLink -Target $compiler | Out-Null
-          $originalPath = $env:PATH
-          try {
-              $env:PATH = $fixtureDirectory + [IO.Path]::PathSeparator + $originalPath
-              if (@(Get-Command -Name g++ -CommandType Application -ErrorAction Stop).Count -lt 2) {
-                  throw 'Duplicate-PATH regression requires multiple compiler matches'
-              }
-              ./recognition/paddle/scripts/test-geometry.ps1 -Cxx g++
-          } finally {
-              $env:PATH = $originalPath
-              Remove-Item -LiteralPath $compilerLink
-              Remove-Item -LiteralPath $fixtureDirectory
-          }

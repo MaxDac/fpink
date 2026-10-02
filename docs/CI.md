@@ -4,102 +4,71 @@ The shared [CI workflow](../.github/workflows/ci.yml) runs on pull requests
 targeting `main`, every push to `main`, manual dispatches, and merge-queue
 `checks_requested` events targeting `main`. It does not deploy or publish releases.
 
-## Required checks and coverage
+## Required check and coverage
 
-Configure **both job names**, not the workflow title `CI`, as required checks:
+Configure the **job name**, not the workflow title `CI`, as the required check:
 
 | Required check | Coverage |
 |---|---|
-| `Build and JVM unit tests` | Debug/release production builds, configured JVM unit tests, Android lint, pinned Paddle assets, both recognition APK package checks, and compilation of both instrumentation APKs |
-| `Native C++ unit tests` | Host C++ geometry, coordinates, BGR sampling and CTC decoding unit tests |
+| `Build and JVM unit tests` | Release-tooling unit tests, the debug production build, configured JVM unit tests (including the recognition runtime, models and strategies modules), SHA-256 verification of the bundled models, the recognition APK package and offline-manifest checks, and compilation of both instrumentation APKs |
 
-The native job also repeats its suite with an extra compiler symlink in PATH,
-guarding against multiple executable matches being treated as one command.
+The job runs on Ubuntu 24.04 with JDK 17, the checked-in Gradle wrapper and
+Android API 36. No NDK or CMake is needed: recognition runs on the prebuilt
+ONNX Runtime Android AAR from Maven Central. AGP selects any additional SDK Build
+Tools it requires.
 
-The jobs run independently on Ubuntu 24.04. The Android job uses JDK 17, the
-checked-in Gradle wrapper, Android API 36, NDK 28.2.13676358 and CMake 3.22.1.
-AGP selects any additional SDK Build Tools it requires.
-
-Gradle `build` already runs the configured JVM tests in `:app` (debug local
-tests), `:core:model`, `:core:ai`, and `:core:storage`. `:recognition:paddle`
-currently has no JVM test sources. The workflow uses one Gradle invocation with
-`--continue`, so independent tasks can finish after a failure without turning
-that failure into success. It builds only the public `foss` product flavor
-(never `full`, which is reserved for the maintainer's private companion repo —
-see `docs/ARCHITECTURE.md`) and retains lint, `verifyPaddleArtifacts`,
-`verifyFossDebugRecognitionPackage`, and `verifyFossReleaseRecognitionPackage`.
+The workflow uses one Gradle invocation with `--continue`, so independent tasks
+can finish after a failure without turning that failure into success. It builds
+only the public `foss` product flavor (never `full`, which is reserved for the
+maintainer's private companion repo — see `docs/ARCHITECTURE.md`) and runs
+`verifyFossDebugRecognitionPackage` and `verifyFossDebugOfflineManifest`.
 
 No emulator, device, connected test, or E2E suite is executed. Compiling
 instrumentation APKs does **not** mean those tests passed. Host checks do not
 prove real OCR quality, camera/chooser behavior, Keystore behavior, Android
 filesystem durability, ARM64 runtime execution, or 16 KB-device compatibility.
-Those checks remain separate; see the [Paddle validation guide](../recognition/paddle/README.md).
-Before Gradle, the job runs the release-tooling unit tests and
-`verify-model-provenance.py`, which downloads the pinned upstream
-`inference.yml` to check that the bundled OCR dictionary is derived from it.
+Those checks remain separate; see the
+[model validation notes](../recognition/models/README.md).
 
 The workflow uses read-only repository permissions and does not need
-credentials for any recognition provider, signing secrets, deployment
+credentials for any recognition service, signing secrets, deployment
 environments, or self-hosted runners.
 Gradle cache writes are limited to push/manual runs on `main`; PRs only read
 caches. New commits cancel older runs of the same PR. Main pushes, manual runs,
 and merge-group runs have separate concurrency groups and do not cancel each
-other. Neither required job skips drafts or documentation-only PRs.
+other. The required job skips neither drafts nor documentation-only PRs.
 
 ## Reports
 
-Open **Actions > CI > a run** and inspect each job's logs. The Android job
-uploads a `verification-reports` artifact after success or failure containing
-the reports that were produced:
+Open **Actions > CI > a run** and inspect the job's logs. The job uploads a
+`verification-reports` artifact after success or failure containing the reports
+that were produced:
 
 - JVM HTML reports under each module's `build/reports/tests/`.
 - JUnit XML under each module's `build/test-results/`.
 - Android lint reports under each module's `build/reports/lint-results*`.
 
 Reports expire after 14 days. Early setup/compilation failures may produce no
-reports; the upload warns and the original job failure is preserved. Native
-test results are in the `Native C++ unit tests` job log. No APKs are published.
+reports; the upload warns and the original job failure is preserved. No APKs
+are published.
 
 ## Reproduce locally
 
 Set `JAVA_HOME` to a JDK 17 installation and `ANDROID_HOME` to your Android SDK,
-with the platform/NDK/CMake versions above installed and SDK licenses accepted.
-Do not commit machine-specific paths. From the repository root on Windows:
+with the platform version above installed and SDK licenses accepted. Do not
+commit machine-specific paths. From the repository root on Windows:
 
 ```powershell
-.\gradlew.bat --continue --console=plain --stacktrace :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test :app:assembleFossDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest :app:verifyFossDebugRecognitionPackage
-.\recognition\paddle\scripts\test-geometry.ps1 -Cxx '<path-to-clang++.exe>'
+py -m unittest discover -s scripts/tests
+.\gradlew.bat --continue --console=plain --stacktrace :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:runtime:test :recognition:models:test :recognition:strategies:test :app:assembleFossDebugAndroidTest :recognition:strategies:assembleDebugAndroidTest :app:verifyFossDebugRecognitionPackage :app:verifyFossDebugOfflineManifest
 ```
 
 On Linux:
 
 ```bash
-./gradlew --continue --console=plain --stacktrace :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:paddle:test :app:assembleFossDebugAndroidTest :recognition:paddle:assembleDebugAndroidTest :app:verifyFossDebugRecognitionPackage
-pwsh -File ./recognition/paddle/scripts/test-geometry.ps1 -Cxx g++
+python3 -m unittest discover -s scripts/tests
+./gradlew --continue --console=plain --stacktrace :app:assembleFossDebug :app:testFossDebugUnitTest :core:ai:test :core:model:test :core:storage:test :recognition:runtime:test :recognition:models:test :recognition:strategies:test :app:assembleFossDebugAndroidTest :recognition:strategies:assembleDebugAndroidTest :app:verifyFossDebugRecognitionPackage :app:verifyFossDebugOfflineManifest
 ```
-
-For the F-Droid-compatible source-runtime path, provide the Android NDK and
-run:
-
-```bash
-bash recognition/paddle/scripts/build-runtime.sh fetch
-NDK_ROOT="$ANDROID_SDK_ROOT/ndk/28.2.13676358" \
-  bash recognition/paddle/scripts/build-runtime.sh build
-./gradlew --no-daemon --console=plain \
-  -PpaddleRuntimeBuiltFromSource \
-  :recognition:paddle:verifyPaddleArtifacts \
-  :recognition:paddle:assembleRelease
-```
-
-(`-PbuildPaddleRuntimeFromSource` instead runs the whole script from Gradle.)
-
-This source build is intentionally separate from ordinary CI until the pinned
-Paddle Lite build has been qualified on the F-Droid build image. It must not
-silently fall back to the checked-in runtime.
-
-The native runner needs a host GCC-compatible C++17 compiler (`g++` or `clang++`).
-It keeps assertions enabled and fails on compilation errors or test failures.
-It does not load the Android-only Paddle runtime or require an Android SDK.
 
 ## Enable PR and main CI
 
@@ -109,18 +78,18 @@ It does not load the Android-only Paddle runtime or require an Android SDK.
    `gradle/actions/setup-gradle`, and `android-actions/setup-android` actions.
    Keep workflow token permissions read-only. No repository secrets are needed.
 2. Push this workflow change on a branch and open a PR targeting `main`. Wait
-   for `CI` to finish and confirm both exact check names above appear and pass.
-   This registers the new checks for selection in repository settings.
+   for `CI` to finish and confirm the exact check name above appears and passes.
+   This registers the check for selection in repository settings.
 3. Configure the merge protection below. Merely committing this workflow does
    **not** block merges; GitHub settings must require its checks.
 4. Merge the passing setup PR. In **Actions > CI**, confirm a new `push` run
-   checks the resulting commit on `main`, with both jobs and their reports.
+   checks the resulting commit on `main`, with its job and reports.
    There is no second main-only workflow to enable.
 5. Once the workflow exists on `main`, use **Actions > CI > Run workflow** for
    manual diagnostics. A manual run on `main` does not replace the required
    checks on a PR's latest revision.
 
-## Block merges unless both checks pass
+## Block merges unless the check passes
 
 ### Recommended: a branch ruleset
 
@@ -133,8 +102,9 @@ It does not load the Android-only Paddle runtime or require an Android SDK.
 3. Enable **Require a pull request before merging**. Reviews/approval counts
    are separate policy choices; requiring zero approvals still requires a PR
    and does not weaken the required CI checks.
-4. Enable **Require status checks to pass before merging**. Add both
-   `Build and JVM unit tests` and `Native C++ unit tests`. Select **GitHub Actions**
+4. Enable **Require status checks to pass before merging**. Add
+   `Build and JVM unit tests`. Remove any old `Native C++ unit tests` requirement:
+   that job no longer exists. Select **GitHub Actions**
    as the expected source where offered. Do not require the old `build` check or
    use the workflow name `CI` instead.
 5. Enable **Require branches to be up to date before merging**. Do not enable
@@ -143,7 +113,7 @@ It does not load the Android-only Paddle runtime or require an Android SDK.
    Save the active ruleset.
 6. Verify on a disposable PR that pending/failing checks disable merging. For a
    negative test, introduce an ordinary failing unit assertion on that PR,
-   observe the failed required check, then fix it and push again. Both checks
+   observe the failed required check, then fix it and push again. The check
    must pass on the latest revision before merging. Never merge the deliberately
    broken revision. The PR requirement also prevents normal direct pushes to
    `main`.
@@ -154,7 +124,7 @@ already merged. The required PR checks and up-to-date rule are the pre-merge gat
 ### Alternative: classic branch protection
 
 Instead of a ruleset, use **Settings > Branches > Add branch protection rule**
-targeting `main`. Require PRs, require both named status checks, and require
+targeting `main`. Require PRs, require the named status check, and require
 branches to be up to date. Enable **Do not allow bypassing the above settings**
 (or the equivalent administrator-enforcement option). Leave force pushes and
 deletions disabled, and do not configure actors allowed to bypass required PRs.

@@ -43,7 +43,7 @@ fun SettingsScreen(
     appearance: ThemeUiState,
     onThemeSelected: (ThemeMode) -> Unit,
     viewModel: SettingsViewModel = containerViewModel {
-        SettingsViewModel(it.settingsStore, it.recognitionReadinessChecks())
+        SettingsViewModel(it.settingsStore, it.recognitionReadinessChecks(), it.recognitionOptions())
     },
     onZettelkastenConfigureClick: () -> Unit = {},
 ) {
@@ -71,22 +71,24 @@ fun SettingsScreen(
             AppearanceSettings(appearance, onThemeSelected)
             HorizontalDivider()
             state.message?.let { Text(it) }
-            Text("Recognition provider", style = MaterialTheme.typography.titleMedium)
-            state.recognitionProviders.forEach { provider ->
+            Text("Default recognition", style = MaterialTheme.typography.titleMedium)
+            state.recognitionStrategies.forEach { strategy ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     RadioButton(
-                        selected = state.selectedProvider == provider.id,
-                        onClick = { viewModel.selectProvider(provider.id) },
+                        selected = state.selectedStrategy == strategy.id,
+                        onClick = { viewModel.selectStrategy(strategy.id) },
                         enabled = !state.loading,
                     )
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(provider.label)
-                        Text(provider.description, style = MaterialTheme.typography.bodySmall)
-                        Text(provider.readiness, style = MaterialTheme.typography.bodySmall)
+                        Text(strategy.label)
+                        Text(strategy.description, style = MaterialTheme.typography.bodySmall)
+                        if (strategy.readiness.isNotEmpty()) {
+                            Text(strategy.readiness, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }

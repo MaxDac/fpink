@@ -8,7 +8,7 @@ import com.fpink.capture.data.CredentialCipher
 import com.fpink.capture.data.SettingsStore
 import com.fpink.capture.data.ThemeMode
 import com.fpink.core.ai.RecognitionError
-import com.fpink.core.ai.RecognitionProviderId
+import com.fpink.core.ai.RecognitionStrategyId
 import java.security.KeyStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -23,22 +23,22 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * These tests exercise [SettingsStore]'s generic, provider-agnostic encrypted storage using a
- * synthetic non-PaddleOCR provider id and config map: this build never ships a second provider,
- * but the storage/encryption guarantees below must hold for whichever provider a private,
- * non-public build (e.g. one adding Azure or MyScript) plugs in.
+ * These tests exercise [SettingsStore]'s generic, strategy-agnostic encrypted storage using a
+ * synthetic plugin strategy id and config map: this build never ships a plugin strategy, but the
+ * storage/encryption guarantees below must hold for whichever strategy a private, non-public
+ * build (e.g. one adding Azure or MyScript) plugs in.
  */
 @RunWith(AndroidJUnit4::class)
 class SettingsAcceptanceTest {
     private val encryptedConfig = stringPreferencesKey("recognition_config_encrypted")
-    private val syntheticProvider = RecognitionProviderId("acceptance-fixture")
+    private val syntheticStrategy = RecognitionStrategyId("acceptance-fixture")
     private val syntheticKey = "local-only-synthetic-credential-never-sent"
     private fun config() = mapOf("endpoint" to "https://acceptance-fixture.example", "apiKey" to syntheticKey)
 
     @Test fun appearancePersistsIndependentlyOfEncryptedRecognitionSettings() = runBlocking {
         AcceptanceStorage().use { fixture ->
             assertEquals(ThemeMode.SYSTEM, fixture.settings.themeMode.first())
-            fixture.settings.save(syntheticProvider, config())
+            fixture.settings.save(syntheticStrategy, config())
             val ciphertext = fixture.preferences.data.first()[encryptedConfig]
             for (mode in ThemeMode.entries) {
                 fixture.settings.saveThemeMode(mode)
@@ -47,16 +47,16 @@ class SettingsAcceptanceTest {
                 assertEquals(mode.storedValue, fixture.preferences.data.first()[stringPreferencesKey("appearance_theme")])
                 assertEquals(ciphertext, fixture.preferences.data.first()[encryptedConfig])
                 assertEquals(config(), reopened.recognitionSettings.first().config)
-                assertEquals(syntheticProvider, reopened.recognitionSettings.first().provider)
+                assertEquals(syntheticStrategy, reopened.recognitionSettings.first().strategy)
             }
-            fixture.settings.save(RecognitionProviderId.PADDLE, removeConfig = true)
+            fixture.settings.save(RecognitionStrategyId.CURSIVE, removeConfig = true)
             assertEquals(ThemeMode.DARK, fixture.settings.themeMode.first())
         }
     }
 
     @Test fun androidKeystoreCiphertextIsRandomizedNonPlaintextAndRoundTripsAfterStoreRecreation() = runBlocking {
         AcceptanceStorage().use { fixture ->
-            fixture.settings.save(syntheticProvider, config())
+            fixture.settings.save(syntheticStrategy, config())
             val first = requireNotNull(fixture.preferences.data.first()[encryptedConfig])
             assertFalse(first.contains(syntheticKey))
             assertFalse(fixture.settingsFile.readBytes().toString(Charsets.UTF_8).contains(syntheticKey))
@@ -69,20 +69,20 @@ class SettingsAcceptanceTest {
             assertEquals(config(), reopened.settings.config)
             assertTrue(reopened.hasStoredConfig)
             assertNull(reopened.keyError)
-            fixture.settings.save(syntheticProvider, config())
+            fixture.settings.save(syntheticStrategy, config())
             val second = requireNotNull(fixture.preferences.data.first()[encryptedConfig])
             assertNotEquals("GCM IV must be randomized for each save", first, second)
             assertEquals(config(), fixture.settings.recognitionSettings.first().config)
         }
     }
 
-    @Test fun removingConfigClearsStorageAndReturnsToPaddleDefaults() = runBlocking {
+    @Test fun removingConfigClearsStorageAndReturnsToTheCursiveDefault() = runBlocking {
         AcceptanceStorage().use { fixture ->
-            fixture.settings.save(syntheticProvider, config())
-            fixture.settings.save(RecognitionProviderId.PADDLE, removeConfig = true)
+            fixture.settings.save(syntheticStrategy, config())
+            fixture.settings.save(RecognitionStrategyId.CURSIVE, removeConfig = true)
             assertNull(fixture.preferences.data.first()[encryptedConfig])
             val reopened = SettingsStore(fixture.preferences, CredentialCipher(fixture.alias)).storedSettings.first()
-            assertEquals(RecognitionProviderId.PADDLE, reopened.settings.provider)
+            assertEquals(RecognitionStrategyId.CURSIVE, reopened.settings.strategy)
             assertFalse(reopened.hasStoredConfig)
             assertEquals(emptyMap<String, String>(), reopened.settings.config)
             assertNull(reopened.keyError)
@@ -92,7 +92,7 @@ class SettingsAcceptanceTest {
 
     @Test fun lostKeystoreAliasAndTamperedCiphertextProduceActionableCredentialErrors() = runBlocking {
         AcceptanceStorage().use { fixture ->
-            fixture.settings.save(syntheticProvider, config())
+            fixture.settings.save(syntheticStrategy, config())
             KeyStore.getInstance("AndroidKeyStore").apply { load(null); deleteEntry(fixture.alias) }
             val unavailable = fixture.settings.storedSettings.first()
             assertTrue(unavailable.hasStoredConfig)
@@ -105,7 +105,7 @@ class SettingsAcceptanceTest {
             } catch (_: RecognitionError.Configuration) {
                 assertFalse(KeyStore.getInstance("AndroidKeyStore").apply { load(null) }.containsAlias(fixture.alias))
             }
-            fixture.settings.save(RecognitionProviderId.PADDLE, config())
+            fixture.settings.save(RecognitionStrategyId.CURSIVE, config())
             val encrypted = requireNotNull(fixture.preferences.data.first()[encryptedConfig])
             val ciphertext = Base64.decode(encrypted.substringAfter(':'), Base64.NO_WRAP).apply {
                 this[lastIndex] = (this[lastIndex].toInt() xor 1).toByte()
@@ -117,8 +117,8 @@ class SettingsAcceptanceTest {
             assertTrue(tampered.hasStoredConfig)
             assertEquals(emptyMap<String, String>(), tampered.settings.config)
             assertNotNull(tampered.keyError)
-            // PADDLE never needs config, so a broken blob under it must not block recognitionSettings.
-            assertEquals(RecognitionProviderId.PADDLE, fixture.settings.recognitionSettings.first().provider)
+            // Built-in strategies never need config, so a broken blob under it must not block recognitionSettings.
+            assertEquals(RecognitionStrategyId.CURSIVE, fixture.settings.recognitionSettings.first().strategy)
         }
     }
 }

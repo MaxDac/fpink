@@ -5,10 +5,11 @@
 | Module | Responsibility |
 |--------|----------------|
 | `:core:model` | Serializable notes, normalized image points and colour provenance |
-| `:core:ai` | Recognition provider contract, config-map settings, plugin registry, paragraph and colour processing |
+| `:core:ai` | Recognition model/strategy contracts, config-map settings, plugin registry, paragraph and colour processing |
 | `:core:storage` | Portable note repository and recoverable batch publication |
-| `:recognition:paddle` | Android/native CPU OCR, model assets and runtime provenance |
-| `:recognition:kraken` | Android ONNX Runtime Kraken-compatible provider, bundled reviewed export and readiness |
+| `:recognition:runtime` | ONNX Runtime sessions, SHA-pinned asset materialisation, ABI checks, DB post-processing, quad crops, CTC decoding |
+| `:recognition:models` | Individual bundled models: PP-OCRv6 small detector, PP-OCRv6 medium recognizer, Kraken recognizer |
+| `:recognition:strategies` | Built-in Printed and Cursive strategies combining a detector with a line recognizer |
 | `:app` | Image intake, permissions, encrypted settings, lifecycle, UI and manual DI |
 
 All `:core:*` modules remain Android-free. Android `Bitmap`, `Uri`, Keystore and
@@ -22,12 +23,12 @@ CameraX / ACTION_GET_CONTENT chooser
     -> private source import, bounded decode, orientation normalization
     -> CameraX only: private crop stage and explicit rectangular crop
     -> PreparedImage (encoded PNG/JPEG + matching ARGB pixels)
-    -> explicitly selected RecognitionProvider
-         PaddleOcrProvider: native PP-OCRv5 mobile CPU (bundled, `foss`/`full`)
-         KrakenOcrProvider: ONNX Runtime recognizer (`foss`/`full`), bundled
-         reviewed PP-OCRv6 export, classical row-projection line segmenter
-         Other providers (e.g. cloud OCR, MyScript ink recognition): discovered at
-         runtime via `RecognitionProviderRegistry`, `full` flavor only
+    -> explicitly selected RecognitionStrategy
+         Printed: PP-OCRv6 small detector + PP-OCRv6 medium recognizer (bundled)
+         Cursive (default): PP-OCRv6 small detector + Kraken PP-OCRv6-medium
+         recognizer, NFC-normalised (bundled)
+         Other strategies (e.g. cloud OCR, MyScript ink recognition): discovered at
+         runtime via `RecognitionStrategyRegistry`, `full` flavor only
     -> RecognitionDocument (text regions + normalized geometry + paragraph hints)
     -> DefaultNoteProcessor
          logical paragraph grouping
@@ -38,22 +39,33 @@ CameraX / ACTION_GET_CONTENT chooser
     -> ordinary independent notes in the list
 ```
 
-`RecognitionProvider.recognize` only recognizes text and layout. It neither creates
+`RecognitionStrategy.recognize` only recognizes text and layout. It neither creates
 notes nor chooses their colours. `NoteProcessor.process` consumes the normalized
 result and the same prepared colour pixels, without knowing vendor response DTOs.
 Both return explicit `Result` values and propagate coroutine cancellation.
 
-Paddle is selected by default. Kraken is the second public, fully offline
-provider ID, running a bundled, reviewed ONNX export of a Kraken-compatible
-recognizer (see recognition/kraken/README.md's validation section for exactly
-what has and hasn't been measured).
-`RecognitionProviderId` is also an open identifier, and
-`RecognitionProviderRegistry`/`RecognitionProviderPlugin` let private overlays
-register additional providers (e.g. cloud OCR, MyScript) without any public code
-depending on their implementation. A provider is only
+Recognition is split into two Android-free abstractions. A `RecognitionModel` wraps
+one model: a `TextDetector` (image -> `DetectedLine` quads) or a
+`TextLineRecognizer` (`LineCrop` -> recognized line). A `RecognitionStrategy`
+combines models into `PreparedImage -> RecognitionDocument`. The built-in
+`DetectThenRecognizeStrategy` detects lines, sorts them in reading order, crops
+each quad, recognizes it, drops lines below 0.5 confidence, and returns polygons
+normalised to the prepared image. It checks for cancellation between lines, and a
+mutex serialises jobs. Its `modelVersion` is `"<detector>+<recognizer>"`.
+
+Cursive is selected by default; Printed is the second public, fully offline
+strategy. See recognition/models/README.md for model provenance and exactly what
+has and hasn't been measured. Settings stores the default as `recognition_strategy`;
+legacy `recognition_provider` values `kraken`/`paddle` migrate to Cursive. The
+camera route offers a per-capture strategy picker with the default preselected;
+gallery, file and share imports use the default.
+`RecognitionStrategyId` is an open identifier, and
+`RecognitionStrategyRegistry`/`RecognitionStrategyPlugin` let private overlays
+register additional strategies (e.g. cloud OCR, MyScript) without any public code
+depending on their implementation. A strategy is only
 constructed/used for an explicitly selected job; no error triggers another
-provider. Provider configuration (an opaque `Map<String, String>`, meaningful only
-to the provider that defines its keys) is snapshotted for each job rather than
+strategy. Plugin configuration (an opaque `Map<String, String>`, meaningful only
+to the plugin that defines its keys) is snapshotted for each job rather than
 reread midway through recognition.
 
 ## Coordinates, paragraphs and colour
@@ -64,8 +76,8 @@ describe that same image. A provider must reverse any detection/crop/resize
 transform before returning polygons.
 
 Paragraph hints from a recognition provider (when it supplies them) take
-precedence over layout heuristics; the public `foss` build's bundled Paddle
-provider does not supply hints, so deterministic layout heuristics (reading
+precedence over layout heuristics; the public `foss` build's bundled strategies
+do not supply hints, so deterministic layout heuristics (reading
 order, relative spacing, indentation) always apply there. Visual newlines alone
 do not define notes. Soft wraps are joined without inventing text, rewriting
 accents or automatically repairing ambiguous hyphens.
@@ -99,7 +111,7 @@ New optional/defaulted fields are:
 | `sourceId` | Shared image/batch identity |
 | `paragraphIndex` | Reading order within a batch |
 | `paragraphPolygon` | Normalized region for this paragraph |
-| `recognitionProvider`, `recognitionModelVersion` | OCR provenance |
+| `recognitionProvider`, `recognitionModelVersion` | OCR provenance (the field keeps its name and stores the strategy ID) |
 | `inkColorOrigin` | Detected, defaulted or manually selected colour |
 | `zettelkastenCategory` | Fleeting/Literature/Permanent section (beta, defaults to Fleeting) |
 
@@ -279,19 +291,20 @@ fails, durable selection invalidation prevents restoration; inability to persist
 either is reported explicitly rather than claiming cancellation succeeded.
 Cancelled or superseded work must not publish late notes.
 
-The public `foss` build configures only bundled offline providers (Paddle and
-Kraken), neither of which needs credentials. The Settings screen presents them as
-radio-button options and shows each provider's readiness/model-status text.
-`SettingsStore` remains provider-agnostic: its single encrypted, provider-keyed
+The public `foss` build configures only bundled offline strategies (Printed and
+Cursive), neither of which needs credentials. The Settings screen presents them as
+the "Default recognition" choice and shows each strategy's readiness text.
+`SettingsStore` remains strategy-agnostic: its single encrypted, plugin-keyed
 JSON config blob uses Android Keystore-backed AES-GCM and is never stored as a
 plaintext preference or included in note JSON. Private `full`-flavor overlays can
-reuse that storage for their own providers' credentials without forking the
-encryption logic. Backup rules exclude private notes, sources and secrets.
+reuse that storage for their own plugins' credentials without forking the
+encryption logic. Selecting a built-in strategy as the default removes any stored
+plugin config. Backup rules exclude private notes, sources and secrets.
 
-Provider-specific network behavior (request/response shape, polling, connection
+Plugin-specific network behavior (request/response shape, polling, connection
 testing, credential requirements) is entirely the responsibility of each
-`RecognitionProviderPlugin` implementation; the public repo defines no such
-behavior beyond the offline Paddle path. See "Public/private flavor split" below.
+`RecognitionStrategyPlugin` implementation; the public repo defines no such
+behavior beyond its offline strategies. See "Public/private flavor split" below.
 
 ## Errors and verification boundaries
 
@@ -301,18 +314,18 @@ results create zero notes and receive a visible outcome. Only unreliable colour
 has the deliberate black fallback; OCR, image, storage and cancellation failures
 must not be disguised as successful colour fallback.
 
-JVM tests exercise contracts, old JSON, built-in offline providers, generic
-provider fixtures, paragraph/colour fixtures and storage failure/recovery. Android device checks remain necessary for
+JVM tests exercise contracts, old JSON, DB post-processing and CTC decoding,
+strategy composition with fake models, generic strategy fixtures, paragraph/colour fixtures and storage failure/recovery. Android device checks remain necessary for
 native inference and page sizes, chooser grants, EXIF decoding, Keystore,
 lifecycle and camera behavior. Model download size is not measured APK size, and
 passing synthetic tests is not a cursive-recognition quality claim.
 
 The app's `verify<Variant>RecognitionPackage` tasks (e.g.
 `verifyFossDebugRecognitionPackage`, `verifyFossReleaseRecognitionPackage`)
-inspect the installable APKs, not just linker outputs. They prevent a
-successfully linked JNI wrapper from shipping
-without its required Paddle runtime or model assets. The native module explicitly
-packages its pinned runtime through the `native` JNI-library source directory.
+inspect the installable APKs, not just build outputs. They prevent an APK from
+shipping without the ONNX Runtime JNI library or any SHA-pinned model asset. The
+`recognition:models` build also verifies every asset against
+`artifacts.lock.json` before packaging.
 
 Android acceptance runs use isolated directories and Keystore aliases, with a
 test application that does not initialize production settings or migrations.
@@ -323,8 +336,9 @@ Kotlin/AndroidX classes or replacing provider access with a mock.
 
 The complete offline pipeline is exercised separately in
 `NativePipelineAcceptanceTest`: a generated two-paragraph, two-colour photograph
-passes through real import, bundled Paddle, paragraph/colour processing and
-file-backed persistence. Emulator results validate that path, not real journal
+passes through real import, the bundled Printed strategy, paragraph/colour
+processing and file-backed persistence, and the Cursive strategy runs through the
+same path. Emulator results validate that path, not real journal
 accuracy, physical-camera capture or 16 KB device behavior.
 
 ## Public/private flavor split
@@ -338,20 +352,20 @@ F-Droid's build.
 The `app` module declares two Gradle product flavors on a `distribution`
 dimension:
 
-- **`foss`** — the public default. Ships bundled offline `PaddleOcrProvider` and
-  `KrakenOcrProvider`, both fully on-device with no network permission. This is
+- **`foss`** — the public default. Ships the bundled offline Printed and Cursive
+  strategies, both fully on-device with no network permission. This is
   what F-Droid, GitHub CI, and any public clone build.
 - **`full`** — reserved for the maintainer's separate, private companion repo.
   When that private repo's content is checked out locally under `private/`
   (never tracked here — see `.gitignore`), `full` additionally:
   - includes extra Gradle modules under `private/recognition/<name>/` (e.g. a
-    cloud OCR provider, MyScript ink recognition), each implementing the public
-    `RecognitionProviderPlugin` seam and registered via
-    `META-INF/services/com.fpink.core.ai.RecognitionProviderPlugin` so
-    `RecognitionProviderRegistry` can discover them at runtime with no public
+    cloud OCR strategy, MyScript ink recognition), each implementing the public
+    `RecognitionStrategyPlugin` seam and registered via
+    `META-INF/services/com.fpink.core.ai.RecognitionStrategyPlugin` so
+    `RecognitionStrategyRegistry` can discover them at runtime with no public
     code change;
   - adds a `private/app-overlay/kotlin` source directory to the `full` variant,
-    which is where a superset Settings UI (provider selection, per-provider
+    which is where a superset Settings UI (strategy selection, per-plugin
     credential fields) lives.
 
   When `private/` is absent — always true for this public repo — `full` builds

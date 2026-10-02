@@ -12,7 +12,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.fpink.core.ai.RecognitionError
-import com.fpink.core.ai.RecognitionProviderId
+import com.fpink.core.ai.RecognitionStrategyId
 import com.fpink.core.ai.RecognitionSettings
 import com.fpink.core.model.ZettelkastenCategory
 import java.security.KeyStore
@@ -34,10 +34,36 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 
 private val legacyKeys = listOf("azure_endpoint", "azure_deployment", "azure_api_version", "azure_api_key")
+private val LEGACY_PROVIDER_KEY = stringPreferencesKey("recognition_provider")
+private val STRATEGY_KEY = stringPreferencesKey("recognition_strategy")
+
+/**
+ * Maps a stored strategy, or a provider id saved before strategies existed, to a strategy id.
+ * The retired on-device providers (Kraken, PaddleOCR) and a missing value map to the default;
+ * any other id is a plugin strategy and is kept as is.
+ */
+internal fun storedStrategyId(stored: String?): RecognitionStrategyId = when (stored) {
+    null, "", "kraken", "paddle" -> RecognitionStrategyId.DEFAULT
+    else -> RecognitionStrategyId(stored)
+}
+
+/** Moves `recognition_provider` to `recognition_strategy`; the encrypted plugin config is untouched. */
+internal object RecognitionStrategyMigration : DataMigration<Preferences> {
+    override suspend fun shouldMigrate(currentData: Preferences) = currentData[LEGACY_PROVIDER_KEY] != null
+
+    override suspend fun migrate(currentData: Preferences): Preferences =
+        currentData.toMutablePreferences().apply {
+            val legacy = remove(LEGACY_PROVIDER_KEY)
+            if (this[STRATEGY_KEY] == null) this[STRATEGY_KEY] = storedStrategyId(legacy).id
+        }
+
+    override suspend fun cleanUp() = Unit
+}
+
 private val Context.recognitionDataStore by preferencesDataStore(
     name = "settings",
     produceMigrations = {
-        listOf(object : DataMigration<Preferences> {
+        listOf(RecognitionStrategyMigration, object : DataMigration<Preferences> {
             override suspend fun shouldMigrate(currentData: Preferences) =
                 legacyKeys.any { currentData[stringPreferencesKey(it)] != null }
 
@@ -71,8 +97,8 @@ class SettingsStore internal constructor(
     }
 
     private object Keys {
-        val PROVIDER = stringPreferencesKey("recognition_provider")
-        /** Encrypted JSON blob of the whole [RecognitionSettings.config] map for the saved provider. */
+        val STRATEGY = STRATEGY_KEY
+        /** Encrypted JSON blob of the whole [RecognitionSettings.config] map for the saved plugin strategy. */
         val CONFIG = stringPreferencesKey("recognition_config_encrypted")
         val THEME = stringPreferencesKey("appearance_theme")
         val ZETTELKASTEN_ENABLED = booleanPreferencesKey("zettelkasten_enabled")
@@ -113,39 +139,40 @@ class SettingsStore internal constructor(
     }
 
     val storedSettings: Flow<StoredRecognitionSettings> = store.data.map { preferences ->
-        val provider = preferences[Keys.PROVIDER]?.let { RecognitionProviderId(it) } ?: RecognitionProviderId.PADDLE
+        val strategy = storedStrategyId(preferences[Keys.STRATEGY])
         val encrypted = preferences[Keys.CONFIG]
         var keyError: String? = null
         val config = if (encrypted == null) emptyMap() else {
             try {
                 Json.decodeFromString<Map<String, String>>(cipher.decrypt(encrypted))
             } catch (_: Exception) {
-                keyError = "The saved recognition provider credentials are unavailable. Replace or remove them in Settings."
+                keyError = "The saved recognition service credentials are unavailable. Replace or remove them in Settings."
                 emptyMap()
             }
         }
         StoredRecognitionSettings(
-            RecognitionSettings(provider, config),
+            RecognitionSettings(strategy, config),
             hasStoredConfig = encrypted != null,
             keyError = keyError,
         )
     }.flowOn(Dispatchers.IO)
 
     val recognitionSettings: Flow<RecognitionSettings> = storedSettings.map {
-        if (it.settings.provider !in setOf(RecognitionProviderId.PADDLE, RecognitionProviderId.KRAKEN) && it.keyError != null) {
+        if (it.settings.strategy !in RecognitionStrategyId.BUILT_IN && it.keyError != null) {
             throw RecognitionError.Configuration(it.keyError)
         }
         it.settings
     }
 
     /**
-     * Persists [provider] and, when [config] is non-empty, an encrypted blob of every entry in it
-     * (never a subset), so no provider-specific field is ever left unencrypted. This layer performs
-     * no provider-specific validation: callers are responsible for validating [config] before saving.
-     * Pass [removeConfig] to clear any previously stored config (e.g. when switching back to PaddleOCR).
+     * Persists the default [strategy] and, when [config] is non-empty, an encrypted blob of every
+     * entry in it (never a subset), so no strategy-specific field is ever left unencrypted. This layer
+     * performs no strategy-specific validation: callers are responsible for validating [config] before
+     * saving. Pass [removeConfig] to clear any previously stored config (e.g. when switching to a
+     * built-in on-device strategy).
      */
     suspend fun save(
-        provider: RecognitionProviderId,
+        strategy: RecognitionStrategyId,
         config: Map<String, String> = emptyMap(),
         removeConfig: Boolean = false,
     ) = withContext(Dispatchers.IO) {
@@ -157,7 +184,7 @@ class SettingsStore internal constructor(
             }
         }
         store.edit { preferences ->
-            preferences[Keys.PROVIDER] = provider.id
+            preferences[Keys.STRATEGY] = strategy.id
             when {
                 removeConfig -> preferences.remove(Keys.CONFIG)
                 encrypted != null -> preferences[Keys.CONFIG] = encrypted

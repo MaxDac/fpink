@@ -2,7 +2,7 @@
 
 Not run by Gradle: public builds never download model bytes. Run it only to reproduce or
 update `src/main/assets/recognition/ppocrv6`, then copy the printed sizes and hashes into
-`artifacts.lock.json` and `PpOcrV6Models.kt`.
+`artifacts.lock.json` and `ModelAssets.kt`.
 
     py -m venv .ppocrv6
     .\\.ppocrv6\\Scripts\\python.exe -m pip install huggingface_hub pyyaml onnxruntime numpy

@@ -3,8 +3,8 @@ package com.fpink.capture.data
 import com.fpink.core.ai.NoteProcessor
 import com.fpink.core.ai.PreparedImage
 import com.fpink.core.ai.RecognitionError
-import com.fpink.core.ai.RecognitionProvider
-import com.fpink.core.ai.RecognitionProviderId
+import com.fpink.core.ai.RecognitionStrategy
+import com.fpink.core.ai.RecognitionStrategyId
 import com.fpink.core.ai.RecognitionSettings
 import com.fpink.core.model.Note
 import com.fpink.core.model.ZettelkastenCategory
@@ -51,7 +51,7 @@ class RecognitionCoordinator internal constructor(
     private val isCancelled: suspend (String) -> Boolean,
     private val repository: NoteRepository,
     private val processor: NoteProcessor,
-    private val providerFactory: (RecognitionSettings) -> RecognitionProvider,
+    private val strategyFactory: (RecognitionSettings) -> RecognitionStrategy,
     private val readZettelkastenCategoryColors: suspend () -> Map<ZettelkastenCategory, List<String>> = { emptyMap() },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
 ) {
@@ -60,7 +60,7 @@ class RecognitionCoordinator internal constructor(
         settings: SettingsStore,
         repository: NoteRepository,
         processor: NoteProcessor,
-        providerFactory: (RecognitionSettings) -> RecognitionProvider,
+        strategyFactory: (RecognitionSettings) -> RecognitionStrategy,
     ) : this(
         { settings.recognitionSettings.first() },
         images::rememberSelection,
@@ -71,7 +71,7 @@ class RecognitionCoordinator internal constructor(
         images::isCancelled,
         repository,
         processor,
-        providerFactory,
+        strategyFactory,
         { settings.activeZettelkastenCategoryColors.first() },
     )
 
@@ -87,13 +87,21 @@ class RecognitionCoordinator internal constructor(
     private val records = ConcurrentHashMap<String, Record>()
     private val inference = Mutex()
 
-    suspend fun confirm(sourceId: String): RecognitionSettings {
+    /**
+     * Snapshots the strategy for this job: [strategyOverride] (chosen on the camera screen) or the
+     * default from Settings. Built-in strategies carry no config; a plugin strategy can only be
+     * used when it is the configured default, since only that strategy's settings are stored.
+     */
+    suspend fun confirm(sourceId: String, strategyOverride: RecognitionStrategyId? = null): RecognitionSettings {
         requireNotCancelled(sourceId)
-        val selected = readSettings()
-        val snapshot = if (selected.provider in setOf(RecognitionProviderId.PADDLE, RecognitionProviderId.KRAKEN)) {
-            RecognitionSettings(selected.provider)
+        val snapshot = if (strategyOverride in RecognitionStrategyId.BUILT_IN) {
+            RecognitionSettings(checkNotNull(strategyOverride))
         } else {
-            selected
+            val selected = readSettings()
+            if (strategyOverride != null && strategyOverride != selected.strategy) {
+                throw RecognitionError.Configuration("The chosen recognition is not configured. Set it as the default in Settings first.")
+            }
+            if (selected.strategy in RecognitionStrategyId.BUILT_IN) RecognitionSettings(selected.strategy) else selected
         }
         rememberSelection(sourceId, snapshot)
         records.getOrPut(sourceId) { Record() }.snapshot = snapshot
@@ -125,13 +133,13 @@ class RecognitionCoordinator internal constructor(
                         val image = loadImage(sourceId)
                         requireNotCancelled(sourceId)
                         record.state.value = RecognitionJobState.Working(
-                            when (snapshot.provider) {
-                                RecognitionProviderId.PADDLE -> "Recognizing on this device with PaddleOCR…"
-                                RecognitionProviderId.KRAKEN -> "Recognizing on this device with Kraken OCR…"
-                                else -> "Uploading to your selected recognition provider and recognizing…"
+                            when (snapshot.strategy) {
+                                RecognitionStrategyId.PRINTED -> "Recognizing printed text on this device…"
+                                RecognitionStrategyId.CURSIVE -> "Recognizing cursive text on this device…"
+                                else -> "Uploading to your selected recognition service and recognizing…"
                             },
                         )
-                        val recognition = providerFactory(snapshot).recognize(image).getOrThrow()
+                        val recognition = strategyFactory(snapshot).recognize(image).getOrThrow()
                         currentCoroutineContext().ensureActive()
                         requireNotCancelled(sourceId)
                         record.state.value = RecognitionJobState.Working("Grouping paragraphs and measuring ink colour locally…")
@@ -154,7 +162,7 @@ class RecognitionCoordinator internal constructor(
                                 sourceId = sourceId,
                                 paragraphIndex = index,
                                 paragraphPolygon = paragraph.polygon,
-                                recognitionProvider = recognition.provider.id,
+                                recognitionProvider = recognition.strategy.id,
                                 recognitionModelVersion = recognition.modelVersion,
                                 inkColorOrigin = paragraph.colorOrigin,
                                 zettelkastenCategory = matchZettelkastenCategory(paragraph.inkColorHex, categoryColors),
@@ -260,7 +268,7 @@ internal fun Throwable.toJobFailure(): RecognitionJobState.Failed = when (this) 
         "The bundled OCR model or native runtime is unavailable. Check model readiness in Settings. No cloud request was made.", false,
     )
     is RecognitionError.UnsupportedDevice -> RecognitionJobState.Failed(
-        "The selected offline OCR provider cannot run on this device or input. Check Settings for model/device support; no provider was switched automatically.", false,
+        "The selected on-device recognition cannot run on this device or input. Check Settings for model/device support; no other recognition was used automatically.", false,
     )
     is RecognitionError.Network -> RecognitionJobState.Failed(
         "The selected provider could not be reached or timed out. Check your connection, then retry this same job.", true,

@@ -12,7 +12,7 @@ import android.system.OsConstants
 import androidx.exifinterface.media.ExifInterface
 import com.fpink.core.ai.PreparedImage
 import com.fpink.core.ai.RecognitionError
-import com.fpink.core.ai.RecognitionProviderId
+import com.fpink.core.ai.RecognitionStrategyId
 import com.fpink.core.ai.RecognitionSettings
 import java.io.File
 import java.io.FileInputStream
@@ -174,8 +174,8 @@ class ImageImportStore(context: Context) {
         if (cancellations.isCancelled(sourceId)) throw RecognitionError.Configuration(CANCELLED_JOB_MESSAGE)
         check(previewFile(sourceId).isFile) { "The prepared image is unavailable." }
         val properties = Properties().apply {
-            setProperty("provider", settings.provider.id)
-            if (settings.provider != RecognitionProviderId.PADDLE) {
+            setProperty("strategy", settings.strategy.id)
+            if (settings.strategy !in RecognitionStrategyId.BUILT_IN) {
                 setProperty("configFingerprint", configFingerprint(settings.config))
             }
         }
@@ -192,14 +192,16 @@ class ImageImportStore(context: Context) {
             val selection = File(sourceDirectory(sourceId), "selection")
             require(selection.isFile) { "Confirm this image again before processing it." }
             FileInputStream(selection).use { properties.load(it) }
-            val provider = properties.getProperty("provider")?.let { RecognitionProviderId(it) }
-                ?: throw RecognitionError.Configuration("This job has no valid provider selection. Choose the image again.")
-            if (provider == RecognitionProviderId.PADDLE) return@withContext RecognitionSettings()
+            // Jobs confirmed before strategies existed stored "provider" (kraken, paddle or a plugin).
+            val stored = properties.getProperty("strategy") ?: properties.getProperty("provider")
+                ?: throw RecognitionError.Configuration("This job has no valid recognition selection. Choose the image again.")
+            val strategy = storedStrategyId(stored)
+            if (strategy in RecognitionStrategyId.BUILT_IN) return@withContext RecognitionSettings(strategy)
             val settings = current()
-            require(settings.provider == provider) { "This job's provider is no longer selected. Choose the image again." }
+            require(settings.strategy == strategy) { "This job's recognition service is no longer selected. Choose the image again." }
             if (properties.getProperty("configFingerprint") != configFingerprint(settings.config)) {
                 throw RecognitionError.Configuration(
-                    "The provider settings changed or became unavailable after this job was confirmed. Choose the image again to approve a new job.",
+                    "The recognition service settings changed or became unavailable after this job was confirmed. Choose the image again to approve a new job.",
                 )
             }
             settings

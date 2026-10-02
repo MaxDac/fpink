@@ -27,6 +27,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +64,7 @@ import coil3.compose.AsyncImage
 import com.fpink.capture.ui.savedContainerViewModel
 import com.fpink.capture.R
 import com.fpink.capture.ui.components.ActionIconButton
+import com.fpink.core.ai.RecognitionStrategyId
 import java.io.File
 
 private const val CAMERA_PERMISSION_DENIED =
@@ -75,7 +78,10 @@ fun CaptureScreen(
     onSettings: () -> Unit,
     startWithCamera: Boolean = false,
     viewModel: CaptureViewModel = savedContainerViewModel { container, savedState ->
-        CaptureViewModel(container.imageImports, container.recognitionCoordinator, container.settingsStore, savedState)
+        CaptureViewModel(
+            container.imageImports, container.recognitionCoordinator, container.settingsStore, savedState,
+            container.recognitionOptions(),
+        )
     },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -157,7 +163,7 @@ fun CaptureScreen(
             val shutter = remember { CameraShutter() }
             CaptureImageLayout(
                 modifier = contentModifier,
-                information = { wide -> CaptureInformation(state, compact = !wide) },
+                information = { wide -> CaptureInformation(state, viewModel::selectStrategy, compact = !wide) },
                 shutter = if (liveCamera) {
                     { modifier -> ShutterButton(shutter, state.busy, modifier) }
                 } else {
@@ -213,7 +219,7 @@ fun CaptureScreen(
                 modifier = contentModifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                CaptureInformation(state)
+                CaptureInformation(state, viewModel::selectStrategy)
                 ActionIconButton(
                     R.drawable.ic_camera,
                     R.string.take_photo,
@@ -228,9 +234,16 @@ fun CaptureScreen(
 }
 
 @Composable
-private fun CaptureInformation(state: CaptureUiState, compact: Boolean = false) {
+private fun CaptureInformation(
+    state: CaptureUiState,
+    onStrategySelected: (RecognitionStrategyId) -> Unit,
+    compact: Boolean = false,
+) {
     val typography = MaterialTheme.typography
     val bodyStyle = if (compact) typography.labelSmall else typography.bodySmall
+    if (state.showStrategyPicker && state.strategyOptions.size > 1) {
+        StrategyPicker(state, onStrategySelected)
+    }
     Text(state.providerLabel, style = if (compact) typography.labelMedium else typography.bodyMedium)
     Text(
         if (state.cameraCropFile != null) {
@@ -243,6 +256,31 @@ private fun CaptureInformation(state: CaptureUiState, compact: Boolean = false) 
     val errorStyle = if (compact) bodyStyle else LocalTextStyle.current
     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = errorStyle) }
     state.settingsError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = errorStyle) }
+}
+
+/** Camera-only choice of recognition for this capture; the Settings default is preselected. */
+@Composable
+internal fun StrategyPicker(state: CaptureUiState, onStrategySelected: (RecognitionStrategyId) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val selected = state.strategyOptions.firstOrNull { it.id == state.selectedStrategy }?.label ?: state.selectedStrategy.id
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            enabled = !state.busy,
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) { Text("Recognition: $selected ▾", softWrap = false) }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            state.strategyOptions.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = {
+                        expanded = false
+                        onStrategySelected(option.id)
+                    },
+                )
+            }
+        }
+    }
 }
 
 @Stable

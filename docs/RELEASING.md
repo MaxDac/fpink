@@ -164,7 +164,7 @@ Notes link to the corresponding source at the exact release tag. The APK is a
 reproducible build (see below): `scripts/fdroid-rb-docker.sh` at the tag rebuilds
 the unsigned APK byte for byte. The asset name `FPInk-<version>.apk` is part of
 the fdroiddata `Binaries` URL; do not rename it. Preserve the source/tag and third-party
-notices when redistributing. Offline PaddleOCR currently supports ARM64 only;
+notices when redistributing. The release APK packages ARM64 native code only;
 the workflow does not change the app's existing ABI installation behavior.
 
 Only the signing/publishing job has repository write permission. It does not
@@ -187,9 +187,8 @@ The release build job runs `scripts/fdroid-rb-docker.sh`, which replays the last
 build block of `metadata/com.fpink.capture.yml` with `scripts/fdroid_rb_build.py`
 inside the digest-pinned `registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie`
 image, like `fdroid build --on-server`: the same apt packages, OpenJDK 21,
-gradlew-fdroid, NDK installation, `/home/vagrant/build/com.fpink.capture` path,
-`SOURCE_DATE_EPOCH`, `rm`, `prebuild`, `build` and Gradle invocation. The Paddle
-runtime is therefore built from source on both sides. On a Linux Docker host:
+gradlew-fdroid, `/home/vagrant/build/com.fpink.capture` path,
+`SOURCE_DATE_EPOCH`, `rm`, `prebuild`, `build` and Gradle invocation. On a Linux Docker host:
 
 ```text
 bash scripts/fdroid-rb-docker.sh out        # builds HEAD (committed files only)
@@ -263,14 +262,14 @@ until issues #27, #28, #30, #31, and #32 are complete.
 | Area | Remaining work |
 |---|---|
 | Rights and dependency audit | Confirm GPL compatibility and redistribution rights for transitive dependencies, artwork, dictionaries and model weights; preserve their licenses and notices. |
-| Paddle native runtime | Build the pinned source runtime with `-PbuildPaddleRuntimeFromSource` and the recipe in `recognition/paddle/source-runtime.lock.json`; obtain maintainer approval of the exact source/toolchain path. The checked-in `.so` is only a developer fallback during qualification. Hash pinning and the documented ELF metadata correction are not source builds. Do not bypass this with scanner exclusions. |
-| Model provenance | Supply original weights/source, licensing, conversion steps and tool versions, or obtain maintainer agreement on asset treatment for the shipped `.nb` files. |
-| Linux/F-Droid recipe | Validate all preparation and native/model builds in a clean supported build environment without private credentials, local paths or unpublished inputs. Pin permitted downloads and tools. |
+| ONNX Runtime | Recognition uses the `com.microsoft.onnxruntime:onnxruntime-android` AAR from Maven Central; obtain F-Droid maintainer agreement that this dependency is acceptable. Do not bypass review with scanner exclusions. |
+| Model provenance | Upstream sources, revisions, SHA-256 hashes and licences of the shipped ONNX models are pinned in `recognition/models/artifacts.lock.json` and documented in `recognition/models/README.md`; obtain maintainer agreement on their asset treatment. |
+| Linux/F-Droid recipe | Validate all preparation and model checks in a clean supported build environment without private credentials, local paths or unpublished inputs. Pin permitted downloads and tools. |
 | Version discovery | Done from 0.1.0-preview.8: releases are declared in `version.properties`, which the recipe reads with `UpdateCheckMode: Tags` and `UpdateCheckData`, and the version-agnostic build block lets `AutoUpdateMode: Version` copy it. |
 | Listing | Descriptions, icon, phone screenshots and version-code-named changelogs now live in `fastlane/metadata/android/en-US/`. Still needed: author/contact information, categories, source/issue links and applicable anti-feature declarations. Every future release must add its own `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` (max 500 characters) alongside the version bump. |
-| Optional cloud OCR provider | Public releases (`foss` flavor) are offline-only (bundled PaddleOCR only) and never contact a cloud service; there is nothing to disclose. A private, non-F-Droid "full" build variant, built from a separate private companion repo, may add optional cloud/proprietary recognition providers for the maintainer's own signed releases — see `docs/ARCHITECTURE.md`'s flavor-split section — but that variant is never published to F-Droid. |
+| Optional cloud OCR provider | Public releases (`foss` flavor) are offline-only (bundled Printed and Cursive strategies only) and never contact a cloud service; there is nothing to disclose. A private, non-F-Droid "full" build variant, built from a separate private companion repo, may add optional cloud/proprietary recognition strategies for the maintainer's own signed releases — see `docs/ARCHITECTURE.md`'s flavor-split section — but that variant is never published to F-Droid. |
 | Identity and signing | Confirm the long-term `com.fpink.capture` identity. Choose F-Droid signing or upstream-signed reproducible builds before first distribution. Do not share the private key. Different certificates normally prevent switching channels in place. |
-| Shared-signature reproducibility | Releases from 0.1.0-preview.8 are built like the buildserver and checked by the Reproducibility workflow; the recipe sets `Binaries` and `AllowedAPKSigningKeys`. The source-built runtime is pinned in `build.expectedSha256` of `recognition/paddle/source-runtime.lock.json`; update it only together with the Paddle Lite source or toolchain. |
+| Shared-signature reproducibility | Releases from 0.1.0-preview.8 are built like the buildserver and checked by the Reproducibility workflow; the recipe sets `Binaries` and `AllowedAPKSigningKeys`. |
 | Submission | Prepare `metadata/com.fpink.capture.yml` in `fdroiddata`, lint/build it, submit a merge request, resolve review, push every new release to the open MR (`scripts/fdroid_mr_bump.py`), and maintain update checks. Acceptance and timing belong to F-Droid. |
 
 A self-hosted F-Droid repository is a different distribution route. It requires

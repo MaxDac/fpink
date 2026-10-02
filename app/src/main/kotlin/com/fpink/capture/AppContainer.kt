@@ -3,17 +3,17 @@ package com.fpink.capture
 import android.content.Context
 import com.fpink.capture.data.AndroidFileStore
 import com.fpink.capture.data.ImageImportStore
-import com.fpink.capture.data.SettingsStore
 import com.fpink.capture.data.RecognitionCoordinator
+import com.fpink.capture.data.RecognitionOption
+import com.fpink.capture.data.SettingsStore
 import com.fpink.core.ai.DefaultNoteProcessor
 import com.fpink.core.ai.RecognitionError
-import com.fpink.core.ai.RecognitionProvider
-import com.fpink.core.ai.RecognitionProviderId
-import com.fpink.core.ai.RecognitionProviderRegistry
 import com.fpink.core.ai.RecognitionSettings
+import com.fpink.core.ai.RecognitionStrategy
+import com.fpink.core.ai.RecognitionStrategyId
+import com.fpink.core.ai.RecognitionStrategyRegistry
 import com.fpink.core.storage.NoteRepository
-import com.fpink.recognition.kraken.KrakenOcrProvider
-import com.fpink.recognition.paddle.PaddleOcrProvider
+import com.fpink.recognition.strategies.BuiltInStrategies
 
 class AppContainer(context: Context) {
     val appContext: Context = context.applicationContext
@@ -26,23 +26,24 @@ class AppContainer(context: Context) {
 
     val noteProcessor = DefaultNoteProcessor()
     val recognitionCoordinator = RecognitionCoordinator(
-        imageImports, settingsStore, noteRepository, noteProcessor, ::recognitionProvider,
+        imageImports, settingsStore, noteRepository, noteProcessor, ::recognitionStrategy,
     )
 
     /**
-     * `PADDLE` and `KRAKEN` are the providers built into this (FOSS) build. Any other id is
-     * resolved through [RecognitionProviderRegistry], which only finds a match when a private,
-     * non-public provider module (e.g. Azure or MyScript) has been compiled into the app.
+     * `printed` and `cursive` are the on-device strategies built into this (FOSS) build. Any
+     * other id is resolved through [RecognitionStrategyRegistry], which only finds a match when
+     * a private, non-public strategy module (e.g. Azure or MyScript) has been compiled into the app.
      */
-    fun recognitionProvider(settings: RecognitionSettings): RecognitionProvider = when (settings.provider) {
-        RecognitionProviderId.PADDLE -> PaddleOcrProvider(appContext)
-        RecognitionProviderId.KRAKEN -> KrakenOcrProvider(appContext)
-        else -> RecognitionProviderRegistry.find(settings.provider)?.create(appContext, settings)
-            ?: throw RecognitionError.Configuration("The selected recognition provider is not available in this build.")
-    }
+    fun recognitionStrategy(settings: RecognitionSettings): RecognitionStrategy =
+        BuiltInStrategies.create(appContext, settings.strategy)
+            ?: RecognitionStrategyRegistry.find(settings.strategy)?.create(appContext, settings)
+            ?: throw RecognitionError.Configuration("The selected recognition is not available in this build.")
 
-    fun recognitionReadinessChecks(): Map<RecognitionProviderId, suspend () -> Result<Unit>> = mapOf(
-        RecognitionProviderId.PADDLE to { PaddleOcrProvider.readiness(appContext) },
-        RecognitionProviderId.KRAKEN to { KrakenOcrProvider.readiness(appContext) },
-    )
+    /** Built-in strategies first, then any plugin strategies bundled into this build. */
+    fun recognitionOptions(): List<RecognitionOption> =
+        BuiltInStrategies.ids.map { RecognitionOption(it, checkNotNull(BuiltInStrategies.label(it)), requiresNetwork = false) } +
+            RecognitionStrategyRegistry.all().map { RecognitionOption(it.id, it.label, it.requiresNetwork) }
+
+    fun recognitionReadinessChecks(): Map<RecognitionStrategyId, suspend () -> Result<Unit>> =
+        BuiltInStrategies.ids.associateWith { id -> suspend { checkNotNull(BuiltInStrategies.create(appContext, id)).readiness() } }
 }
