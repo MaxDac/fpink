@@ -51,10 +51,16 @@
     <string name="close_search">Close search</string>
     <string name="clear_search">Clear search</string>
     <string name="search_notes_placeholder">Search notes…</string>
+    <string name="more_actions">More actions</string>
     <string name="filter_by_zettelkasten_category">Filter by Zettelkasten category</string>
     <string name="zettelkasten_filter_chip">%1$s (%2$d)</string>
     <string name="notes_no_matches">No notes match your search or filters.</string>
     <string name="clear_filters">Clear filters</string>
+    <string name="export_notes_markdown_vault">Markdown vault (Obsidian)</string>
+    <string name="export_all_notes_markdown_vault">Export all to Markdown vault</string>
+    <string name="exporting_notes">Exporting notes…</string>
+    <string name="notes_export_error">Export failed: %1$s. No file was kept; try again.</string>
+    <string name="notes_export_picker_unavailable">No app is available to save the export.</string>
     <string name="delete_selected_notes">Delete selected</string>
     <string name="zettelkasten_move_selected_notes">Move to Zettelkasten category</string>
     <string name="delete_notes_confirm">Delete</string>
@@ -67,6 +73,10 @@
     <plurals name="notes_selected">
         <item quantity="one">%d note selected</item>
         <item quantity="other">%d notes selected</item>
+    </plurals>
+    <plurals name="notes_exported">
+        <item quantity="one">%d note exported.</item>
+        <item quantity="other">%d notes exported.</item>
     </plurals>
     <plurals name="notes_deleted">
         <item quantity="one">%d note deleted.</item>

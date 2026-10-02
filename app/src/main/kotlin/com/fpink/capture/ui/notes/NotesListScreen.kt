@@ -129,6 +129,13 @@ fun NotesListScreen(
             sourceViewModel.dismissError()
         }
     }
+    val exportedMessage = state.exportedCount?.let { pluralStringResource(R.plurals.notes_exported, it, it) }
+    LaunchedEffect(exportedMessage) {
+        exportedMessage?.let {
+            snackbar.showSnackbar(it)
+            viewModel.onExportResultShown()
+        }
+    }
     LaunchedEffect(shareError) {
         shareError?.let {
             snackbar.showSnackbar(it)
@@ -189,6 +196,21 @@ fun NotesListScreen(
             shareError = shareBlocked
         }
     }
+    val context = LocalContext.current
+    val exportPickerUnavailable = stringResource(R.string.notes_export_picker_unavailable)
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) viewModel.exportVault(SafVaultExportTarget(context.contentResolver, uri))
+        else viewModel.cancelVaultExport()
+    }
+    fun startVaultExport(selectedOnly: Boolean) {
+        if (!viewModel.prepareVaultExport(selectedOnly)) return
+        try {
+            exportLauncher.launch(SafVaultExportTarget.defaultFileName())
+        } catch (_: ActivityNotFoundException) {
+            viewModel.cancelVaultExport()
+            shareError = exportPickerUnavailable
+        }
+    }
     fun launchPicker(files: Boolean) {
         val intent = Intent(if (files) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
             type = "image/*"
@@ -212,11 +234,13 @@ fun NotesListScreen(
 
     var exportMenuOpen by rememberSaveable { mutableStateOf(false) }
     var moveMenuOpen by rememberSaveable { mutableStateOf(false) }
+    var moreMenuOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.isSelecting, state.isDeleting) {
         if (!state.isSelecting || state.isDeleting) {
             exportMenuOpen = false
             moveMenuOpen = false
         }
+        if (state.isSelecting || state.isDeleting) moreMenuOpen = false
     }
     val searchFocus = remember { FocusRequester() }
     LaunchedEffect(searchOpen, state.isSelecting) {
@@ -286,6 +310,13 @@ fun NotesListScreen(
                                             shareNotes(state.notes.filter { it.id in state.selectedIds }, json = false)
                                         },
                                     )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.export_notes_markdown_vault)) },
+                                        onClick = {
+                                            exportMenuOpen = false
+                                            startVaultExport(selectedOnly = true)
+                                        },
+                                    )
                                 }
                             }
                             ActionIconButton(
@@ -324,6 +355,19 @@ fun NotesListScreen(
                                 enabled = state.notes.isNotEmpty(), onClick = { searchOpen = true },
                             )
                             ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
+                            Box {
+                                ActionIconButton(R.drawable.ic_more, R.string.more_actions, onClick = { moreMenuOpen = true })
+                                DropdownMenu(expanded = moreMenuOpen, onDismissRequest = { moreMenuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.export_all_notes_markdown_vault)) },
+                                        enabled = state.canInteract && state.notes.isNotEmpty(),
+                                        onClick = {
+                                            moreMenuOpen = false
+                                            startVaultExport(selectedOnly = false)
+                                        },
+                                    )
+                                }
+                            }
                         }
                     },
                 )
@@ -365,6 +409,12 @@ fun NotesListScreen(
                         TextButton(onClick = viewModel::dismissMoveError) { Text(stringResource(R.string.dismiss)) }
                     }
                 }
+                state.exportError?.let { error ->
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(stringResource(R.string.notes_export_error, error), color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = viewModel::dismissExportError) { Text(stringResource(R.string.dismiss)) }
+                    }
+                }
                 if (state.zettelkastenEnabled && state.notes.isNotEmpty()) {
                     CategoryFilterRow(
                         state = state,
@@ -386,6 +436,10 @@ fun NotesListScreen(
                 if (state.isMoving) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text("Moving notes…", Modifier.padding(16.dp))
+                }
+                if (state.isExporting) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.exporting_notes), Modifier.padding(16.dp))
                 }
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     val error = state.error

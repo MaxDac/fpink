@@ -148,6 +148,16 @@ class NoteRepository(
         deleteIfExists(stagingPath(sourceId))
     }
 
+    /**
+     * Reads the source image of a visible [note] for export. Returns null when the note has no
+     * stored image (for example a legacy note whose image was never written).
+     */
+    suspend fun readSourceImage(note: Note): Result<ByteArray?> = operation {
+        validateId(note.id)
+        val stored = visibleNote(note.id)
+        if (fileStore.exists(stored.imagePath).getOrThrow()) fileStore.read(stored.imagePath).getOrThrow() else null
+    }
+
     suspend fun saveImage(noteId: String, imageBytes: ByteArray): Result<Unit> = operation {
         validateId(noteId)
         val path = "$IMAGES_DIR/$noteId.jpg"
