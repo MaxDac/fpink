@@ -5,12 +5,17 @@ import androidx.lifecycle.viewModelScope
 import com.fpink.capture.data.SettingsStore
 import com.fpink.core.model.Note
 import com.fpink.core.model.NoteSearch
+import com.fpink.core.model.VaultOptions
 import com.fpink.core.model.ZettelkastenCategory
+import com.fpink.core.storage.MarkdownVaultArchive
 import com.fpink.core.storage.NoteRepository
+import java.io.OutputStream
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
@@ -36,9 +41,13 @@ data class NotesListUiState(
     val categoryFilter: Set<ZettelkastenCategory> = emptySet(),
     /** Notes matching [query], ranked by relevance; null while no query is active. */
     val searchResults: List<Note>? = null,
+    val pendingExportIds: List<String>? = null,
+    val isExporting: Boolean = false,
+    val exportedCount: Int? = null,
+    val exportError: VaultExportError? = null,
 ) {
     val isSelecting: Boolean get() = selectedIds.isNotEmpty()
-    val canInteract: Boolean get() = !isLoading && !isDeleting && !isMoving && error == null
+    val canInteract: Boolean get() = !isLoading && !isDeleting && !isMoving && !isExporting && error == null
     val canChangeSelection: Boolean get() = canInteract && pendingDeletionIds.isEmpty()
 
     /** The category filter only applies while the Zettelkasten method is enabled. */
@@ -74,11 +83,31 @@ sealed interface NotesListError {
     data object Interrupted : NotesListError
 }
 
+/** A user-chosen export destination, such as a Storage Access Framework document. */
+interface VaultExportTarget {
+    fun open(): OutputStream
+
+    /**
+     * Removes a partially written destination after a failed or cancelled export.
+     * Returns false when the destination could not be removed.
+     */
+    fun discard(): Boolean
+}
+
+/**
+ * A failed export. [reason] is null when a destination arrived with no export pending, for example
+ * after the process was recreated while the picker was open. [partialFileRemains] is true when the
+ * destination could not be removed.
+ */
+data class VaultExportError(val reason: String?, val partialFileRemains: Boolean)
+
 class NotesListViewModel(
     private val noteRepository: NoteRepository,
     settingsStore: SettingsStore? = null,
     zettelkastenEnabled: Flow<Boolean>? = settingsStore?.zettelkastenEnabled,
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val clock: Clock = Clock.System,
 ) : ViewModel() {
     companion object {
         const val SEARCH_DEBOUNCE_MS = 150L
@@ -250,6 +279,81 @@ class NotesListViewModel(
         if (!_uiState.value.canChangeSelection) return
         _uiState.update { it.copy(query = "", categoryFilter = emptySet()) }
         scheduleSearch(debounce = false)
+    }
+
+    /**
+     * Snapshots the notes to export before the destination picker opens: the visible selection
+     * when [selectedOnly], otherwise the whole library. Returns false when there is nothing to export.
+     */
+    fun prepareVaultExport(selectedOnly: Boolean): Boolean {
+        val state = _uiState.value
+        if (!state.canInteract || state.pendingDeletionIds.isNotEmpty()) return false
+        val ids = if (selectedOnly) {
+            state.notes.filter { it.id in state.selectedIds }.map { it.id }
+        } else {
+            state.notes.map { it.id }
+        }
+        if (ids.isEmpty()) return false
+        _uiState.update { it.copy(pendingExportIds = ids) }
+        return true
+    }
+
+    fun cancelVaultExport() {
+        _uiState.update { it.copy(pendingExportIds = null) }
+    }
+
+    fun exportVault(target: VaultExportTarget) {
+        val attempt = ++exportAttempt
+        val state = _uiState.value
+        val ids = state.pendingExportIds
+        if (ids == null || !state.canInteract) {
+            cancelVaultExport()
+            viewModelScope.launch {
+                val removed = discard(target)
+                // A later export owns the result once it has started.
+                if (attempt == exportAttempt) {
+                    _uiState.update { it.copy(exportError = VaultExportError(reason = null, partialFileRemains = !removed)) }
+                }
+            }
+            return
+        }
+        val wanted = ids.toSet()
+        val notes = state.notes.filter { it.id in wanted }
+        val options = VaultOptions(groupByCategory = state.zettelkastenEnabled, exportedAt = clock.now())
+        _uiState.update { it.copy(pendingExportIds = null, isExporting = true, exportError = null, exportedCount = null) }
+        operation = viewModelScope.launch {
+            try {
+                val summary = withContext(ioDispatcher) {
+                    target.open().use { output ->
+                        noteRepository.readSourceImages { readImage ->
+                            MarkdownVaultArchive.write(notes, options, output, readImage)
+                        }.getOrThrow()
+                    }
+                }
+                _uiState.update { it.copy(exportedCount = summary.notes) }
+            } catch (cancelled: CancellationException) {
+                discard(target)
+                throw cancelled
+            } catch (error: Exception) {
+                val removed = discard(target)
+                _uiState.update { it.copy(exportError = VaultExportError(error.description(), partialFileRemains = !removed)) }
+            } finally {
+                _uiState.update { it.copy(isExporting = false) }
+            }
+        }
+    }
+
+    private var exportAttempt = 0
+
+    private suspend fun discard(target: VaultExportTarget): Boolean =
+        withContext(NonCancellable + ioDispatcher) { runCatching { target.discard() }.getOrDefault(false) }
+
+    fun dismissExportError() {
+        _uiState.update { it.copy(exportError = null) }
+    }
+
+    fun onExportResultShown() {
+        _uiState.update { it.copy(exportedCount = null) }
     }
 
     private fun scheduleSearch(debounce: Boolean) {

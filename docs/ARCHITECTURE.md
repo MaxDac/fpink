@@ -174,7 +174,7 @@ without touching already-assigned notes. When enabled, the notes list groups not
 into the three sections and a selection-mode "Move to…" action reassigns the
 selected notes' category through the ordinary `NoteRepository.save` path.
 
-### Search and filtering
+### Search, filtering and export
 
 The notes list's search uses `core:model`'s `NoteSearch`. It is a dependency-free,
 in-memory fuzzy scorer:
@@ -193,6 +193,30 @@ category filter applies only while the feature is enabled. Selections are pruned
 to the visible notes whenever the query, filter or setting changes, and a pending
 deletion that would touch a newly hidden note is cancelled, so bulk actions never
 touch hidden notes.
+
+Export uses `MarkdownVaultExport` (`core:model`), a pure builder that produces
+Markdown documents:
+
+- YAML front matter, the note text, an `![[attachments/…]]` embed, and a links
+  section of `[[wikilinks]]` resolved by note ID.
+- Filenames are `yyyy-MM-dd HHmm <title>` in local time, unique across the vault
+  without regard to case.
+- An index note, and optional per-category folders.
+
+`MarkdownVaultArchive` (`core:storage`) streams the vault as a zip:
+
+- Each distinct source image is written once, read through
+  `NoteRepository.readSourceImages`, which holds the repository lock and runs
+  recovery once for the whole export.
+- Embeds are emitted only for images actually written.
+
+The app writes the archive into a Storage Access Framework `CreateDocument`
+destination (`SafVaultExportTarget`). If the export fails or is cancelled, the
+app tries to delete that document, off the main thread. When the provider cannot
+delete it, the error says a partial file may remain. A destination that arrives
+with no export pending, for example after process death while the picker was
+open, is deleted the same way and reported as interrupted. No permissions,
+network access or `FileProvider` are needed.
 
 ## Input, lifecycle and settings
 

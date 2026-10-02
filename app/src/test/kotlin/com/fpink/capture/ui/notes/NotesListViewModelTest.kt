@@ -608,8 +608,121 @@ class NotesListViewModelTest {
         assertEquals(setOf("a"), model.uiState.value.selectedIds)
     }
 
+    @Test fun `exporting the selection writes a markdown vault`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b", "c"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        assertFalse(model.prepareVaultExport(selectedOnly = true))
+        model.select("a")
+        model.select("c")
+        assertTrue(model.prepareVaultExport(selectedOnly = true))
+        assertEquals(listOf("a", "c"), model.uiState.value.pendingExportIds?.sorted())
+        val target = RecordingTarget()
+
+        model.exportVault(target)
+        assertTrue(model.uiState.value.isExporting)
+        assertFalse(model.uiState.value.canInteract)
+        advanceUntilIdle()
+
+        assertFalse(model.uiState.value.isExporting)
+        assertEquals(2, model.uiState.value.exportedCount)
+        assertFalse(target.discarded)
+        val entries = unzip(target.output.toByteArray())
+        assertEquals(setOf("attachments/a.jpg", "attachments/c.jpg"), entries.filter { it.startsWith("attachments/") }.toSet())
+        assertEquals(3, entries.count { it.endsWith(".md") })
+        model.onExportResultShown()
+        assertNull(model.uiState.value.exportedCount)
+    }
+
+    @Test fun `export all ignores the filter and failures discard the partial file`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        model.onQueryChange("note a")
+        advanceUntilIdle()
+        assertTrue(model.prepareVaultExport(selectedOnly = false))
+        assertEquals(setOf("a", "b"), model.uiState.value.pendingExportIds?.toSet())
+        fixture.store.fail = { operation, path -> operation == "read" && path == "images/b.jpg" }
+        val target = RecordingTarget()
+
+        model.exportVault(target)
+        advanceUntilIdle()
+
+        assertTrue(target.discarded)
+        assertEquals(false, model.uiState.value.exportError?.partialFileRemains)
+        assertNotNull(model.uiState.value.exportError?.reason)
+        assertNull(model.uiState.value.exportedCount)
+        assertFalse(model.uiState.value.isExporting)
+        model.dismissExportError()
+        assertNull(model.uiState.value.exportError)
+    }
+
+    @Test fun `a failed cleanup reports that a partial file may remain`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        assertTrue(model.prepareVaultExport(selectedOnly = false))
+        fixture.store.fail = { operation, path -> operation == "read" && path == "images/a.jpg" }
+        val target = RecordingTarget(removable = false)
+
+        model.exportVault(target)
+        advanceUntilIdle()
+
+        assertTrue(target.discarded)
+        assertEquals(true, model.uiState.value.exportError?.partialFileRemains)
+    }
+
+    @Test fun `a destination with no pending export is discarded and reported`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        assertTrue(model.prepareVaultExport(selectedOnly = false))
+        model.cancelVaultExport()
+        // A picker result can also arrive in a recreated ViewModel after process death.
+        val target = RecordingTarget()
+        model.exportVault(target)
+        advanceUntilIdle()
+        assertNull(model.uiState.value.pendingExportIds)
+        assertFalse(model.uiState.value.isExporting)
+        assertEquals(0, target.output.size())
+        assertTrue(target.discarded)
+        assertEquals(VaultExportError(reason = null, partialFileRemains = false), model.uiState.value.exportError)
+    }
+
+    @Test fun `a slow orphan cleanup does not overwrite a later export result`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        val orphan = RecordingTarget()
+        model.exportVault(orphan)
+        assertTrue(model.prepareVaultExport(selectedOnly = false))
+        model.exportVault(RecordingTarget())
+        advanceUntilIdle()
+        assertTrue(orphan.discarded)
+        assertEquals(1, model.uiState.value.exportedCount)
+        assertNull(model.uiState.value.exportError)
+    }
+
+    private class RecordingTarget(private val removable: Boolean = true) : VaultExportTarget {
+        val output = java.io.ByteArrayOutputStream()
+        var discarded = false
+        override fun open(): java.io.OutputStream = output
+        override fun discard(): Boolean {
+            discarded = true
+            return removable
+        }
+    }
+
+    private fun unzip(bytes: ByteArray): List<String> {
+        val names = mutableListOf<String>()
+        java.util.zip.ZipInputStream(bytes.inputStream()).use { zip ->
+            while (true) names += (zip.nextEntry ?: break).name
+        }
+        return names
+    }
+
     private fun testModel(repository: NoteRepository): NotesListViewModel =
-        NotesListViewModel(repository, computeDispatcher = dispatcher).also { models += it }
+        NotesListViewModel(repository, computeDispatcher = dispatcher, ioDispatcher = dispatcher).also { models += it }
 
     @Test fun `enabling zettelkasten with a saved filter prunes hidden selections`() = runTest(dispatcher) {
         val fixture = categorizedFixture()

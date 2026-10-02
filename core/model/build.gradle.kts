@@ -16,7 +16,7 @@ kotlin {
 
 dependencies {
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.datetime)
+    api(libs.kotlinx.datetime)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

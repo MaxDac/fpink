@@ -148,6 +148,20 @@ class NoteRepository(
         deleteIfExists(stagingPath(sourceId))
     }
 
+    /**
+     * Runs [block] under one lock and recovery pass, giving it a reader for the source image of a
+     * visible note. The reader returns null when the note has no stored image (for example a legacy
+     * note whose image was never written). [block] must not call back into this repository.
+     */
+    suspend fun <T> readSourceImages(block: suspend (readImage: suspend (Note) -> ByteArray?) -> T): Result<T> =
+        operation {
+            block { note ->
+                validateId(note.id)
+                val stored = visibleNote(note.id)
+                if (fileStore.exists(stored.imagePath).getOrThrow()) fileStore.read(stored.imagePath).getOrThrow() else null
+            }
+        }
+
     suspend fun saveImage(noteId: String, imageBytes: ByteArray): Result<Unit> = operation {
         validateId(noteId)
         val path = "$IMAGES_DIR/$noteId.jpg"
