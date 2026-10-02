@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "description": "Pinned on-device recognition assets. Regenerate with scripts/fetch_ppocrv6.py and scripts/export_kraken_onnx.py; verified by :recognition:models:verifyModelArtifacts.",
+  "packagedFiles": [
+    {
+      "destination": "src/main/assets/recognition/kraken/ppocrv6-medium-alphabet.txt",
+      "bytes": 5615,
+      "sha256": "0b7c71199be609f1ceedb20d0e2bc136ad8f2a0beee4bb80e6903b444b0560f9",
+      "file": "medium.safetensors codec",
+      "doi": "10.5281/zenodo.21788410",
+      "revision": "01b574f071bf21cff7d7e2a4f38966925dddc30a",
+      "repository": "https://huggingface.co/small-models-for-glam/kraken-ppocrv6-medium",
+      "license": "Apache-2.0"
+    },
+    {
+      "destination": "src/main/assets/recognition/kraken/ppocrv6-medium-recognition.onnx",
+      "bytes": 64204317,
+      "sha256": "12cfdbffa5e7243519120f177f26c716b924d9865e201b0fa459a0163979c95e",
+      "file": "medium.safetensors (exported by scripts/export_kraken_onnx.py)",
+      "doi": "10.5281/zenodo.21788410",
+      "revision": "01b574f071bf21cff7d7e2a4f38966925dddc30a",
+      "repository": "https://huggingface.co/small-models-for-glam/kraken-ppocrv6-medium",
+      "license": "Apache-2.0"
+    },
+    {
+      "destination": "src/main/assets/recognition/licenses/Kraken-APACHE-2.0.txt",
+      "bytes": 394,
+      "sha256": "e93453d9e0e0ae9c2095123630955dd4ae12575ad38549ca0583829304e5fce4"
+    },
+    {
+      "destination": "src/main/assets/recognition/licenses/PaddleOCR-models-APACHE-2.0.txt",
+      "bytes": 11357,
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+    },
+    {
+      "destination": "src/main/assets/recognition/NOTICE.txt",
+      "bytes": 1257,
+      "sha256": "0db709b17cda8ffe8ff3f30abf61ddf90cd2005043ca11add55fb403e2b5d292"
+    },
+    {
+      "destination": "src/main/assets/recognition/ppocrv6/PP-OCRv6_medium_rec_dict.txt",
+      "bytes": 74947,
+      "sha256": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+      "file": "inference.yml (PostProcess.character_dict)",
+      "revision": "50c7eacafc52fa7bcf4194e8cd08e46f8558504b",
+      "repository": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx",
+      "license": "Apache-2.0"
+    },
+    {
+      "destination": "src/main/assets/recognition/ppocrv6/PP-OCRv6_medium_rec.onnx",
+      "bytes": 76554979,
+      "sha256": "9c09abf0957f7968c7586464b7397b84ad2387a0497a351af40e9acc71b673ba",
+      "file": "inference.onnx",
+      "revision": "50c7eacafc52fa7bcf4194e8cd08e46f8558504b",
+      "repository": "https://huggingface.co/PaddlePaddle/PP-OCRv6_medium_rec_onnx",
+      "license": "Apache-2.0"
+    },
+    {
+      "destination": "src/main/assets/recognition/ppocrv6/PP-OCRv6_small_det.onnx",
+      "bytes": 9880512,
+      "sha256": "d73e0058b7a8086bbd57f3d10b8bcd4ff95363f67e06e2762b5e814fe9c9410e",
+      "file": "inference.onnx",
+      "revision": "28fe5895c24fd108c19eb3e8479f4ab385fbfc62",
+      "repository": "https://huggingface.co/PaddlePaddle/PP-OCRv6_small_det_onnx",
+      "license": "Apache-2.0"
+    }
+  ]
+}

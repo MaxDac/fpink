@@ -204,11 +204,11 @@ class DefaultNoteProcessorTest {
             page.region("Paragrafo italiano", 10, 50, 180, 62, "cloud:1", 0.9f),
             page.region("ancora qui.", 10, 70, 180, 82, "cloud:1"),
         )
-        val drafts = process(page, regions, RecognitionProviderId("cloud"))
+        val drafts = process(page, regions, RecognitionStrategyId("cloud"))
         assertEquals(listOf("English paragraph an indented continuation", "Paragrafo italiano ancora qui."),
             drafts.map { it.text })
         assertEquals(0.9f, drafts.first().confidence)
-        assertEquals(drafts, process(page, regions, RecognitionProviderId.PADDLE))
+        assertEquals(drafts, process(page, regions, RecognitionStrategyId.CURSIVE))
     }
 
     @Test
@@ -374,8 +374,8 @@ class DefaultNoteProcessorTest {
     private suspend fun process(
         page: Page,
         regions: List<TextRegion>,
-        provider: RecognitionProviderId = RecognitionProviderId.PADDLE,
-    ) = processor.process(page.image(), RecognitionDocument(regions, provider, "synthetic-fixture")).getOrThrow()
+        strategy: RecognitionStrategyId = RecognitionStrategyId.CURSIVE,
+    ) = processor.process(page.image(), RecognitionDocument(regions, strategy, "synthetic-fixture")).getOrThrow()
 
     private class Page(val width: Int, val height: Int, paper: Int = -1) {
         val pixels = IntArray(width * height) { paper }
