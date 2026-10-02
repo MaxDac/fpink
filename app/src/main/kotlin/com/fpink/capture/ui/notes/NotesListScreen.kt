@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
@@ -36,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -60,6 +63,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
@@ -322,6 +326,13 @@ fun NotesListScreen(
                         TextButton(onClick = viewModel::dismissMoveError) { Text(stringResource(R.string.dismiss)) }
                     }
                 }
+                if (state.zettelkastenEnabled && state.notes.isNotEmpty()) {
+                    CategoryFilterRow(
+                        state = state,
+                        enabled = state.canChangeSelection,
+                        onToggle = viewModel::toggleCategoryFilter,
+                    )
+                }
                 if (state.isSelecting) {
                     SelectAllRow(
                         allSelected = state.allSelected,
@@ -359,8 +370,9 @@ fun NotesListScreen(
                         }
                         state.notes.isEmpty() && state.isDeleting -> CircularProgressIndicator()
                         state.notes.isEmpty() -> EmptyState(onCaptureClick = ::openSourceMenu)
+                        state.visibleNotes.isEmpty() -> NoMatchesState(enabled = state.canChangeSelection, onClearFilters = viewModel::clearFilters)
                         else -> NotesList(
-                            notes = state.notes,
+                            notes = state.visibleNotes,
                             selectedIds = state.selectedIds,
                             enabled = state.canChangeSelection,
                             groupByZettelkasten = state.zettelkastenEnabled,
@@ -486,6 +498,47 @@ private fun SelectAllRow(allSelected: Boolean, enabled: Boolean, onClick: () -> 
     ) {
         TriStateCheckbox(state = checkedState, onClick = null, enabled = enabled)
         Text(stringResource(R.string.select_all_notes))
+    }
+}
+
+@Composable
+private fun CategoryFilterRow(state: NotesListUiState, enabled: Boolean, onToggle: (ZettelkastenCategory) -> Unit) {
+    val description = stringResource(R.string.filter_by_zettelkasten_category)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .semantics { contentDescription = description }
+            .testTag("zettelkastenFilterRow"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ZettelkastenCategory.entries.forEach { category ->
+            FilterChip(
+                selected = category in state.categoryFilter,
+                onClick = { onToggle(category) },
+                enabled = enabled,
+                label = {
+                    Text(stringResource(R.string.zettelkasten_filter_chip, category.displayName(), state.categoryCount(category)))
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun NoMatchesState(enabled: Boolean, onClearFilters: () -> Unit) {
+    Column(
+        modifier = Modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.notes_no_matches),
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+        )
+        TextButton(onClick = onClearFilters, enabled = enabled) { Text(stringResource(R.string.clear_filters)) }
     }
 }
 

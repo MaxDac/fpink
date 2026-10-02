@@ -12,6 +12,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -457,6 +459,123 @@ class NotesListViewModelTest {
         model.dismissMoveError()
         assertNull(model.uiState.value.moveError)
     }
+
+    @Test fun `category filter applies only when zettelkasten is enabled`() {
+        val notes = listOf(
+            note("a").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT),
+            note("b").copy(zettelkastenCategory = ZettelkastenCategory.FLEETING),
+            note("c").copy(zettelkastenCategory = ZettelkastenCategory.LITERATURE),
+        )
+        val disabled = NotesListUiState(notes = notes, categoryFilter = setOf(ZettelkastenCategory.PERMANENT))
+        assertFalse(disabled.isFiltering)
+        assertEquals(3, disabled.visibleNotes.size)
+
+        val enabled = disabled.copy(
+            zettelkastenEnabled = true,
+            categoryFilter = setOf(ZettelkastenCategory.PERMANENT, ZettelkastenCategory.FLEETING),
+        )
+        assertTrue(enabled.isFiltering)
+        assertEquals(listOf("a", "b"), enabled.visibleNotes.map { it.id })
+        assertEquals(
+            listOf(ZettelkastenCategory.FLEETING, ZettelkastenCategory.PERMANENT),
+            enabled.zettelkastenSections.map { it.first },
+        )
+        assertEquals(1, enabled.categoryCount(ZettelkastenCategory.LITERATURE))
+    }
+
+    @Test fun `toggling a category filter deselects notes that become hidden`() = runTest(dispatcher) {
+        val fixture = categorizedFixture()
+        val enabled = MutableStateFlow(true)
+        val model = model(fixture.repository, enabled)
+        runCurrent()
+        model.toggleSelectAll()
+        assertEquals(setOf("a", "b", "c"), model.uiState.value.selectedIds)
+
+        model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
+        assertEquals(listOf("a"), model.uiState.value.visibleNotes.map { it.id })
+        assertEquals(setOf("a"), model.uiState.value.selectedIds)
+        model.select("b")
+        model.toggleSelection("c")
+        assertEquals(setOf("a"), model.uiState.value.selectedIds)
+        model.toggleSelectAll()
+        model.toggleSelectAll()
+        assertEquals(setOf("a"), model.uiState.value.selectedIds)
+
+        model.clearFilters()
+        assertTrue(model.uiState.value.categoryFilter.isEmpty())
+        assertEquals(setOf("a"), model.uiState.value.selectedIds)
+    }
+
+    @Test fun `enabling zettelkasten with a saved filter prunes hidden selections`() = runTest(dispatcher) {
+        val fixture = categorizedFixture()
+        val enabled = MutableStateFlow(false)
+        val model = model(fixture.repository, enabled)
+        runCurrent()
+        model.toggleCategoryFilter(ZettelkastenCategory.LITERATURE)
+        model.toggleSelectAll()
+        assertEquals(setOf("a", "b", "c"), model.uiState.value.selectedIds)
+
+        enabled.value = true
+        runCurrent()
+        assertEquals(setOf("c"), model.uiState.value.selectedIds)
+    }
+
+    @Test fun `reloading prunes selected notes that move out of the active filter`() = runTest(dispatcher) {
+        val fixture = categorizedFixture()
+        val model = model(fixture.repository, MutableStateFlow(true))
+        runCurrent()
+        model.toggleCategoryFilter(ZettelkastenCategory.FLEETING)
+        model.select("b")
+        fixture.repository.save(note("b").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT)).getOrThrow()
+        model.refresh()
+        runCurrent()
+        assertTrue(model.uiState.value.visibleNotes.isEmpty())
+        assertFalse(model.uiState.value.isSelecting)
+    }
+
+    @Test fun `filters cannot change while the selection is locked`() = runTest(dispatcher) {
+        val fixture = categorizedFixture()
+        val model = model(fixture.repository, MutableStateFlow(true))
+        runCurrent()
+        model.toggleCategoryFilter(ZettelkastenCategory.FLEETING)
+        model.select("b")
+        model.requestDeletion()
+        assertFalse(model.uiState.value.canChangeSelection)
+
+        model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
+        model.clearFilters()
+        assertEquals(setOf(ZettelkastenCategory.FLEETING), model.uiState.value.categoryFilter)
+        assertEquals(setOf("b"), model.uiState.value.selectedIds)
+    }
+
+    @Test fun `hiding a pending deletion target cancels the deletion request`() = runTest(dispatcher) {
+        val fixture = categorizedFixture()
+        val enabled = MutableStateFlow(false)
+        val model = model(fixture.repository, enabled)
+        runCurrent()
+        model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
+        model.toggleSelectAll()
+        model.requestDeletion()
+        assertEquals(listOf("a", "b", "c"), model.uiState.value.pendingDeletionIds.sorted())
+
+        enabled.value = true
+        runCurrent()
+        assertTrue(model.uiState.value.pendingDeletionIds.isEmpty())
+        assertEquals(setOf("a"), model.uiState.value.selectedIds)
+        model.confirmDeletion()
+        advanceUntilIdle()
+        assertEquals(3, fixture.repository.list().getOrThrow().size)
+    }
+
+    private suspend fun categorizedFixture(): Fixture {
+        val fixture = fixture(listOf("a", "b", "c"))
+        fixture.repository.save(note("a").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT)).getOrThrow()
+        fixture.repository.save(note("c").copy(zettelkastenCategory = ZettelkastenCategory.LITERATURE)).getOrThrow()
+        return fixture
+    }
+
+    private fun model(repository: NoteRepository, zettelkastenEnabled: Flow<Boolean>): NotesListViewModel =
+        NotesListViewModel(repository, zettelkastenEnabled = zettelkastenEnabled).also { models += it }
 
     private fun model(repository: NoteRepository): NotesListViewModel =
         NotesListViewModel(repository).also { models += it }

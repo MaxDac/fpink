@@ -25,6 +25,13 @@ Shared source images remain until their last note is deleted. If deletion fails,
 the app stops and keeps remaining notes selected after refreshing; review the
 selection before trying again. If refresh fails, use **Retry** first.
 
+## Filtering notes by type
+
+When Zettelkasten organisation is enabled, use the Fleeting, Literature and
+Permanent chips in the notes list to show only those types. With no chip
+selected, every type is shown. **Select all** and other selection actions apply
+only to the notes that are visible.
+
 ## Build and releases
 
 Use JDK 17, Android SDK 37, NDK `28.2.13676358`, and CMake `3.22.1`.
