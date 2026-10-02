@@ -36,18 +36,6 @@
     "sha256": "86ec6953794503942b70fcd4f35b565d44f63f703b7037ce44dad965c4aaae91"
   },
   {
-    "name": "GCC-GPL-3.0.txt",
-    "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-4.9.4/COPYING3",
-    "bytes": 35147,
-    "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
-  },
-  {
-    "name": "GCC-Runtime-Library-Exception-3.1.txt",
-    "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/releases/gcc-4.9.4/COPYING.RUNTIME",
-    "bytes": 3324,
-    "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
-  },
-  {
     "name": "LLVM-libcxx.txt",
     "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-19.1.7/libcxx/LICENSE.TXT",
     "bytes": 16703,
@@ -64,5 +52,11 @@
     "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-19.1.7/libunwind/LICENSE.TXT",
     "bytes": 16706,
     "sha256": "b5efebcaca80879234098e52d1725e6d9eb8fb96a19fce625d39184b705f7b6d"
+  },
+  {
+    "name": "LLVM-openmp.txt",
+    "url": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-19.1.7/openmp/LICENSE.TXT",
+    "bytes": 19741,
+    "sha256": "fdad1758a9e1f9d5a81e18879b3406772115edc92c24bfa36b70c654f325e8e4"
   }
 ]

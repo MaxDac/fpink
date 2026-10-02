@@ -34,8 +34,9 @@ instrumentation APKs does **not** mean those tests passed. Host checks do not
 prove real OCR quality, camera/chooser behavior, Keystore behavior, Android
 filesystem durability, ARM64 runtime execution, or 16 KB-device compatibility.
 Those checks remain separate; see the [Paddle validation guide](../recognition/paddle/README.md).
-The runtime-normalization test also remains separate because it requires an
-unbundled original upstream binary and an AArch64 linker.
+Before Gradle, the job runs the release-tooling unit tests and
+`verify-model-provenance.py`, which downloads the pinned upstream
+`inference.yml` to check that the bundled OCR dictionary is derived from it.
 
 The workflow uses read-only repository permissions and does not need
 credentials for any recognition provider, signing secrets, deployment

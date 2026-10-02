@@ -75,11 +75,14 @@ val sourceRuntimeFiles = setOf(
 @Suppress("UNCHECKED_CAST")
 val pinnedArtifacts = ((JsonSlurper().parse(artifactManifest) as Map<String, Any>)["archives"] as List<Map<String, Any>>)
     .flatMap { it["files"] as List<Map<String, Any>> }
-    .filter { !(sourceBuildEnabled || sourceBuiltRuntime) || (it["destination"] as String) !in sourceRuntimeFiles }
-    .map {
-        val expected = (it["normalization"] as? Map<String, Any>) ?: it
-        Triple(file(it["destination"] as String), (expected["bytes"] as Number).toLong(), expected["sha256"] as String)
-    }
+    .map { Triple(file(it["destination"] as String), (it["bytes"] as Number).toLong(), it["sha256"] as String) }
+// The checked-in runtime and headers are the reproducible source build pinned in source-runtime.lock.json.
+@Suppress("UNCHECKED_CAST")
+val pinnedSourceRuntime = ((JsonSlurper().parse(sourceRuntimeManifest) as Map<String, Any>)["build"] as Map<String, Any>)
+    .let { it["expectedSha256"] as Map<String, String>? }
+check(pinnedSourceRuntime?.keys == sourceRuntimeFiles) {
+    "source-runtime.lock.json build.expectedSha256 must pin exactly $sourceRuntimeFiles."
+}
 
 val licenseManifest = file("licenses.lock.json")
 @Suppress("UNCHECKED_CAST")
@@ -131,12 +134,21 @@ fun verifySourceRuntimeProvenance() {
             "Source-built Paddle artifact $path does not match build/source-output/SHA256SUMS."
         }
     }
-    val pinned = build["expectedSha256"] as Map<String, String>?
-    if (pinned != null && !allowUnpinnedRuntime) {
-        check(checksums == pinned) {
+    if (!allowUnpinnedRuntime) {
+        check(checksums == pinnedSourceRuntime) {
             "The source-built Paddle runtime is not the reproducible one pinned in source-runtime.lock.json " +
-                "(build.expectedSha256 $pinned, built $checksums). Build it in the F-Droid buildserver image " +
+                "(build.expectedSha256 $pinnedSourceRuntime, built $checksums). Build it in the F-Droid buildserver image " +
                 "(scripts/fdroid-rb-docker.sh), or pass -PallowUnpinnedPaddleRuntime for a local experiment."
+        }
+    }
+}
+
+fun verifyCheckedInRuntime() {
+    pinnedSourceRuntime!!.forEach { (path, hash) ->
+        val artifact = file(path)
+        check(artifact.isFile && sha256(artifact) == hash) {
+            "Checked-in Paddle artifact $path is not the source build pinned in source-runtime.lock.json " +
+                "build.expectedSha256; restore it from git or rebuild it with scripts/fdroid-rb-docker.sh."
         }
     }
 }
@@ -148,9 +160,9 @@ val verifyPaddleArtifacts = tasks.register("verifyPaddleArtifacts") {
     inputs.file(licenseManifest)
     inputs.files(pinnedArtifacts.map { it.first })
     inputs.files(pinnedLicenses.map { it.first })
+    inputs.file(sourceRuntimeManifest)
+    inputs.files(sourceRuntimeFiles.map(::file))
     if (sourceBuildEnabled || sourceBuiltRuntime) {
-        inputs.file(sourceRuntimeManifest)
-        inputs.files(sourceRuntimeFiles.map(::file))
         inputs.files(sourceProvenance, sourceChecksums)
     }
     doLast {
@@ -162,7 +174,7 @@ val verifyPaddleArtifacts = tasks.register("verifyPaddleArtifacts") {
                 "Pinned Paddle SHA-256 mismatch: ${artifact.name}"
             }
         }
-        if (sourceBuildEnabled || sourceBuiltRuntime) verifySourceRuntimeProvenance()
+        if (sourceBuildEnabled || sourceBuiltRuntime) verifySourceRuntimeProvenance() else verifyCheckedInRuntime()
     }
 }
 if (sourceBuildEnabled) {

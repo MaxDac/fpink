@@ -45,13 +45,15 @@ class AssetTests(unittest.TestCase):
         pin = {"bytes": len(self.model), "sha256": hashlib.sha256(self.model).hexdigest()}
         (paddle / "artifacts.lock.json").write_text(json.dumps({"archives": [{"files": [
             {"destination": "src/main/assets/paddle/model.nb", **pin},
-            {"destination": "native/arm64-v8a/libpaddle_light_api_shared.so",
-             "bytes": 999, "sha256": "old", "normalization": pin},
         ]}]}))
+        self.runtime = b"source-built"
+        (paddle / "source-runtime.lock.json").write_text(json.dumps({"build": {"expectedSha256": {
+            "native/arm64-v8a/libpaddle_light_api_shared.so": hashlib.sha256(self.runtime).hexdigest(),
+        }}}))
         (paddle / "licenses.lock.json").write_text(json.dumps([{"name": "LICENSE", **pin}]))
         self.entries = {
             "assets/paddle/model.nb": self.model,
-            "lib/arm64-v8a/libpaddle_light_api_shared.so": self.model,
+            "lib/arm64-v8a/libpaddle_light_api_shared.so": self.runtime,
             "assets/paddle/licenses/LICENSE": self.model,
             "assets/paddle/NOTICE.txt": b"notice",
             "lib/arm64-v8a/libfpink_paddle.so": b"wrapper",
@@ -63,12 +65,13 @@ class AssetTests(unittest.TestCase):
             for name, data in self.entries.items():
                 archive.writestr(name, data)
 
-    def test_valid_including_normalized_runtime(self):
+    def test_valid_including_source_built_runtime(self):
         self.write_apk()
         verifier.verify_assets(self.apk, self.root)
 
     def test_tampered_model_or_license(self):
-        for name in ("assets/paddle/model.nb", "assets/paddle/licenses/LICENSE"):
+        for name in ("assets/paddle/model.nb", "assets/paddle/licenses/LICENSE",
+                     "lib/arm64-v8a/libpaddle_light_api_shared.so"):
             with self.subTest(name=name):
                 original = self.entries[name]
                 self.entries[name] = b"tampered"
@@ -89,12 +92,9 @@ class AssetTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Empty"):
             verifier.verify_assets(self.apk, self.root)
 
-    def test_source_built_runtime(self):
-        self.entries["lib/arm64-v8a/libpaddle_light_api_shared.so"] = b"source-built"
+    def test_source_runtime_sums_must_match_pin(self):
         self.write_apk()
-        with self.assertRaisesRegex(ValueError, "pinned"):
-            verifier.verify_assets(self.apk, self.root)
-        verifier.verify_assets(self.apk, self.root, hashlib.sha256(b"source-built").hexdigest())
+        verifier.verify_assets(self.apk, self.root, hashlib.sha256(self.runtime).hexdigest())
         with self.assertRaisesRegex(ValueError, "source-built"):
             verifier.verify_assets(self.apk, self.root, hashlib.sha256(b"other").hexdigest())
 
