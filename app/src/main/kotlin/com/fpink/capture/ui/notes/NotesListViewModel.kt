@@ -8,6 +8,7 @@ import com.fpink.core.model.ZettelkastenCategory
 import com.fpink.core.storage.NoteRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -65,7 +66,8 @@ sealed interface NotesListError {
 
 class NotesListViewModel(
     private val noteRepository: NoteRepository,
-    private val settingsStore: SettingsStore? = null,
+    settingsStore: SettingsStore? = null,
+    zettelkastenEnabled: Flow<Boolean>? = settingsStore?.zettelkastenEnabled,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NotesListUiState())
@@ -74,9 +76,9 @@ class NotesListViewModel(
 
     init {
         refresh()
-        settingsStore?.let { store ->
+        zettelkastenEnabled?.let { flow ->
             viewModelScope.launch {
-                store.zettelkastenEnabled.collect { enabled ->
+                flow.collect { enabled ->
                     _uiState.update { it.copy(zettelkastenEnabled = enabled).pruned() }
                 }
             }
@@ -216,13 +218,16 @@ class NotesListViewModel(
         _uiState.update { it.copy(moveError = null) }
     }
 
+    // Filter changes are blocked while selection is locked so an in-flight delete or move keeps its selection for retry.
     fun toggleCategoryFilter(category: ZettelkastenCategory) {
+        if (!_uiState.value.canChangeSelection) return
         _uiState.update {
             it.copy(categoryFilter = if (category in it.categoryFilter) it.categoryFilter - category else it.categoryFilter + category).pruned()
         }
     }
 
     fun clearFilters() {
+        if (!_uiState.value.canChangeSelection) return
         _uiState.update { it.copy(categoryFilter = emptySet()) }
     }
 

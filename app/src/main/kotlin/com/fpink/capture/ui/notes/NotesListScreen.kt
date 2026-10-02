@@ -329,6 +329,7 @@ fun NotesListScreen(
                 if (state.zettelkastenEnabled && state.notes.isNotEmpty()) {
                     CategoryFilterRow(
                         state = state,
+                        enabled = state.canChangeSelection,
                         onToggle = viewModel::toggleCategoryFilter,
                     )
                 }
@@ -369,7 +370,7 @@ fun NotesListScreen(
                         }
                         state.notes.isEmpty() && state.isDeleting -> CircularProgressIndicator()
                         state.notes.isEmpty() -> EmptyState(onCaptureClick = ::openSourceMenu)
-                        state.visibleNotes.isEmpty() -> NoMatchesState(onClearFilters = viewModel::clearFilters)
+                        state.visibleNotes.isEmpty() -> NoMatchesState(enabled = state.canChangeSelection, onClearFilters = viewModel::clearFilters)
                         else -> NotesList(
                             notes = state.visibleNotes,
                             selectedIds = state.selectedIds,
@@ -501,7 +502,7 @@ private fun SelectAllRow(allSelected: Boolean, enabled: Boolean, onClick: () -> 
 }
 
 @Composable
-private fun CategoryFilterRow(state: NotesListUiState, onToggle: (ZettelkastenCategory) -> Unit) {
+private fun CategoryFilterRow(state: NotesListUiState, enabled: Boolean, onToggle: (ZettelkastenCategory) -> Unit) {
     val description = stringResource(R.string.filter_by_zettelkasten_category)
     Row(
         modifier = Modifier
@@ -516,6 +517,7 @@ private fun CategoryFilterRow(state: NotesListUiState, onToggle: (ZettelkastenCa
             FilterChip(
                 selected = category in state.categoryFilter,
                 onClick = { onToggle(category) },
+                enabled = enabled,
                 label = {
                     Text(stringResource(R.string.zettelkasten_filter_chip, category.displayName(), state.categoryCount(category)))
                 },
@@ -525,7 +527,7 @@ private fun CategoryFilterRow(state: NotesListUiState, onToggle: (ZettelkastenCa
 }
 
 @Composable
-private fun NoMatchesState(onClearFilters: () -> Unit) {
+private fun NoMatchesState(enabled: Boolean, onClearFilters: () -> Unit) {
     Column(
         modifier = Modifier.padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -536,7 +538,7 @@ private fun NoMatchesState(onClearFilters: () -> Unit) {
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
         )
-        TextButton(onClick = onClearFilters) { Text(stringResource(R.string.clear_filters)) }
+        TextButton(onClick = onClearFilters, enabled = enabled) { Text(stringResource(R.string.clear_filters)) }
     }
 }
 
