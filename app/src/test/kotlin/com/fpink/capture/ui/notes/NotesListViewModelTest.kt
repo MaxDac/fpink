@@ -6,12 +6,15 @@ import com.fpink.core.model.ZettelkastenCategory
 import com.fpink.core.storage.FileStore
 import com.fpink.core.storage.NoteRepository
 import java.io.IOException
+import kotlin.coroutines.CoroutineContext
 import kotlin.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -460,6 +463,105 @@ class NotesListViewModelTest {
         assertNull(model.uiState.value.moveError)
     }
 
+    @Test fun `search ranks visible notes and prunes hidden selections`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b", "c"))
+        fixture.repository.save(note("b").copy(text = "Fountains pen ink")).getOrThrow()
+        fixture.repository.save(note("c").copy(text = "Fountain")).getOrThrow()
+        val model = testModel(fixture.repository)
+        runCurrent()
+        model.select("a")
+        model.select("b")
+
+        model.onQueryChange("fountain")
+        assertNull(model.uiState.value.searchResults)
+        advanceUntilIdle()
+        assertEquals(listOf("c", "b"), model.uiState.value.visibleNotes.map { it.id })
+        assertEquals(setOf("b"), model.uiState.value.selectedIds)
+        model.toggleSelectAll()
+        assertEquals(setOf("b", "c"), model.uiState.value.selectedIds)
+
+        model.onQueryChange("fountian")
+        advanceUntilIdle()
+        assertEquals(setOf("b", "c"), model.uiState.value.visibleNotes.map { it.id }.toSet())
+
+        model.clearFilters()
+        assertEquals(listOf("a", "b", "c"), model.uiState.value.visibleNotes.map { it.id }.sorted())
+        assertNull(model.uiState.value.searchResults)
+    }
+
+    @Test fun `in-flight search results are discarded when the query changes`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val compute = HeldDispatcher()
+        val model = NotesListViewModel(fixture.repository, computeDispatcher = compute).also { models += it }
+        advanceUntilIdle()
+        model.onQueryChange("note a")
+        advanceUntilIdle()
+        assertEquals(1, compute.pending)
+
+        model.onQueryChange("missing")
+        advanceUntilIdle()
+        assertEquals(2, compute.pending)
+        // Finish the newer ranking first, so a late stale publish would overwrite it.
+        compute.releaseNewestFirst()
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), model.uiState.value.visibleNotes.map { it.id })
+    }
+
+    @Test fun `in-flight search results are discarded when the notes reload`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val compute = HeldDispatcher()
+        val model = NotesListViewModel(fixture.repository, computeDispatcher = compute).also { models += it }
+        advanceUntilIdle()
+        model.onQueryChange("note")
+        advanceUntilIdle()
+        assertEquals(1, compute.pending)
+
+        fixture.repository.save(note("c")).getOrThrow()
+        model.refresh()
+        advanceUntilIdle()
+        assertEquals(2, compute.pending)
+        compute.releaseNewestFirst()
+        advanceUntilIdle()
+        assertEquals(setOf("a", "b", "c"), model.uiState.value.visibleNotes.map { it.id }.toSet())
+    }
+
+    @Test fun `a search that hides a note pending deletion cancels the deletion`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val model = testModel(fixture.repository)
+        advanceUntilIdle()
+        model.onQueryChange("note a")
+        // Results are not ranked yet, so every note is still visible and selectable.
+        model.select("b")
+        model.requestDeletion()
+        assertEquals(listOf("b"), model.uiState.value.pendingDeletionIds)
+
+        advanceUntilIdle()
+        assertEquals(listOf("a"), model.uiState.value.visibleNotes.map { it.id })
+        assertTrue(model.uiState.value.pendingDeletionIds.isEmpty())
+        assertTrue(model.uiState.value.selectedIds.isEmpty())
+        model.confirmDeletion()
+        advanceUntilIdle()
+        assertEquals(setOf("a", "b"), fixture.repository.list().getOrThrow().map { it.id }.toSet())
+    }
+
+    @Test fun `reloading during a search shows fresh note contents before the re-rank`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val compute = HeldDispatcher()
+        val model = NotesListViewModel(fixture.repository, computeDispatcher = compute).also { models += it }
+        advanceUntilIdle()
+        model.onQueryChange("note a")
+        advanceUntilIdle()
+        compute.releaseNewestFirst()
+        advanceUntilIdle()
+        assertEquals(listOf("a"), model.uiState.value.visibleNotes.map { it.id })
+
+        fixture.repository.save(note("a").copy(text = "Note a edited")).getOrThrow()
+        model.refresh()
+        advanceUntilIdle()
+        assertEquals(1, compute.pending)
+        assertEquals(listOf("Note a edited"), model.uiState.value.visibleNotes.map { it.text })
+    }
+
     @Test fun `category filter applies only when zettelkasten is enabled`() {
         val notes = listOf(
             note("a").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT),
@@ -505,6 +607,9 @@ class NotesListViewModelTest {
         assertTrue(model.uiState.value.categoryFilter.isEmpty())
         assertEquals(setOf("a"), model.uiState.value.selectedIds)
     }
+
+    private fun testModel(repository: NoteRepository): NotesListViewModel =
+        NotesListViewModel(repository, computeDispatcher = dispatcher).also { models += it }
 
     @Test fun `enabling zettelkasten with a saved filter prunes hidden selections`() = runTest(dispatcher) {
         val fixture = categorizedFixture()
@@ -575,7 +680,8 @@ class NotesListViewModelTest {
     }
 
     private fun model(repository: NoteRepository, zettelkastenEnabled: Flow<Boolean>): NotesListViewModel =
-        NotesListViewModel(repository, zettelkastenEnabled = zettelkastenEnabled).also { models += it }
+        NotesListViewModel(repository, zettelkastenEnabled = zettelkastenEnabled, computeDispatcher = dispatcher)
+            .also { models += it }
 
     private fun model(repository: NoteRepository): NotesListViewModel =
         NotesListViewModel(repository).also { models += it }
@@ -599,6 +705,18 @@ class NotesListViewModelTest {
         id = id, capturedAt = Instant.fromEpochSeconds(1_000),
         imagePath = "images/$id.jpg", text = "Note $id",
     )
+
+    /** Queues compute work until the test releases it, to model a ranking still in flight. */
+    private class HeldDispatcher : CoroutineDispatcher() {
+        private val queue = ArrayDeque<Runnable>()
+        val pending: Int get() = queue.size
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            queue += block
+        }
+        fun releaseNewestFirst() {
+            while (queue.isNotEmpty()) queue.removeLast().run()
+        }
+    }
 
     private data class Fixture(val store: MemoryFileStore, val repository: NoteRepository)
 
