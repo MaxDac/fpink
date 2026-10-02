@@ -458,6 +458,41 @@ class NotesListViewModelTest {
         assertNull(model.uiState.value.moveError)
     }
 
+    @Test fun `category filter applies only when zettelkasten is enabled`() {
+        val notes = listOf(
+            note("a").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT),
+            note("b").copy(zettelkastenCategory = ZettelkastenCategory.FLEETING),
+            note("c").copy(zettelkastenCategory = ZettelkastenCategory.LITERATURE),
+        )
+        val disabled = NotesListUiState(notes = notes, categoryFilter = setOf(ZettelkastenCategory.PERMANENT))
+        assertFalse(disabled.isFiltering)
+        assertEquals(3, disabled.visibleNotes.size)
+
+        val enabled = disabled.copy(
+            zettelkastenEnabled = true,
+            categoryFilter = setOf(ZettelkastenCategory.PERMANENT, ZettelkastenCategory.FLEETING),
+        )
+        assertTrue(enabled.isFiltering)
+        assertEquals(listOf("a", "b"), enabled.visibleNotes.map { it.id })
+        assertEquals(
+            listOf(ZettelkastenCategory.FLEETING, ZettelkastenCategory.PERMANENT),
+            enabled.zettelkastenSections.map { it.first },
+        )
+        assertEquals(1, enabled.categoryCount(ZettelkastenCategory.LITERATURE))
+    }
+
+    @Test fun `toggling a category filter deselects notes that become hidden`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val model = model(fixture.repository)
+        runCurrent()
+        model.toggleSelectAll()
+        // Disabled Zettelkasten ignores the filter, so nothing becomes hidden.
+        model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
+        assertEquals(setOf("a", "b"), model.uiState.value.selectedIds)
+        model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
+        assertTrue(model.uiState.value.categoryFilter.isEmpty())
+    }
+
     private fun model(repository: NoteRepository): NotesListViewModel =
         NotesListViewModel(repository).also { models += it }
 

@@ -174,6 +174,10 @@ without touching already-assigned notes. When enabled, the notes list groups not
 into the three sections and a selection-mode "Move to…" action reassigns the
 selected notes' category through the ordinary `NoteRepository.save` path.
 
+The Zettelkasten category filter applies only while the feature is enabled.
+Selections are pruned to the visible notes whenever the filter or setting
+changes, so bulk actions never touch hidden notes.
+
 ## Input, lifecycle and settings
 
 Gallery uses a compatible image chooser, not an exclusive default-gallery API.

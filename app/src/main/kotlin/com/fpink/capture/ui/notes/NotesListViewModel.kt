@@ -26,15 +26,36 @@ data class NotesListUiState(
     val zettelkastenEnabled: Boolean = false,
     val isMoving: Boolean = false,
     val moveError: String? = null,
+    val categoryFilter: Set<ZettelkastenCategory> = emptySet(),
 ) {
     val isSelecting: Boolean get() = selectedIds.isNotEmpty()
-    val allSelected: Boolean get() = notes.isNotEmpty() && notes.all { it.id in selectedIds }
     val canInteract: Boolean get() = !isLoading && !isDeleting && !isMoving && error == null
     val canChangeSelection: Boolean get() = canInteract && pendingDeletionIds.isEmpty()
 
-    /** Notes grouped into the three fixed Zettelkasten sections, in their canonical display order. */
+    /** The category filter only applies while the Zettelkasten method is enabled. */
+    val activeCategoryFilter: Set<ZettelkastenCategory>
+        get() = if (zettelkastenEnabled) categoryFilter else emptySet()
+    val isFiltering: Boolean get() = activeCategoryFilter.isNotEmpty()
+
+    /** Notes shown in the list after the Zettelkasten category filter. */
+    val visibleNotes: List<Note>
+        get() {
+            val filter = activeCategoryFilter
+            return if (filter.isEmpty()) notes else notes.filter { it.zettelkastenCategory in filter }
+        }
+    val allSelected: Boolean get() = visibleNotes.let { visible -> visible.isNotEmpty() && visible.all { it.id in selectedIds } }
+
+    /** Visible notes grouped into the Zettelkasten sections, in canonical order, omitting filtered-out categories. */
     val zettelkastenSections: List<Pair<ZettelkastenCategory, List<Note>>>
-        get() = ZettelkastenCategory.entries.map { category -> category to notes.filter { it.zettelkastenCategory == category } }
+        get() {
+            val visible = visibleNotes
+            val filter = activeCategoryFilter
+            return ZettelkastenCategory.entries
+                .filter { filter.isEmpty() || it in filter }
+                .map { category -> category to visible.filter { it.zettelkastenCategory == category } }
+        }
+
+    fun categoryCount(category: ZettelkastenCategory): Int = notes.count { it.zettelkastenCategory == category }
 }
 
 sealed interface NotesListError {
@@ -56,7 +77,7 @@ class NotesListViewModel(
         settingsStore?.let { store ->
             viewModelScope.launch {
                 store.zettelkastenEnabled.collect { enabled ->
-                    _uiState.update { it.copy(zettelkastenEnabled = enabled) }
+                    _uiState.update { it.copy(zettelkastenEnabled = enabled).pruned() }
                 }
             }
         }
@@ -82,13 +103,13 @@ class NotesListViewModel(
 
     fun select(id: String) {
         val state = _uiState.value
-        if (!state.canChangeSelection || state.notes.none { it.id == id }) return
+        if (!state.canChangeSelection || state.visibleNotes.none { it.id == id }) return
         _uiState.update { it.copy(selectedIds = it.selectedIds + id) }
     }
 
     fun toggleSelection(id: String) {
         val state = _uiState.value
-        if (!state.canChangeSelection || state.notes.none { it.id == id }) return
+        if (!state.canChangeSelection || state.visibleNotes.none { it.id == id }) return
         _uiState.update {
             it.copy(selectedIds = if (id in it.selectedIds) it.selectedIds - id else it.selectedIds + id)
         }
@@ -98,7 +119,7 @@ class NotesListViewModel(
         val state = _uiState.value
         if (!state.canChangeSelection) return
         _uiState.update {
-            it.copy(selectedIds = if (it.allSelected) emptySet() else it.notes.mapTo(mutableSetOf()) { note -> note.id })
+            it.copy(selectedIds = if (it.allSelected) emptySet() else it.visibleNotes.mapTo(mutableSetOf()) { note -> note.id })
         }
     }
 
@@ -195,12 +216,29 @@ class NotesListViewModel(
         _uiState.update { it.copy(moveError = null) }
     }
 
+    fun toggleCategoryFilter(category: ZettelkastenCategory) {
+        _uiState.update {
+            it.copy(categoryFilter = if (category in it.categoryFilter) it.categoryFilter - category else it.categoryFilter + category).pruned()
+        }
+    }
+
+    fun clearFilters() {
+        _uiState.update { it.copy(categoryFilter = emptySet()) }
+    }
+
+    /** Hidden notes are deselected so bulk actions never affect notes the user cannot see. */
+    private fun NotesListUiState.pruned(): NotesListUiState {
+        if (selectedIds.isEmpty()) return this
+        val visible = visibleNotes.mapTo(mutableSetOf()) { it.id }
+        return copy(selectedIds = selectedIds.intersect(visible))
+    }
+
     private suspend fun loadNotes() {
         noteRepository.list().fold(
             onSuccess = { notes ->
                 val ids = notes.mapTo(mutableSetOf()) { it.id }
                 _uiState.update {
-                    it.copy(notes = notes, selectedIds = it.selectedIds.intersect(ids), error = null)
+                    it.copy(notes = notes, selectedIds = it.selectedIds.intersect(ids), error = null).pruned()
                 }
             },
             onFailure = { error ->
