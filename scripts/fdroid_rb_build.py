@@ -276,7 +276,7 @@ def main(argv=None) -> int:
         output = arguments.output.resolve()
         output.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(apks[0], output / "unsigned.apk")
-       describe_environment(output, env, build_dir, ndk)
+        describe_environment(output, env, build_dir, ndk)
         digest = hashlib.sha256((output / "unsigned.apk").read_bytes()).hexdigest()
         (output / "SHA256SUMS").write_text(f"{digest}  unsigned.apk\n", encoding="utf-8")
         log(f"{APPLICATION_ID} {version_name} ({version_code}) from {commit}: unsigned.apk sha256 {digest}")
