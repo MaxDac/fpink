@@ -1,0 +1,1 @@
+Notes list: filter notes by Zettelkasten type when the Zettelkasten method is enabled, and search notes by content with a typo-tolerant fuzzy search. New export: save all notes as a Markdown vault (zip) that can be opened in Obsidian and other note-taking apps, with front matter, links and source images.
