@@ -64,7 +64,7 @@ If any asset changes, including `NOTICE.txt`, update its entry in `artifacts.loc
   - Asset materialisation and hash checks run on the device tests below.
 - **Device**
   - `.\gradlew.bat :recognition:strategies:connectedDebugAndroidTest` was run on a Pixel 7
-    x86_64 API 34 emulator.
+    x86_64 API 37 emulator.
   - Printed recognized the synthetic line "Hello printed world" exactly, and Cursive
     recognized the italic line "Hello Kraken OCR" exactly. A blank page returned no lines.
 
