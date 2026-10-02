@@ -46,6 +46,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
@@ -57,6 +59,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -138,6 +142,13 @@ fun NotesListScreen(
         }
     }
 
+    var searchOpen by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
+    fun closeSearch() {
+        searchOpen = false
+        viewModel.onQueryChange("")
+    }
+    BackHandler(enabled = searchOpen, onBack = ::closeSearch)
+
     BackHandler(enabled = state.isSelecting || state.isDeleting) {
         if (!state.isDeleting) {
             if (state.pendingDeletionIds.isNotEmpty()) viewModel.cancelDeletion()
@@ -207,6 +218,10 @@ fun NotesListScreen(
             moveMenuOpen = false
         }
     }
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(searchOpen, state.isSelecting) {
+        if (searchOpen && !state.isSelecting) searchFocus.requestFocus()
+    }
 
     Box(Modifier.fillMaxSize()) {
         Scaffold(
@@ -214,13 +229,27 @@ fun NotesListScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            if (state.isSelecting) {
-                                pluralStringResource(R.plurals.notes_selected, state.selectedIds.size, state.selectedIds.size)
-                            } else {
-                                "FPInk"
-                            },
-                        )
+                        if (state.isSelecting) {
+                            Text(pluralStringResource(R.plurals.notes_selected, state.selectedIds.size, state.selectedIds.size))
+                        } else if (searchOpen) {
+                            TextField(
+                                value = state.query,
+                                onValueChange = viewModel::onQueryChange,
+                                placeholder = { Text(stringResource(R.string.search_notes_placeholder)) },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    disabledContainerColor = Color.Transparent,
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(searchFocus)
+                                    .testTag("notesSearchField"),
+                            )
+                        } else {
+                            Text("FPInk")
+                        }
                     },
                     navigationIcon = {
                         if (state.isSelecting) {
@@ -228,6 +257,8 @@ fun NotesListScreen(
                                 R.drawable.ic_back, R.string.clear_note_selection,
                                 enabled = !state.isDeleting, onClick = viewModel::clearSelection,
                             )
+                        } else if (searchOpen) {
+                            ActionIconButton(R.drawable.ic_back, R.string.close_search, onClick = ::closeSearch)
                         }
                     },
                     actions = {
@@ -283,7 +314,15 @@ fun NotesListScreen(
                                     }
                                 }
                             }
+                        } else if (searchOpen) {
+                            if (state.query.isNotEmpty()) {
+                                ActionIconButton(R.drawable.ic_close, R.string.clear_search, onClick = { viewModel.onQueryChange("") })
+                            }
                         } else if (!state.isDeleting) {
+                            ActionIconButton(
+                                R.drawable.ic_search, R.string.search_notes,
+                                enabled = state.notes.isNotEmpty(), onClick = { searchOpen = true },
+                            )
                             ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
                         }
                     },

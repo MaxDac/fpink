@@ -458,6 +458,42 @@ class NotesListViewModelTest {
         assertNull(model.uiState.value.moveError)
     }
 
+    @Test fun `search ranks visible notes and prunes hidden selections`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b", "c"))
+        fixture.repository.save(note("b").copy(text = "Fountains pen ink")).getOrThrow()
+        fixture.repository.save(note("c").copy(text = "Fountain")).getOrThrow()
+        val model = testModel(fixture.repository)
+        runCurrent()
+        model.select("a")
+        model.select("b")
+
+        model.onQueryChange("fountain")
+        assertNull(model.uiState.value.searchResults)
+        advanceUntilIdle()
+        assertEquals(listOf("c", "b"), model.uiState.value.visibleNotes.map { it.id })
+        assertEquals(setOf("b"), model.uiState.value.selectedIds)
+        model.toggleSelectAll()
+        assertEquals(setOf("b", "c"), model.uiState.value.selectedIds)
+
+        model.onQueryChange("fountian")
+        advanceUntilIdle()
+        assertEquals(setOf("b", "c"), model.uiState.value.visibleNotes.map { it.id }.toSet())
+
+        model.clearFilters()
+        assertEquals(listOf("a", "b", "c"), model.uiState.value.visibleNotes.map { it.id }.sorted())
+        assertNull(model.uiState.value.searchResults)
+    }
+
+    @Test fun `stale search results are discarded when the query changes`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        model.onQueryChange("note a")
+        model.onQueryChange("missing")
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), model.uiState.value.visibleNotes.map { it.id })
+    }
+
     @Test fun `category filter applies only when zettelkasten is enabled`() {
         val notes = listOf(
             note("a").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT),
@@ -483,7 +519,7 @@ class NotesListViewModelTest {
 
     @Test fun `toggling a category filter deselects notes that become hidden`() = runTest(dispatcher) {
         val fixture = fixture(listOf("a", "b"))
-        val model = model(fixture.repository)
+        val model = testModel(fixture.repository)
         runCurrent()
         model.toggleSelectAll()
         // Disabled Zettelkasten ignores the filter, so nothing becomes hidden.
@@ -492,6 +528,9 @@ class NotesListViewModelTest {
         model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
         assertTrue(model.uiState.value.categoryFilter.isEmpty())
     }
+
+    private fun testModel(repository: NoteRepository): NotesListViewModel =
+        NotesListViewModel(repository, computeDispatcher = dispatcher).also { models += it }
 
     private fun model(repository: NoteRepository): NotesListViewModel =
         NotesListViewModel(repository).also { models += it }

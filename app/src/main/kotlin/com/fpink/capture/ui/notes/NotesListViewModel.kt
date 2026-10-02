@@ -4,10 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fpink.capture.data.SettingsStore
 import com.fpink.core.model.Note
+import com.fpink.core.model.NoteSearch
 import com.fpink.core.model.ZettelkastenCategory
 import com.fpink.core.storage.NoteRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,7 +31,10 @@ data class NotesListUiState(
     val zettelkastenEnabled: Boolean = false,
     val isMoving: Boolean = false,
     val moveError: String? = null,
+    val query: String = "",
     val categoryFilter: Set<ZettelkastenCategory> = emptySet(),
+    /** Notes matching [query], ranked by relevance; null while no query is active. */
+    val searchResults: List<Note>? = null,
 ) {
     val isSelecting: Boolean get() = selectedIds.isNotEmpty()
     val canInteract: Boolean get() = !isLoading && !isDeleting && !isMoving && error == null
@@ -35,13 +43,14 @@ data class NotesListUiState(
     /** The category filter only applies while the Zettelkasten method is enabled. */
     val activeCategoryFilter: Set<ZettelkastenCategory>
         get() = if (zettelkastenEnabled) categoryFilter else emptySet()
-    val isFiltering: Boolean get() = activeCategoryFilter.isNotEmpty()
+    val isFiltering: Boolean get() = query.isNotBlank() || activeCategoryFilter.isNotEmpty()
 
-    /** Notes shown in the list after the Zettelkasten category filter. */
+    /** Notes shown in the list after search ranking and the Zettelkasten category filter. */
     val visibleNotes: List<Note>
         get() {
+            val base = if (query.isBlank()) notes else searchResults ?: notes
             val filter = activeCategoryFilter
-            return if (filter.isEmpty()) notes else notes.filter { it.zettelkastenCategory in filter }
+            return if (filter.isEmpty()) base else base.filter { it.zettelkastenCategory in filter }
         }
     val allSelected: Boolean get() = visibleNotes.let { visible -> visible.isNotEmpty() && visible.all { it.id in selectedIds } }
 
@@ -55,7 +64,8 @@ data class NotesListUiState(
                 .map { category -> category to visible.filter { it.zettelkastenCategory == category } }
         }
 
-    fun categoryCount(category: ZettelkastenCategory): Int = notes.count { it.zettelkastenCategory == category }
+    fun categoryCount(category: ZettelkastenCategory): Int =
+        (if (query.isBlank()) notes else searchResults ?: notes).count { it.zettelkastenCategory == category }
 }
 
 sealed interface NotesListError {
@@ -66,11 +76,16 @@ sealed interface NotesListError {
 class NotesListViewModel(
     private val noteRepository: NoteRepository,
     private val settingsStore: SettingsStore? = null,
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
+    companion object {
+        const val SEARCH_DEBOUNCE_MS = 150L
+    }
 
     private val _uiState = MutableStateFlow(NotesListUiState())
     val uiState: StateFlow<NotesListUiState> = _uiState.asStateFlow()
     private var operation: Job? = null
+    private var searchJob: Job? = null
 
     init {
         refresh()
@@ -216,6 +231,11 @@ class NotesListViewModel(
         _uiState.update { it.copy(moveError = null) }
     }
 
+    fun onQueryChange(query: String) {
+        _uiState.update { it.copy(query = query) }
+        scheduleSearch(debounce = true)
+    }
+
     fun toggleCategoryFilter(category: ZettelkastenCategory) {
         _uiState.update {
             it.copy(categoryFilter = if (category in it.categoryFilter) it.categoryFilter - category else it.categoryFilter + category).pruned()
@@ -223,7 +243,25 @@ class NotesListViewModel(
     }
 
     fun clearFilters() {
-        _uiState.update { it.copy(categoryFilter = emptySet()) }
+        _uiState.update { it.copy(query = "", categoryFilter = emptySet()) }
+        scheduleSearch(debounce = false)
+    }
+
+    private fun scheduleSearch(debounce: Boolean) {
+        searchJob?.cancel()
+        val snapshot = _uiState.value
+        val query = snapshot.query
+        if (query.isBlank()) {
+            _uiState.update { it.copy(searchResults = null).pruned() }
+            return
+        }
+        searchJob = viewModelScope.launch {
+            if (debounce) delay(SEARCH_DEBOUNCE_MS)
+            val results = withContext(computeDispatcher) { NoteSearch.rank(snapshot.notes, query) }
+            _uiState.update {
+                if (it.query == query && it.notes === snapshot.notes) it.copy(searchResults = results).pruned() else it
+            }
+        }
     }
 
     /** Hidden notes are deselected so bulk actions never affect notes the user cannot see. */
@@ -238,8 +276,14 @@ class NotesListViewModel(
             onSuccess = { notes ->
                 val ids = notes.mapTo(mutableSetOf()) { it.id }
                 _uiState.update {
-                    it.copy(notes = notes, selectedIds = it.selectedIds.intersect(ids), error = null).pruned()
+                    it.copy(
+                        notes = notes,
+                        searchResults = it.searchResults?.filter { note -> note.id in ids },
+                        selectedIds = it.selectedIds.intersect(ids),
+                        error = null,
+                    ).pruned()
                 }
+                if (_uiState.value.query.isNotBlank()) scheduleSearch(debounce = false)
             },
             onFailure = { error ->
                 _uiState.update { it.copy(error = NotesListError.Storage(error.description())) }
