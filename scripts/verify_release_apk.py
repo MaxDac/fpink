@@ -45,32 +45,28 @@ def verify_assets(apk, root=ROOT, source_runtime_sha256=None):
     paddle = root / "recognition" / "paddle"
     artifacts = json.loads((paddle / "artifacts.lock.json").read_text())
     licenses = json.loads((paddle / "licenses.lock.json").read_text())
+    source_runtime = json.loads((paddle / "source-runtime.lock.json").read_text())
+    pinned_runtime = source_runtime["build"]["expectedSha256"][RUNTIME_SOURCE]
+    if source_runtime_sha256 is not None and source_runtime_sha256 != pinned_runtime:
+        raise ValueError("The source-built Paddle runtime is not the one pinned in source-runtime.lock.json.")
     expected = {}
     for archive in artifacts["archives"]:
         for item in archive["files"]:
             destination = item["destination"]
             if destination.startswith("src/main/assets/"):
-                entry = destination.removeprefix("src/main/")
-            elif destination.startswith("native/"):
-                entry = "lib/" + destination.removeprefix("native/")
-            else:
-                continue
-            expected[entry] = item.get("normalization", item)
+                expected[destination.removeprefix("src/main/")] = item
     for item in licenses:
         expected["assets/paddle/licenses/" + item["name"]] = item
-    if source_runtime_sha256 is not None:
-        # F-Droid builds and the reproducible release build the runtime from source instead.
-        expected.pop(RUNTIME_ENTRY)
+    # The checked-in, F-Droid and release runtimes are all the reproducible source build.
+    expected[RUNTIME_ENTRY] = {"sha256": pinned_runtime}
     with zipfile.ZipFile(apk) as archive:
         if len(archive.namelist()) != len(set(archive.namelist())):
             raise ValueError("APK contains duplicate ZIP entries.")
         for name, item in expected.items():
             data = archive.read(name)
-            if len(data) != item["bytes"] or hashlib.sha256(data).hexdigest() != item["sha256"]:
+            if ("bytes" in item and len(data) != item["bytes"]) or \
+                    hashlib.sha256(data).hexdigest() != item["sha256"]:
                 raise ValueError(f"Packaged artifact does not match its pinned content: {name}")
-        if source_runtime_sha256 is not None and \
-                hashlib.sha256(archive.read(RUNTIME_ENTRY)).hexdigest() != source_runtime_sha256:
-            raise ValueError("Packaged Paddle runtime does not match the source-built runtime.")
         for name in (
             "assets/paddle/NOTICE.txt",
             "lib/arm64-v8a/libfpink_paddle.so",
@@ -88,7 +84,7 @@ def main():
     parser.add_argument("--build-tools", type=Path, required=True)
     parser.add_argument(
         "--source-runtime-sums", type=Path,
-        help="SHA256SUMS from build-runtime.sh when the Paddle runtime was built from source",
+        help="SHA256SUMS from build-runtime.sh; its runtime digest must equal the pinned one",
     )
     args = parser.parse_args()
     suffix = ".exe" if os.name == "nt" else ""

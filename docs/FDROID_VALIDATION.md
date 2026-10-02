@@ -7,10 +7,10 @@ clean Linux environment. It does not create or submit fdroiddata changes.
 
 Run this procedure only after:
 
-1. **#27** has replaced the bundled Paddle Lite runtime with a source-buildable
-   recipe, or F-Droid maintainers have explicitly accepted the documented
-   dependency path.
-2. **#28** has resolved model, dictionary, license, and conversion provenance.
+1. **#27** has made the Paddle Lite runtime source-buildable (done: the recipe
+   rebuilds it with `build-runtime.sh`).
+2. **#28** has resolved model, dictionary, and license provenance (done:
+   `recognition/paddle/models-provenance.lock.json`).
 3. **#31** has produced finalized metadata for an immutable release commit.
 4. **#30** has supplied the upstream Fastlane listing metadata and changelog
    required by the release being validated.
@@ -64,8 +64,9 @@ recipe is mirrored in [`metadata/com.fpink.capture.yml`](../metadata/com.fpink.c
 
 `paddleRuntimeBuiltFromSource` makes Gradle verify
 `recognition/paddle/build/source-output/PROVENANCE` and `SHA256SUMS` against
-`recognition/paddle/source-runtime.lock.json` instead of the prebuilt hashes,
-including `build.expectedSha256` once pinned; it does not rebuild the runtime.
+`recognition/paddle/source-runtime.lock.json`, including `build.expectedSha256`.
+It does not rebuild the runtime. The checked-in runtime that the recipe removes
+is the same pinned source build, so dev and CI builds use the shipped bytes.
 
 Acquire only public sources declared by the metadata and provenance records.
 Record every URL, revision, archive hash, SDK package, and tool version. After
@@ -228,7 +229,7 @@ attaches reports) and look at the first differing entry:
 
 | Differing entry | Usual cause | Fix |
 | --- | --- | --- |
-| `lib/arm64-v8a/libpaddle_light_api_shared.so` | Paddle build embeds paths, timestamps or parallel-build ordering | `-ffile-prefix-map`, `SOURCE_DATE_EPOCH`, `--build-id=none` and stripping in `build-runtime.sh`; pin `build.expectedSha256` once stable |
+| `lib/arm64-v8a/libpaddle_light_api_shared.so` | Paddle build embeds paths, timestamps or parallel-build ordering | `-ffile-prefix-map`, `SOURCE_DATE_EPOCH`, `--build-id=none` and stripping in `build-runtime.sh`; pinned by `build.expectedSha256` |
 | `lib/arm64-v8a/libfpink_paddle.so` | Absolute source paths or build ID | Prefix map and `--build-id=none` in `src/main/cpp/CMakeLists.txt` |
 | `classes*.dex` | R8 nondeterminism or a different JDK/AGP | Same image and JDK; check keep rules |
 | `assets/dexopt/baseline.prof*` | Profile ordering | Compare with a rebuild on the same side first |

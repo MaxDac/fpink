@@ -206,7 +206,8 @@ it attaches diffoscope reports otherwise. See
 
 Use JDK **17** or **21** (releases use the buildserver's OpenJDK 21), Android SDK
 platform **37**, build tools **36.0.0**, NDK **28.2.13676358**, CMake **3.22.1**,
-Python 3 and PowerShell 7 (`pwsh`, also available on GitHub's Ubuntu runners).
+Python 3 (with PyYAML for the release-tooling tests) and PowerShell 7 (`pwsh`,
+also available on GitHub's Ubuntu runners).
 The SDK manager package for this platform is `platforms;android-37.0`.
 The checked-in wrapper pins Gradle.
 

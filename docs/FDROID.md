@@ -6,13 +6,14 @@ technical prerequisites tracked in issues #27, #28, #30, #31, and #32.
 
 ## Submission gates
 
-Do not fork `fdroiddata` or open a merge request until all five gates are
-closed and their evidence is still current:
+All five gates are closed and the merge request is open
+([fdroiddata!50122](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/50122)).
+Keep their evidence current:
 
 | Gate | Required evidence |
 |---|---|
 | #27 | The OCR runtime has an F-Droid-acceptable source-build path or an explicit maintainer-approved dependency path. |
-| #28 | Model sources, conversion steps, licenses, redistribution rights, and reproducibility limits are documented and accepted. |
+| #28 | Model sources, licenses, redistribution rights, and regeneration limits are recorded in `recognition/paddle/models-provenance.lock.json`; the runtime source build in `source-runtime.lock.json`. |
 | #30 | `fastlane/metadata/android/en-US/` contains truthful listing text, rights-cleared graphics, and version-code-named changelogs. |
 | #31 | `metadata/com.fpink.capture.yml` is finalized against an immutable installable release without guessed scanner exemptions. |
 | #32 | Clean Linux `fdroid readmeta`, `fdroid rewritemeta`, `fdroid lint`, and `fdroid build` validation succeeds. |

@@ -15,8 +15,7 @@ build also compiled both C++ translation units with the actual NDK r28c.
 
 **Android builds, package checks and translated ARM64 execution pass.**
 Debug/release app APKs, both library variants and the native instrumentation APK
-build with NDK r28c. The deterministic metadata-only normalization below fixes
-the upstream ELF section-header defect without disabling linker checks.
+build with NDK r28c against the checked-in, source-built Paddle Lite runtime.
 
 The actual app and instrumentation APKs were checked for all three native
 libraries, matching model/dictionary SHA-256 hashes, and 16 KB ZIP/ELF alignment.
@@ -24,8 +23,8 @@ The runtime must be explicitly included through the module's `native` JNI-librar
 source directory; successful linking alone does not include it in an APK.
 The app's `verifyDebugRecognitionPackage` and `verifyReleaseRecognitionPackage`
 tasks guard this requirement for both build types.
-The app excludes the prebuilt `libpaddle_light_api_shared.so` from symbol stripping
-so its packaged bytes retain the reviewed, normalized artifact hash. The release
+The app excludes `libpaddle_light_api_shared.so` from symbol stripping so its
+packaged bytes keep the reproducible hash pinned in `source-runtime.lock.json`. The release
 pipeline verifies that hash, model/dictionary hashes and bundled license hashes
 against the actual APK; app-built JNI and NDK libraries keep normal stripping.
 
@@ -59,21 +58,19 @@ benchmark or evidence that the model's 90% confidence means 90% word accuracy.
   Paddle runtime is included. Other app dependencies retain those ABIs, so this
   is an offline-provider restriction, not a new whole-app installation filter.
   Unsupported devices receive an explicit error without automatic cloud fallback.
-* `libpaddle_light_api_shared.so`: official **CPU-only** v2.14-rc archive,
-  with the narrowly specified ELF metadata normalization below. The original
-  and derived SHA-256 values are pinned in `artifacts.lock.json`. Its two ELF LOAD segments both have
-  65,536-byte alignment and congruent file/virtual offsets.
+* `libpaddle_light_api_shared.so` and the two public headers: **CPU-only**
+  Paddle Lite built from the pinned source commit (see
+  [Source-built runtime](#source-built-runtime)). Their SHA-256 values are pinned
+  in `source-runtime.lock.json` (`build.expectedSha256`). The runtime's ELF LOAD
+  segments have 16,384-byte alignment and congruent file/virtual offsets.
 * The JNI wrapper links with explicit 16,384-byte page settings.
-  `libc++_shared.so` comes from the specified modern NDK, **not** the older copy
-  included in the upstream demo archive. Validate its ELF and the final APK too.
-* The runtime's embedded release marker is `v2.14-rc`; its compiler comment is
-  `GCC: (GNU) 4.9.x 20150123 (prerelease)`. Upstream's demo archive does not
-  include a full compiler command or a build-commit attestation. The source
-  release link is recorded separately; a byte-identical source rebuild is **not**
-  claimed. Our wrapper toolchain and the exact runtime bytes are pinned.
+  `libc++_shared.so` comes from the same NDK, which also compiled the runtime.
+  Validate its ELF and the final APK too.
+* The runtime statically links the NDK's LLVM OpenMP runtime (libomp); its
+  license is bundled as `licenses/LLVM-openmp.txt`.
 
 The parent build includes `:recognition:paddle` and makes the app depend on it.
-`preBuild` verifies pinned model, dictionary, native-library, and header hashes;
+`preBuild` verifies pinned model, dictionary, license, native-library, and header hashes;
 it fails rather than downloading or silently accepting changed binaries.
 The AGP Variant API adds `native` to every library variant's JNI sources,
 avoiding the legacy source-set API. CI checks both app packages and compiles
@@ -92,8 +89,9 @@ APKs are compiled, not executed in CI.
 # From the repository root: verification is entirely local.
 & recognition\paddle\scripts\prepare.ps1 -VerifyOnly
 
-# Deliberate developer-only reacquisition, if checked-in artifacts are absent.
-# Requires curl.exe and tar; checks archives AND individual extracted files.
+# Deliberate developer-only reacquisition of the models, dictionary and licenses,
+# if checked-in artifacts are absent. Requires curl.exe and tar; checks archives
+# AND individual extracted files. The runtime is rebuilt from source instead.
 & recognition\paddle\scripts\prepare.ps1
 
 # Cross-compile/link the real JNI independently of the parent Gradle inclusion:
@@ -110,51 +108,38 @@ APKs are compiled, not executed in CI.
 The host test script also works with PowerShell on Linux: pass `-Cxx g++` or
 the path to a compatible compiler. It does not load the Android Paddle runtime.
 
-## Required source reproduction gate
+## Model and dictionary provenance
 
-`reproducibility.lock.json` is the source-of-truth for the required Linux
-reproduction inputs. It pins the Paddle-Lite source commit, Android ARM64 target,
-public PP-OCRv5 source-checkpoint revisions, published `inference.pdiparams`
-payload hashes, expected model outputs, and the policy that **forbids a prebuilt
-fallback**. It intentionally marks the runtime and model conversion as
-`requires-reproduction`: the checked-in `.so` and `.nb` files are not claimed to
-be source-built by this repository.
+`models-provenance.lock.json` records where the bundled models and dictionary come
+from. `scripts/verify-model-provenance.py` checks it against `artifacts.lock.json`.
 
-Run the Linux-only bootstrap with a pinned Android NDK:
-
-```bash
-export ANDROID_NDK_HOME=/path/to/android-ndk
-./recognition/paddle/scripts/reproduce-linux.sh
-```
-
-The command checks the policy, downloads and verifies every declared
-source-model input, checks out the exact Paddle-Lite source commit, verifies its
-required third-party archive, then builds the runtime and both models. It does
-not copy or transform packaged artifacts. Run it in **two clean directories**,
-then require byte identity before considering either output for adoption:
+* **Models**: `upstream-converted`. PaddlePaddle publishes `PP-OCRv5_mobile_det.nb`
+  and `PP-OCRv5_mobile_rec.nb` already converted to Paddle Lite's naive-buffer
+  format. FPInk redistributes them unmodified as Apache-2.0 model data. The lock
+  pins the distribution archives, the `.nb` bytes, and the corresponding
+  Hugging Face source checkpoints (revision plus payload hashes). It does **not**
+  claim to regenerate the `.nb` bytes: those checkpoints are PaddlePaddle 3 PIR
+  programs (`inference.json`), which the Paddle Lite 2.14 `opt` converter cannot
+  read.
+* **Dictionary**: `derived-from-upstream`. `ppocr_keys_ocrv5.txt` is exactly the
+  `PostProcess.character_dict` list of the pinned recognizer `inference.yml`,
+  joined by LF. CI downloads that file, checks its hash, and verifies the
+  derivation:
 
 ```bash
-./recognition/paddle/scripts/reproduce-linux.sh /work/build-one
-./recognition/paddle/scripts/reproduce-linux.sh /work/build-two
-python3 recognition/paddle/scripts/verify-reproducibility.py \
-  --manifest recognition/paddle/reproducibility.lock.json \
-  --first /work/build-one --second /work/build-two
+python3 recognition/paddle/scripts/verify-model-provenance.py \
+  --check-files --fetch-dictionary-source   # needs PyYAML
 ```
 
-Each directory must contain `libpaddle_light_api_shared.so`,
-`PP-OCRv5_mobile_det.nb`, and `PP-OCRv5_mobile_rec.nb`. The verifier fails for
-missing, empty, or different outputs. Matching bytes alone are not approval to
-replace the current assets: retain input hashes, commands, tool versions,
-license evidence, package/ELF checks, ARM64 device behavior, and handwriting
-quality results with the change.
-
-No Git Bash, Python, desktop Paddle, model optimizer, model conversion, account,
+No Python, desktop Paddle, model optimizer, model conversion, account,
 questionnaire, download service, accelerator SDK, or OpenCV is required at runtime.
 No source-format `pdiparams` or duplicate source checkpoints are packaged.
 
-## Source-built runtime path
+## Source-built runtime
 
-F-Droid and other clean Linux builds build the runtime with
+The checked-in runtime and headers are the output of this build. F-Droid and the
+signed release rebuild them from source, and CI proves the result byte-identical.
+They are built with
 `scripts/build-runtime.sh`, which checks out the exact Paddle Lite commit in
 `source-runtime.lock.json`, applies the recorded source preparation (removes
 the unused Java demo containing a prebuilt `gradle-wrapper.jar`, pins the
@@ -176,10 +161,10 @@ NDK_ROOT=/path/to/ndk/28.2.13676358 \
 ./gradlew -PpaddleRuntimeBuiltFromSource :app:assembleFossRelease
 ```
 
-With `-PpaddleRuntimeBuiltFromSource`, Gradle does not rebuild anything: it
-skips the prebuilt hashes for the runtime and the two headers and instead
-requires `PROVENANCE` to match `source-runtime.lock.json` and the three files to
-match `SHA256SUMS`. `-PbuildPaddleRuntimeFromSource` still runs the whole script
+Without either property, Gradle checks the checked-in runtime and headers against
+`build.expectedSha256`. With `-PpaddleRuntimeBuiltFromSource`, Gradle does not
+rebuild anything: it also requires `PROVENANCE` to match
+`source-runtime.lock.json` and the three files to match `SHA256SUMS`. `-PbuildPaddleRuntimeFromSource` still runs the whole script
 (`all`) from Gradle, which is convenient locally but hides the script output in
 the Gradle daemon.
 
@@ -192,9 +177,8 @@ test still needs `g++`). The NDK is taken from `NDK_ROOT`, `ANDROID_NDK_ROOT`,
 `ANDROID_NDK_HOME` or `ANDROID_NDK` and must be revision `28.2.13676358`.
 On Debian: `apt-get install -y git python3 cmake make binutils`.
 
-The checked-in runtime remains the default developer/CI input; it is not the
-F-Droid build input or the release build input. A source build must pass the
-same dependency and 16 KB alignment checks as the fallback artifact.
+The F-Droid recipe deletes the checked-in runtime before building, so F-Droid
+never uses it. Developers and CI use it directly, so they test the shipped bytes.
 
 ### Reproducibility of the source-built runtime
 
@@ -208,11 +192,12 @@ byte-identical. To make the runtime deterministic, `build-runtime.sh`:
 - strips the output with the NDK's `llvm-strip --strip-unneeded`. It is
   packaged with `keepDebugSymbols`, so AGP never strips it again.
 
-The `build` phase prints the SHA-256 of the runtime and headers. Once CI has
-shown that they are stable, record them in `build.expectedSha256` in
-`source-runtime.lock.json`. From then on, `-PpaddleRuntimeBuiltFromSource`
-fails when a build differs from them. Use `-PallowUnpinnedPaddleRuntime` only
-to diagnose such a failure locally.
+The `build` phase prints the SHA-256 of the runtime and headers.
+`-PpaddleRuntimeBuiltFromSource` fails when a build differs from
+`build.expectedSha256`. Use `-PallowUnpinnedPaddleRuntime` only to diagnose such
+a failure locally. To change the runtime, update the pins and the checked-in
+files together, using `scripts/fdroid-rb-docker.sh` output, and repeat the
+Android tests.
 
 ## Public provenance (no gated material)
 
@@ -220,9 +205,7 @@ The official [v3.4.1 on-device guide](https://www.paddleocr.ai/v3.4.1/en/version
 advertises PP-OCRv5 mobile on CPU. Its shell-demo source package has a questionnaire
 step, which was **not** accessed. Instead, the public, Apache-2.0
 [Paddle-Lite-Demo source revision](https://github.com/PaddlePaddle/Paddle-Lite-Demo/tree/71c8499765fab203335f2d159ea8d51e0d1914c2)
-publishes all the needed download URLs in `ocr/assets/download.sh` and
-`libs/download.sh`. The latter explicitly lists a CPU archive separately from
-the default GPU archive. Only the CPU archive was selected.
+publishes the model and dictionary download URLs in `ocr/assets/download.sh`.
 
 The selected files are the official, already-converted
 `PP-OCRv5_mobile_det.nb`, `PP-OCRv5_mobile_rec.nb`, and
@@ -231,59 +214,15 @@ The corresponding original model cards declare Apache-2.0 and English capability
 
 * [Detector source-model revision](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det/tree/0d63e78e2b680928f6b1747d76a08db6e645efb7)
 * [Recognizer source-model revision](https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec/tree/682f20538d8c086cb2128e5cfac775e6c4904e85)
-* [Lite v2.14-rc source revision](https://github.com/PaddlePaddle/Paddle-Lite/tree/28fe23f222de1865e01f0ab41d2494a1222be4f0)
+* [Paddle Lite runtime source revision](https://github.com/PaddlePaddle/Paddle-Lite/tree/28fe23f222de1865e01f0ab41d2494a1222be4f0)
 
-`artifacts.lock.json` records public source URLs, archive sizes/digests and
-individual shipped-file sizes/digests. Upstream bucket URLs are mutable; a changed
-download is deliberately rejected. No alternate model/engine is substituted.
-An independently rebuilt runtime would require a reviewed digest update and a
-repeat of the Android tests; it must not silently replace this verified artifact.
+`artifacts.lock.json` records the model and dictionary source URLs, archive
+sizes/digests and individual shipped-file sizes/digests. Upstream bucket URLs are
+mutable; a changed download is deliberately rejected. No alternate model/engine
+is substituted.
 
 The app initially advertises **English**, not offline Italian. This multilingual
 checkpoint is not a guarantee of accurate arbitrary English cursive.
-
-## Reviewed ELF metadata normalization
-
-The official CPU binary's `.dynsym` section header incorrectly declares
-`sh_info = 3`, although the first **ten** entries have `STB_LOCAL` binding and
-entry 10 is the first non-local symbol. NDK r28c's LLD therefore rejects local
-symbols `_edata`, `__end__`, `__bss_end__`, `_bss_end__`, `__bss_start__`, `_end`
-and `__bss_start` in the allegedly global part of the table.
-
-The [ELF gABI symbol-table specification](https://gabi.xinuos.com/elf/05-symtab.html)
-requires `sh_info` to equal the first non-local symbol index. Standard
-`llvm-objcopy --strip-debug` does not correct this particular upstream defect.
-
-`scripts/normalize-runtime.ps1` accepts **only** the pinned 3,729,624-byte
-upstream binary. It validates the complete symbol binding order and changes the
-`.dynsym.sh_info` word at file offset **3,728,260 (`0x38E384`) from 3 to 10**.
-Exactly one byte changes; the section-header field is outside every PT_LOAD
-segment. The script hashes every PT_LOAD segment before/after and requires
-identical bytes. It never modifies instructions, model data, relocations, the
-dynamic symbol table, symbol names/bindings/values, dependency names, program
-headers, segment layout, soname, or runtime behavior. The upstream input is kept
-unchanged. No linker validation or undefined-symbol checks are disabled.
-
-| Artifact | SHA-256 |
-|---|---|
-| Original official CPU library | `6558bf52fee978db21a550bb023378f865d145672751cccf84d0e797df60b369` |
-| Shipped metadata-normalized library | `3966a5d0ac2569ca63ca9cbd84093d5d23026eb85fa64e7a3062fa8aba89a9b6` |
-
-`prepare.ps1` verifies the archive and original extracted file, performs this
-normalization, and verifies the exact derived digest. Gradle verifies the
-derived digest. `verify-elf.ps1` now rejects invalid symbol binding boundaries.
-The normalization test proves the exact one-byte difference, source preservation,
-strict AArch64 LLD acceptance, unchanged page alignment and dependency allowlist,
-and refusal to transform an unknown/tampered binary:
-
-```powershell
-& recognition\paddle\scripts\test-runtime-normalization.ps1 `
-    -OriginalRuntime 'recognition\paddle\build\acquisition\cxx\libs\arm64-v8a\libpaddle_light_api_shared.so' `
-    -Linker '<path-to-ld.lld.exe>'
-```
-
-This is an explicit, reproducible correction of malformed non-loaded ELF
-metadata, not a source rebuild or evidence of Android device execution.
 
 ## Native behavior and bounds
 
@@ -331,7 +270,7 @@ metadata, not a source rebuild or evidence of Android device execution.
 | Recognizer NB | 16,718,470 |
 | **NB model pair** | **21,719,684** |
 | Matching dictionary | 74,011 |
-| ARM64 Lite CPU shared library | 3,729,624 |
+| ARM64 Lite CPU shared library (source build) | 4,992,264 |
 | Packaged JNI wrapper, debug / release | 228,088 / 70,016 |
 | Packaged NDK libc++ | 1,253,544 |
 | Debug app APK | 41,568,917 |
@@ -378,5 +317,5 @@ test failed because `g++` was missing; it is not shipped in the app.
 Licenses/notices are bundled under `src/main/assets/paddle/licenses` and in
 `NOTICE.txt`. FPInk's original code is licensed under GPL-3.0-only; see the root
 `LICENSE` and `README.md`. Third-party runtime, models, headers and notices retain
-their respective licenses. See `docs/RELEASING.md` for the remaining F-Droid
-source-build and provenance requirements.
+their respective licenses. See `docs/RELEASING.md` for the release and F-Droid
+source-build process.

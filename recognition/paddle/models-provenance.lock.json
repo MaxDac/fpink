@@ -1,0 +1,105 @@
+{
+  "schema": 2,
+  "description": "Provenance of the bundled PP-OCRv5 models and dictionary. Verified by scripts/verify-model-provenance.py.",
+  "models": [
+    {
+      "name": "PP-OCRv5_mobile_det",
+      "license": "Apache-2.0",
+      "status": "upstream-converted",
+      "asset": {
+        "file": "src/main/assets/paddle/PP-OCRv5_mobile_det.nb",
+        "bytes": 5001214,
+        "sha256": "bee84fdb3d7c5f312a797da81f2dd44c89088c08e1f58a51044a823cddfbd90c"
+      },
+      "distribution": {
+        "url": "https://paddlelite-demo.bj.bcebos.com/paddle-x/ocr/models/PP-OCRv5_mobile_det.tar.gz",
+        "bytes": 4556735,
+        "sha256": "18be2328b19936bb8bbef48ffeb3f5214e58c26acd47bb64681f2f52dc7b8fa4",
+        "member": "PP-OCRv5_mobile_det.nb"
+      },
+      "upstreamCheckpoint": {
+        "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det",
+        "revision": "0d63e78e2b680928f6b1747d76a08db6e645efb7",
+        "license": "Apache-2.0",
+        "files": [
+          {
+            "name": "inference.json",
+            "bytes": 229777,
+            "sha256": "05feef1acb00aa4cd7362b15f7f501fc4f99d7b1fa73c1c871e0c7b1504b0f5c"
+          },
+          {
+            "name": "inference.pdiparams",
+            "bytes": 4692937,
+            "sha256": "afa1820cb16c1fd0dad589d0f8b389139061c1ef6d68019685fd07be997dda5b"
+          }
+        ]
+      },
+      "regeneration": {
+        "claimed": false,
+        "reason": "PaddlePaddle publishes these naive-buffer models already converted for Paddle Lite. The pinned Hugging Face checkpoints are PaddlePaddle 3 PIR programs (inference.json), which the Paddle Lite 2.14 opt converter cannot read, so FPInk does not claim to regenerate the .nb bytes. They are redistributed unmodified as Apache-2.0 model data and pinned by hash."
+      }
+    },
+    {
+      "name": "PP-OCRv5_mobile_rec",
+      "license": "Apache-2.0",
+      "status": "upstream-converted",
+      "asset": {
+        "file": "src/main/assets/paddle/PP-OCRv5_mobile_rec.nb",
+        "bytes": 16718470,
+        "sha256": "9d073b3ee01deee358bf929dd8952d4d355c9545f4a93d8070605581b4c21c0c"
+      },
+      "distribution": {
+        "url": "https://paddlelite-demo.bj.bcebos.com/paddle-x/ocr/models/PP-OCRv5_mobile_rec.tar.gz",
+        "bytes": 14077259,
+        "sha256": "6385dad9a2272b0180b9f44f49c08feed5ffa777a4f8658e25d9db39636ab2b3",
+        "member": "PP-OCRv5_mobile_rec.nb"
+      },
+      "upstreamCheckpoint": {
+        "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec",
+        "revision": "682f20538d8c086cb2128e5cfac775e6c4904e85",
+        "license": "Apache-2.0",
+        "files": [
+          {
+            "name": "inference.json",
+            "bytes": 217724,
+            "sha256": "24587345250c7332d0fc6f9a44e794d078cdaeb64c302fef906f325619de2569"
+          },
+          {
+            "name": "inference.pdiparams",
+            "bytes": 16458665,
+            "sha256": "2460da90875937c94db97eba74ae3d9e5d4c4c57c42f1f41531c09a26bcc771a"
+          }
+        ]
+      },
+      "regeneration": {
+        "claimed": false,
+        "reason": "PaddlePaddle publishes these naive-buffer models already converted for Paddle Lite. The pinned Hugging Face checkpoints are PaddlePaddle 3 PIR programs (inference.json), which the Paddle Lite 2.14 opt converter cannot read, so FPInk does not claim to regenerate the .nb bytes. They are redistributed unmodified as Apache-2.0 model data and pinned by hash."
+      }
+    }
+  ],
+  "dictionary": {
+    "name": "ppocr_keys_ocrv5",
+    "license": "Apache-2.0",
+    "status": "derived-from-upstream",
+    "asset": {
+      "file": "src/main/assets/paddle/ppocr_keys_ocrv5.txt",
+      "bytes": 74011,
+      "sha256": "17665d27ed39f0deb82007859992d626d3105d0ee4578c120b7c72138dc04d05"
+    },
+    "distribution": {
+      "url": "https://paddlelite-demo.bj.bcebos.com/demo/ocr/labels/labels.tar.gz",
+      "bytes": 63096,
+      "sha256": "deaf9d44b671ee4edb3a2e1747844624e211d1a24ef641e8336147fa046edb8a",
+      "member": "ppocr_keys_ocrv5.txt"
+    },
+    "derivation": {
+      "url": "https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_rec",
+      "revision": "682f20538d8c086cb2128e5cfac775e6c4904e85",
+      "file": "inference.yml",
+      "bytes": 148345,
+      "sha256": "5dfeb2777f6d0db8177d8128a8acfcf6e6276dc4ac73ea3bf0dc06d6a5e85d8e",
+      "field": "PostProcess.character_dict",
+      "rule": "The dictionary is the field's entries, each rendered with str(), in order, joined by LF with no trailing newline."
+    }
+  }
+}

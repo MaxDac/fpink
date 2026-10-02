@@ -28,16 +28,24 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up release tooling Python
+        run: |
+          python3 -m venv "$RUNNER_TEMP/tooling"
+          "$RUNNER_TEMP/tooling/bin/pip" install --quiet --only-binary :all: PyYAML==6.0.3
+          echo "$RUNNER_TEMP/tooling/bin" >> "$GITHUB_PATH"
+
       - name: Test release tooling
         run: python3 -m unittest discover -s scripts/tests -v
 
       - name: Check the declared release and its changelog
         run: python3 scripts/release_version.py --check-version-properties
 
-      - name: Validate OCR reproducibility policy
+      - name: Verify OCR model and dictionary provenance
+        # Downloads the pinned upstream inference.yml and checks that the bundled
+        # dictionary is exactly its PostProcess.character_dict.
         run: >-
-          python3 recognition/paddle/scripts/verify-reproducibility.py
-          --manifest recognition/paddle/reproducibility.lock.json
+          python3 recognition/paddle/scripts/verify-model-provenance.py
+          --check-files --fetch-dictionary-source
 
       - name: Set up JDK 17
         uses: actions/setup-java@v6
