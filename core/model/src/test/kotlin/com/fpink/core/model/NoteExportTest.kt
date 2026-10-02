@@ -24,7 +24,7 @@ class NoteExportTest {
             sourceId = "source",
             paragraphIndex = 2,
             paragraphPolygon = listOf(ImagePoint(0.1f, 0.2f)),
-            recognitionProvider = "PADDLE",
+            recognitionProvider = "cursive",
             recognitionModelVersion = "PP-OCRv5_mobile",
             inkColorOrigin = InkColorOrigin.USER_SELECTED,
         )
@@ -38,7 +38,7 @@ class NoteExportTest {
         assertEquals("First note", firstExport.getValue("text").jsonPrimitive.content)
         assertEquals("#102030", firstExport.getValue("inkColorHex").jsonPrimitive.content)
         assertEquals("source", firstExport.getValue("sourceId").jsonPrimitive.content)
-        assertEquals("PADDLE", firstExport.getValue("recognitionProvider").jsonPrimitive.content)
+        assertEquals("cursive", firstExport.getValue("recognitionProvider").jsonPrimitive.content)
         assertEquals("USER_SELECTED", firstExport.getValue("inkColorOrigin").jsonPrimitive.content)
         assertTrue(firstExport.keys.containsAll(setOf("capturedAt", "confidence", "tags", "links", "paragraphPolygon")))
     }

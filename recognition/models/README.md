@@ -44,8 +44,8 @@ If any asset changes, including `NOTICE.txt`, update its entry in `artifacts.loc
   - The long side is resized to at most 960 px, and both sides are rounded to a multiple of 32.
   - Post-processing is a DB step in Kotlin (`DbPostProcessing`) with threshold 0.2,
     box threshold 0.45, unclip ratio 1.4 and at most 3,000 candidates. These values come
-    from the pinned `inference.yml`. They intentionally differ from the old Paddle Lite
-    values (0.3 / 0.6 / 1.5).
+    from the pinned `inference.yml`. They intentionally differ from the previous on-device
+    engine's values (0.3 / 0.6 / 1.5).
 - **PP-OCRv6 recognizer**
   - BGR input, height 48, width `ceil(48 · w / h)` padded with zeros to at least 320 px.
     Width is capped at 2,048 px.
@@ -80,4 +80,4 @@ If any asset changes, including `NOTICE.txt`, update its entry in `artifacts.loc
   error.
 - Together the models add about 150 MB of uncompressed assets. The unsigned FOSS release
   APK is 185,992,278 bytes, compared with 119,379,307 bytes for the signed
-  0.1.0-preview.11 Paddle Lite release, an increase of about 66.6 MB.
+  0.1.0-preview.11 release, an increase of about 66.6 MB.

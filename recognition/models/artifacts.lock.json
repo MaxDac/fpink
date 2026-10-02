@@ -28,14 +28,14 @@
       "sha256": "e93453d9e0e0ae9c2095123630955dd4ae12575ad38549ca0583829304e5fce4"
     },
     {
-      "destination": "src/main/assets/recognition/licenses/PaddleOCR-models-APACHE-2.0.txt",
+      "destination": "src/main/assets/recognition/licenses/PP-OCRv6-models-APACHE-2.0.txt",
       "bytes": 11357,
       "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
     },
     {
       "destination": "src/main/assets/recognition/NOTICE.txt",
-      "bytes": 1257,
-      "sha256": "0db709b17cda8ffe8ff3f30abf61ddf90cd2005043ca11add55fb403e2b5d292"
+      "bytes": 1256,
+      "sha256": "96d32c0fc8c132b91c41bfc8d09f9c387908a1dea608d51c2462ef301f2c9c22"
     },
     {
       "destination": "src/main/assets/recognition/ppocrv6/PP-OCRv6_medium_rec_dict.txt",
