@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
@@ -36,6 +38,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -43,6 +46,8 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
@@ -54,12 +59,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
@@ -121,6 +129,13 @@ fun NotesListScreen(
             sourceViewModel.dismissError()
         }
     }
+    val exportedMessage = state.exportedCount?.let { pluralStringResource(R.plurals.notes_exported, it, it) }
+    LaunchedEffect(exportedMessage) {
+        exportedMessage?.let {
+            snackbar.showSnackbar(it)
+            viewModel.onExportResultShown()
+        }
+    }
     LaunchedEffect(shareError) {
         shareError?.let {
             snackbar.showSnackbar(it)
@@ -133,6 +148,13 @@ fun NotesListScreen(
             sourceViewModel.consumeReadySourceId()
         }
     }
+
+    var searchOpen by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
+    fun closeSearch() {
+        searchOpen = false
+        viewModel.onQueryChange("")
+    }
+    BackHandler(enabled = searchOpen, onBack = ::closeSearch)
 
     BackHandler(enabled = state.isSelecting || state.isDeleting) {
         if (!state.isDeleting) {
@@ -174,6 +196,21 @@ fun NotesListScreen(
             shareError = shareBlocked
         }
     }
+    val context = LocalContext.current
+    val exportPickerUnavailable = stringResource(R.string.notes_export_picker_unavailable)
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) viewModel.exportVault(SafVaultExportTarget(context.contentResolver, uri))
+        else viewModel.cancelVaultExport()
+    }
+    fun startVaultExport(selectedOnly: Boolean) {
+        if (!viewModel.prepareVaultExport(selectedOnly)) return
+        try {
+            exportLauncher.launch(SafVaultExportTarget.defaultFileName())
+        } catch (_: ActivityNotFoundException) {
+            viewModel.cancelVaultExport()
+            shareError = exportPickerUnavailable
+        }
+    }
     fun launchPicker(files: Boolean) {
         val intent = Intent(if (files) Intent.ACTION_OPEN_DOCUMENT else Intent.ACTION_GET_CONTENT).apply {
             type = "image/*"
@@ -197,11 +234,17 @@ fun NotesListScreen(
 
     var exportMenuOpen by rememberSaveable { mutableStateOf(false) }
     var moveMenuOpen by rememberSaveable { mutableStateOf(false) }
+    var moreMenuOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.isSelecting, state.isDeleting) {
         if (!state.isSelecting || state.isDeleting) {
             exportMenuOpen = false
             moveMenuOpen = false
         }
+        if (state.isSelecting || state.isDeleting) moreMenuOpen = false
+    }
+    val searchFocus = remember { FocusRequester() }
+    LaunchedEffect(searchOpen, state.isSelecting) {
+        if (searchOpen && !state.isSelecting) searchFocus.requestFocus()
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -210,13 +253,27 @@ fun NotesListScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(
-                            if (state.isSelecting) {
-                                pluralStringResource(R.plurals.notes_selected, state.selectedIds.size, state.selectedIds.size)
-                            } else {
-                                "FPInk"
-                            },
-                        )
+                        if (state.isSelecting) {
+                            Text(pluralStringResource(R.plurals.notes_selected, state.selectedIds.size, state.selectedIds.size))
+                        } else if (searchOpen) {
+                            TextField(
+                                value = state.query,
+                                onValueChange = viewModel::onQueryChange,
+                                placeholder = { Text(stringResource(R.string.search_notes_placeholder)) },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    disabledContainerColor = Color.Transparent,
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(searchFocus)
+                                    .testTag("notesSearchField"),
+                            )
+                        } else {
+                            Text("FPInk")
+                        }
                     },
                     navigationIcon = {
                         if (state.isSelecting) {
@@ -224,6 +281,8 @@ fun NotesListScreen(
                                 R.drawable.ic_back, R.string.clear_note_selection,
                                 enabled = !state.isDeleting, onClick = viewModel::clearSelection,
                             )
+                        } else if (searchOpen) {
+                            ActionIconButton(R.drawable.ic_back, R.string.close_search, onClick = ::closeSearch)
                         }
                     },
                     actions = {
@@ -249,6 +308,13 @@ fun NotesListScreen(
                                         onClick = {
                                             exportMenuOpen = false
                                             shareNotes(state.notes.filter { it.id in state.selectedIds }, json = false)
+                                        },
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.export_notes_markdown_vault)) },
+                                        onClick = {
+                                            exportMenuOpen = false
+                                            startVaultExport(selectedOnly = true)
                                         },
                                     )
                                 }
@@ -279,8 +345,29 @@ fun NotesListScreen(
                                     }
                                 }
                             }
+                        } else if (searchOpen) {
+                            if (state.query.isNotEmpty()) {
+                                ActionIconButton(R.drawable.ic_close, R.string.clear_search, onClick = { viewModel.onQueryChange("") })
+                            }
                         } else if (!state.isDeleting) {
+                            ActionIconButton(
+                                R.drawable.ic_search, R.string.search_notes,
+                                enabled = state.notes.isNotEmpty(), onClick = { searchOpen = true },
+                            )
                             ActionIconButton(R.drawable.ic_settings, R.string.settings, onClick = onSettingsClick)
+                            Box {
+                                ActionIconButton(R.drawable.ic_more, R.string.more_actions, onClick = { moreMenuOpen = true })
+                                DropdownMenu(expanded = moreMenuOpen, onDismissRequest = { moreMenuOpen = false }) {
+                                    DropdownMenuItem(
+                                        text = { Text(stringResource(R.string.export_all_notes_markdown_vault)) },
+                                        enabled = state.canInteract && state.notes.isNotEmpty(),
+                                        onClick = {
+                                            moreMenuOpen = false
+                                            startVaultExport(selectedOnly = false)
+                                        },
+                                    )
+                                }
+                            }
                         }
                     },
                 )
@@ -322,6 +409,18 @@ fun NotesListScreen(
                         TextButton(onClick = viewModel::dismissMoveError) { Text(stringResource(R.string.dismiss)) }
                     }
                 }
+                state.exportError?.let { error ->
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        Text(stringResource(R.string.notes_export_error, error), color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = viewModel::dismissExportError) { Text(stringResource(R.string.dismiss)) }
+                    }
+                }
+                if (state.zettelkastenEnabled && state.notes.isNotEmpty()) {
+                    CategoryFilterRow(
+                        state = state,
+                        onToggle = viewModel::toggleCategoryFilter,
+                    )
+                }
                 if (state.isSelecting) {
                     SelectAllRow(
                         allSelected = state.allSelected,
@@ -336,6 +435,10 @@ fun NotesListScreen(
                 if (state.isMoving) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                     Text("Moving notes…", Modifier.padding(16.dp))
+                }
+                if (state.isExporting) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(stringResource(R.string.exporting_notes), Modifier.padding(16.dp))
                 }
                 Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                     val error = state.error
@@ -359,8 +462,9 @@ fun NotesListScreen(
                         }
                         state.notes.isEmpty() && state.isDeleting -> CircularProgressIndicator()
                         state.notes.isEmpty() -> EmptyState(onCaptureClick = ::openSourceMenu)
+                        state.visibleNotes.isEmpty() -> NoMatchesState(onClearFilters = viewModel::clearFilters)
                         else -> NotesList(
-                            notes = state.notes,
+                            notes = state.visibleNotes,
                             selectedIds = state.selectedIds,
                             enabled = state.canChangeSelection,
                             groupByZettelkasten = state.zettelkastenEnabled,
@@ -486,6 +590,46 @@ private fun SelectAllRow(allSelected: Boolean, enabled: Boolean, onClick: () -> 
     ) {
         TriStateCheckbox(state = checkedState, onClick = null, enabled = enabled)
         Text(stringResource(R.string.select_all_notes))
+    }
+}
+
+@Composable
+private fun CategoryFilterRow(state: NotesListUiState, onToggle: (ZettelkastenCategory) -> Unit) {
+    val description = stringResource(R.string.filter_by_zettelkasten_category)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .semantics { contentDescription = description }
+            .testTag("zettelkastenFilterRow"),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ZettelkastenCategory.entries.forEach { category ->
+            FilterChip(
+                selected = category in state.categoryFilter,
+                onClick = { onToggle(category) },
+                label = {
+                    Text(stringResource(R.string.zettelkasten_filter_chip, category.displayName(), state.categoryCount(category)))
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun NoMatchesState(onClearFilters: () -> Unit) {
+    Column(
+        modifier = Modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.notes_no_matches),
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = TextAlign.Center,
+        )
+        TextButton(onClick = onClearFilters) { Text(stringResource(R.string.clear_filters)) }
     }
 }
 

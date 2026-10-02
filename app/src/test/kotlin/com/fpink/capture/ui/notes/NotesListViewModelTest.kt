@@ -458,6 +458,156 @@ class NotesListViewModelTest {
         assertNull(model.uiState.value.moveError)
     }
 
+    @Test fun `search ranks visible notes and prunes hidden selections`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b", "c"))
+        fixture.repository.save(note("b").copy(text = "Fountains pen ink")).getOrThrow()
+        fixture.repository.save(note("c").copy(text = "Fountain")).getOrThrow()
+        val model = testModel(fixture.repository)
+        runCurrent()
+        model.select("a")
+        model.select("b")
+
+        model.onQueryChange("fountain")
+        assertNull(model.uiState.value.searchResults)
+        advanceUntilIdle()
+        assertEquals(listOf("c", "b"), model.uiState.value.visibleNotes.map { it.id })
+        assertEquals(setOf("b"), model.uiState.value.selectedIds)
+        model.toggleSelectAll()
+        assertEquals(setOf("b", "c"), model.uiState.value.selectedIds)
+
+        model.onQueryChange("fountian")
+        advanceUntilIdle()
+        assertEquals(setOf("b", "c"), model.uiState.value.visibleNotes.map { it.id }.toSet())
+
+        model.clearFilters()
+        assertEquals(listOf("a", "b", "c"), model.uiState.value.visibleNotes.map { it.id }.sorted())
+        assertNull(model.uiState.value.searchResults)
+    }
+
+    @Test fun `stale search results are discarded when the query changes`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        model.onQueryChange("note a")
+        model.onQueryChange("missing")
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), model.uiState.value.visibleNotes.map { it.id })
+    }
+
+    @Test fun `category filter applies only when zettelkasten is enabled`() {
+        val notes = listOf(
+            note("a").copy(zettelkastenCategory = ZettelkastenCategory.PERMANENT),
+            note("b").copy(zettelkastenCategory = ZettelkastenCategory.FLEETING),
+            note("c").copy(zettelkastenCategory = ZettelkastenCategory.LITERATURE),
+        )
+        val disabled = NotesListUiState(notes = notes, categoryFilter = setOf(ZettelkastenCategory.PERMANENT))
+        assertFalse(disabled.isFiltering)
+        assertEquals(3, disabled.visibleNotes.size)
+
+        val enabled = disabled.copy(
+            zettelkastenEnabled = true,
+            categoryFilter = setOf(ZettelkastenCategory.PERMANENT, ZettelkastenCategory.FLEETING),
+        )
+        assertTrue(enabled.isFiltering)
+        assertEquals(listOf("a", "b"), enabled.visibleNotes.map { it.id })
+        assertEquals(
+            listOf(ZettelkastenCategory.FLEETING, ZettelkastenCategory.PERMANENT),
+            enabled.zettelkastenSections.map { it.first },
+        )
+        assertEquals(1, enabled.categoryCount(ZettelkastenCategory.LITERATURE))
+    }
+
+    @Test fun `toggling a category filter deselects notes that become hidden`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        model.toggleSelectAll()
+        // Disabled Zettelkasten ignores the filter, so nothing becomes hidden.
+        model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
+        assertEquals(setOf("a", "b"), model.uiState.value.selectedIds)
+        model.toggleCategoryFilter(ZettelkastenCategory.PERMANENT)
+        assertTrue(model.uiState.value.categoryFilter.isEmpty())
+    }
+
+    @Test fun `exporting the selection writes a markdown vault`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b", "c"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        assertFalse(model.prepareVaultExport(selectedOnly = true))
+        model.select("a")
+        model.select("c")
+        assertTrue(model.prepareVaultExport(selectedOnly = true))
+        assertEquals(listOf("a", "c"), model.uiState.value.pendingExportIds?.sorted())
+        val target = RecordingTarget()
+
+        model.exportVault(target)
+        assertTrue(model.uiState.value.isExporting)
+        assertFalse(model.uiState.value.canInteract)
+        advanceUntilIdle()
+
+        assertFalse(model.uiState.value.isExporting)
+        assertEquals(2, model.uiState.value.exportedCount)
+        assertFalse(target.discarded)
+        val entries = unzip(target.output.toByteArray())
+        assertEquals(setOf("attachments/a.jpg", "attachments/c.jpg"), entries.filter { it.startsWith("attachments/") }.toSet())
+        assertEquals(3, entries.count { it.endsWith(".md") })
+        model.onExportResultShown()
+        assertNull(model.uiState.value.exportedCount)
+    }
+
+    @Test fun `export all ignores the filter and failures discard the partial file`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a", "b"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        model.onQueryChange("note a")
+        advanceUntilIdle()
+        assertTrue(model.prepareVaultExport(selectedOnly = false))
+        assertEquals(setOf("a", "b"), model.uiState.value.pendingExportIds?.toSet())
+        fixture.store.fail = { operation, path -> operation == "read" && path == "images/b.jpg" }
+        val target = RecordingTarget()
+
+        model.exportVault(target)
+        advanceUntilIdle()
+
+        assertTrue(target.discarded)
+        assertNotNull(model.uiState.value.exportError)
+        assertNull(model.uiState.value.exportedCount)
+        assertFalse(model.uiState.value.isExporting)
+        model.dismissExportError()
+        assertNull(model.uiState.value.exportError)
+    }
+
+    @Test fun `cancelling the destination picker clears the pending export`() = runTest(dispatcher) {
+        val fixture = fixture(listOf("a"))
+        val model = testModel(fixture.repository)
+        runCurrent()
+        assertTrue(model.prepareVaultExport(selectedOnly = false))
+        model.cancelVaultExport()
+        val target = RecordingTarget()
+        model.exportVault(target)
+        assertNull(model.uiState.value.pendingExportIds)
+        assertFalse(model.uiState.value.isExporting)
+        assertEquals(0, target.output.size())
+    }
+
+    private class RecordingTarget : VaultExportTarget {
+        val output = java.io.ByteArrayOutputStream()
+        var discarded = false
+        override fun open(): java.io.OutputStream = output
+        override fun discard() { discarded = true }
+    }
+
+    private fun unzip(bytes: ByteArray): List<String> {
+        val names = mutableListOf<String>()
+        java.util.zip.ZipInputStream(bytes.inputStream()).use { zip ->
+            while (true) names += (zip.nextEntry ?: break).name
+        }
+        return names
+    }
+
+    private fun testModel(repository: NoteRepository): NotesListViewModel =
+        NotesListViewModel(repository, computeDispatcher = dispatcher, ioDispatcher = dispatcher).also { models += it }
+
     private fun model(repository: NoteRepository): NotesListViewModel =
         NotesListViewModel(repository).also { models += it }
 

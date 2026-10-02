@@ -4,10 +4,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fpink.capture.data.SettingsStore
 import com.fpink.core.model.Note
+import com.fpink.core.model.NoteSearch
+import com.fpink.core.model.VaultOptions
 import com.fpink.core.model.ZettelkastenCategory
+import com.fpink.core.storage.MarkdownVaultArchive
 import com.fpink.core.storage.NoteRepository
+import java.io.OutputStream
+import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,15 +35,45 @@ data class NotesListUiState(
     val zettelkastenEnabled: Boolean = false,
     val isMoving: Boolean = false,
     val moveError: String? = null,
+    val query: String = "",
+    val categoryFilter: Set<ZettelkastenCategory> = emptySet(),
+    /** Notes matching [query], ranked by relevance; null while no query is active. */
+    val searchResults: List<Note>? = null,
+    val pendingExportIds: List<String>? = null,
+    val isExporting: Boolean = false,
+    val exportedCount: Int? = null,
+    val exportError: String? = null,
 ) {
     val isSelecting: Boolean get() = selectedIds.isNotEmpty()
-    val allSelected: Boolean get() = notes.isNotEmpty() && notes.all { it.id in selectedIds }
-    val canInteract: Boolean get() = !isLoading && !isDeleting && !isMoving && error == null
+    val canInteract: Boolean get() = !isLoading && !isDeleting && !isMoving && !isExporting && error == null
     val canChangeSelection: Boolean get() = canInteract && pendingDeletionIds.isEmpty()
 
-    /** Notes grouped into the three fixed Zettelkasten sections, in their canonical display order. */
+    /** The category filter only applies while the Zettelkasten method is enabled. */
+    val activeCategoryFilter: Set<ZettelkastenCategory>
+        get() = if (zettelkastenEnabled) categoryFilter else emptySet()
+    val isFiltering: Boolean get() = query.isNotBlank() || activeCategoryFilter.isNotEmpty()
+
+    /** Notes shown in the list after search ranking and the Zettelkasten category filter. */
+    val visibleNotes: List<Note>
+        get() {
+            val base = if (query.isBlank()) notes else searchResults ?: notes
+            val filter = activeCategoryFilter
+            return if (filter.isEmpty()) base else base.filter { it.zettelkastenCategory in filter }
+        }
+    val allSelected: Boolean get() = visibleNotes.let { visible -> visible.isNotEmpty() && visible.all { it.id in selectedIds } }
+
+    /** Visible notes grouped into the Zettelkasten sections, in canonical order, omitting filtered-out categories. */
     val zettelkastenSections: List<Pair<ZettelkastenCategory, List<Note>>>
-        get() = ZettelkastenCategory.entries.map { category -> category to notes.filter { it.zettelkastenCategory == category } }
+        get() {
+            val visible = visibleNotes
+            val filter = activeCategoryFilter
+            return ZettelkastenCategory.entries
+                .filter { filter.isEmpty() || it in filter }
+                .map { category -> category to visible.filter { it.zettelkastenCategory == category } }
+        }
+
+    fun categoryCount(category: ZettelkastenCategory): Int =
+        (if (query.isBlank()) notes else searchResults ?: notes).count { it.zettelkastenCategory == category }
 }
 
 sealed interface NotesListError {
@@ -42,21 +81,36 @@ sealed interface NotesListError {
     data object Interrupted : NotesListError
 }
 
+/** A user-chosen export destination, such as a Storage Access Framework document. */
+interface VaultExportTarget {
+    fun open(): OutputStream
+
+    /** Removes a partially written destination after a failed or cancelled export. */
+    fun discard()
+}
+
 class NotesListViewModel(
     private val noteRepository: NoteRepository,
     private val settingsStore: SettingsStore? = null,
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val clock: Clock = Clock.System,
 ) : ViewModel() {
+    companion object {
+        const val SEARCH_DEBOUNCE_MS = 150L
+    }
 
     private val _uiState = MutableStateFlow(NotesListUiState())
     val uiState: StateFlow<NotesListUiState> = _uiState.asStateFlow()
     private var operation: Job? = null
+    private var searchJob: Job? = null
 
     init {
         refresh()
         settingsStore?.let { store ->
             viewModelScope.launch {
                 store.zettelkastenEnabled.collect { enabled ->
-                    _uiState.update { it.copy(zettelkastenEnabled = enabled) }
+                    _uiState.update { it.copy(zettelkastenEnabled = enabled).pruned() }
                 }
             }
         }
@@ -82,13 +136,13 @@ class NotesListViewModel(
 
     fun select(id: String) {
         val state = _uiState.value
-        if (!state.canChangeSelection || state.notes.none { it.id == id }) return
+        if (!state.canChangeSelection || state.visibleNotes.none { it.id == id }) return
         _uiState.update { it.copy(selectedIds = it.selectedIds + id) }
     }
 
     fun toggleSelection(id: String) {
         val state = _uiState.value
-        if (!state.canChangeSelection || state.notes.none { it.id == id }) return
+        if (!state.canChangeSelection || state.visibleNotes.none { it.id == id }) return
         _uiState.update {
             it.copy(selectedIds = if (id in it.selectedIds) it.selectedIds - id else it.selectedIds + id)
         }
@@ -98,7 +152,7 @@ class NotesListViewModel(
         val state = _uiState.value
         if (!state.canChangeSelection) return
         _uiState.update {
-            it.copy(selectedIds = if (it.allSelected) emptySet() else it.notes.mapTo(mutableSetOf()) { note -> note.id })
+            it.copy(selectedIds = if (it.allSelected) emptySet() else it.visibleNotes.mapTo(mutableSetOf()) { note -> note.id })
         }
     }
 
@@ -195,13 +249,122 @@ class NotesListViewModel(
         _uiState.update { it.copy(moveError = null) }
     }
 
+    fun onQueryChange(query: String) {
+        _uiState.update { it.copy(query = query) }
+        scheduleSearch(debounce = true)
+    }
+
+    fun toggleCategoryFilter(category: ZettelkastenCategory) {
+        _uiState.update {
+            it.copy(categoryFilter = if (category in it.categoryFilter) it.categoryFilter - category else it.categoryFilter + category).pruned()
+        }
+    }
+
+    fun clearFilters() {
+        _uiState.update { it.copy(query = "", categoryFilter = emptySet()) }
+        scheduleSearch(debounce = false)
+    }
+
+    /**
+     * Snapshots the notes to export before the destination picker opens: the visible selection
+     * when [selectedOnly], otherwise the whole library. Returns false when there is nothing to export.
+     */
+    fun prepareVaultExport(selectedOnly: Boolean): Boolean {
+        val state = _uiState.value
+        if (!state.canInteract || state.pendingDeletionIds.isNotEmpty()) return false
+        val ids = if (selectedOnly) {
+            state.notes.filter { it.id in state.selectedIds }.map { it.id }
+        } else {
+            state.notes.map { it.id }
+        }
+        if (ids.isEmpty()) return false
+        _uiState.update { it.copy(pendingExportIds = ids) }
+        return true
+    }
+
+    fun cancelVaultExport() {
+        _uiState.update { it.copy(pendingExportIds = null) }
+    }
+
+    fun exportVault(target: VaultExportTarget) {
+        val state = _uiState.value
+        val ids = state.pendingExportIds ?: return
+        if (!state.canInteract) {
+            cancelVaultExport()
+            runCatching { target.discard() }
+            return
+        }
+        val wanted = ids.toSet()
+        val notes = state.notes.filter { it.id in wanted }
+        val options = VaultOptions(groupByCategory = state.zettelkastenEnabled, exportedAt = clock.now())
+        _uiState.update { it.copy(pendingExportIds = null, isExporting = true, exportError = null, exportedCount = null) }
+        operation = viewModelScope.launch {
+            try {
+                val summary = withContext(ioDispatcher) {
+                    target.open().use { output ->
+                        MarkdownVaultArchive.write(notes, options, output) { note ->
+                            noteRepository.readSourceImage(note).getOrThrow()
+                        }
+                    }
+                }
+                _uiState.update { it.copy(exportedCount = summary.notes) }
+            } catch (cancelled: CancellationException) {
+                runCatching { target.discard() }
+                throw cancelled
+            } catch (error: Exception) {
+                runCatching { target.discard() }
+                _uiState.update { it.copy(exportError = error.description()) }
+            } finally {
+                _uiState.update { it.copy(isExporting = false) }
+            }
+        }
+    }
+
+    fun dismissExportError() {
+        _uiState.update { it.copy(exportError = null) }
+    }
+
+    fun onExportResultShown() {
+        _uiState.update { it.copy(exportedCount = null) }
+    }
+
+    private fun scheduleSearch(debounce: Boolean) {
+        searchJob?.cancel()
+        val snapshot = _uiState.value
+        val query = snapshot.query
+        if (query.isBlank()) {
+            _uiState.update { it.copy(searchResults = null).pruned() }
+            return
+        }
+        searchJob = viewModelScope.launch {
+            if (debounce) delay(SEARCH_DEBOUNCE_MS)
+            val results = withContext(computeDispatcher) { NoteSearch.rank(snapshot.notes, query) }
+            _uiState.update {
+                if (it.query == query && it.notes === snapshot.notes) it.copy(searchResults = results).pruned() else it
+            }
+        }
+    }
+
+    /** Hidden notes are deselected so bulk actions never affect notes the user cannot see. */
+    private fun NotesListUiState.pruned(): NotesListUiState {
+        if (selectedIds.isEmpty()) return this
+        val visible = visibleNotes.mapTo(mutableSetOf()) { it.id }
+        return copy(selectedIds = selectedIds.intersect(visible))
+    }
+
     private suspend fun loadNotes() {
         noteRepository.list().fold(
             onSuccess = { notes ->
                 val ids = notes.mapTo(mutableSetOf()) { it.id }
                 _uiState.update {
-                    it.copy(notes = notes, selectedIds = it.selectedIds.intersect(ids), error = null)
+                    it.copy(
+                        notes = notes,
+                        searchResults = it.searchResults?.filter { note -> note.id in ids },
+                        selectedIds = it.selectedIds.intersect(ids),
+                        error = null,
+                    ).pruned()
                 }
+                if (_uiState.value.query.isNotBlank()) scheduleSearch(debounce = false)
             },
             onFailure = { error ->
                 _uiState.update { it.copy(error = NotesListError.Storage(error.description())) }

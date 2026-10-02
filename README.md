@@ -25,6 +25,31 @@ Shared source images remain until their last note is deleted. If deletion fails,
 the app stops and keeps remaining notes selected after refreshing; review the
 selection before trying again. If refresh fails, use **Retry** first.
 
+## Searching and filtering notes
+
+Tap the search icon in the notes list to search note text, tags and ink colour
+names. The search is fuzzy: it ignores case and accents and tolerates small
+recognition typos. Every word you type must match. While a search is active,
+results are ranked by relevance; clear the search to return to date order. When
+Zettelkasten organisation is enabled, use the Fleeting, Literature and Permanent
+chips to show only those types. With no chip selected, every type is shown.
+**Select all** and other selection actions apply only to the notes that are
+visible.
+
+## Exporting to Obsidian
+
+Choose **Export all to Markdown vault** from the notes list's overflow menu. To
+export only some notes, select them and choose **Share selected → Markdown vault
+(Obsidian)**. Pick where to save the `.zip`, then unzip it and open the folder
+as an Obsidian vault. Logseq, Zettlr, Foam and other Markdown tools can open it too.
+Each note becomes a Markdown file with YAML front matter: creation time, type,
+tags, ink colour and recognition details. Each file embeds its source image
+from `attachments/`, and links between notes become `[[wikilinks]]`.
+`FPInk index.md` lists every exported note. When Zettelkasten organisation is
+enabled, notes go into `Fleeting/`, `Literature/` and `Permanent/` folders and
+are tagged `zettelkasten/<type>`. The export stays on the device; FPInk only
+writes to the location you pick.
+
 ## Build and releases
 
 Use JDK 17, Android SDK 37, NDK `28.2.13676358`, and CMake `3.22.1`.
