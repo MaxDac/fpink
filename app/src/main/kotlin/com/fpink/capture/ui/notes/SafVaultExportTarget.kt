@@ -16,9 +16,7 @@ class SafVaultExportTarget(
     override fun open(): OutputStream =
         contentResolver.openOutputStream(uri, "wt") ?: throw IOException("The export destination could not be opened")
 
-    override fun discard() {
-        DocumentsContract.deleteDocument(contentResolver, uri)
-    }
+    override fun discard(): Boolean = DocumentsContract.deleteDocument(contentResolver, uri)
 
     companion object {
         private val FILE_STAMP: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmm")

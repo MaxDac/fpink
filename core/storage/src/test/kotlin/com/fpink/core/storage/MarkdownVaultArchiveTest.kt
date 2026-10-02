@@ -31,7 +31,7 @@ class MarkdownVaultArchiveTest {
         val notes = repository.list().getOrThrow()
 
         val output = ByteArrayOutputStream()
-        val summary = MarkdownVaultArchive.write(notes, options, output) { repository.readSourceImage(it).getOrThrow() }
+        val summary = repository.readSourceImages { read -> MarkdownVaultArchive.write(notes, options, output, read) }.getOrThrow()
 
         val entries = unzip(output.toByteArray())
         assertEquals(3, summary.notes)
@@ -51,9 +51,35 @@ class MarkdownVaultArchiveTest {
         val repository = NoteRepository(InMemoryFileStore())
         val note = note("gone", "Gone")
         repository.save(note).getOrThrow()
-        assertNull(repository.readSourceImage(note).getOrThrow())
+        assertNull(repository.readSourceImages { it(note) }.getOrThrow())
         repository.delete("gone").getOrThrow()
-        assertTrue(repository.readSourceImage(note).isFailure)
+        assertTrue(repository.readSourceImages { it(note) }.isFailure)
+    }
+
+    @Test
+    fun `exporting many sources reads each batch manifest a bounded number of times`() = runTest {
+        val store = InMemoryFileStore()
+        val repository = NoteRepository(store)
+        val sources = 30
+        repeat(sources) { index ->
+            val paragraph = note("src$index-0", "Paragraph $index")
+                .copy(imagePath = "images/src$index.png", sourceId = "src$index", paragraphIndex = 0)
+            repository.saveBatch("src$index", byteArrayOf(index.toByte()), "png", listOf(paragraph)).getOrThrow()
+        }
+        val notes = repository.list().getOrThrow()
+        val manifestReads = mutableListOf<String>()
+        store.fail = { operation, path ->
+            if (operation == "read" && path.startsWith("batches/")) manifestReads += path
+            false
+        }
+
+        val summary = repository.readSourceImages { read ->
+            MarkdownVaultArchive.write(notes, options, ByteArrayOutputStream(), read)
+        }.getOrThrow()
+
+        assertEquals(sources, summary.attachments)
+        // One recovery pass plus one read per exported source, not one recovery pass per image.
+        assertTrue(manifestReads.size <= 2 * sources) { "${manifestReads.size} manifest reads" }
     }
 
     private fun unzip(bytes: ByteArray): Map<String, ByteArray> {

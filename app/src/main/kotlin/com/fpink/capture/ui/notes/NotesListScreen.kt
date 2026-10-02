@@ -411,7 +411,13 @@ fun NotesListScreen(
                 }
                 state.exportError?.let { error ->
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        Text(stringResource(R.string.notes_export_error, error), color = MaterialTheme.colorScheme.error)
+                        val message = when {
+                            error.reason == null && error.partialFileRemains -> stringResource(R.string.notes_export_interrupted_partial)
+                            error.reason == null -> stringResource(R.string.notes_export_interrupted)
+                            error.partialFileRemains -> stringResource(R.string.notes_export_error_partial, error.reason)
+                            else -> stringResource(R.string.notes_export_error, error.reason)
+                        }
+                        Text(message, color = MaterialTheme.colorScheme.error)
                         TextButton(onClick = viewModel::dismissExportError) { Text(stringResource(R.string.dismiss)) }
                     }
                 }

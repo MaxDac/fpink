@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
@@ -43,7 +44,7 @@ data class NotesListUiState(
     val pendingExportIds: List<String>? = null,
     val isExporting: Boolean = false,
     val exportedCount: Int? = null,
-    val exportError: String? = null,
+    val exportError: VaultExportError? = null,
 ) {
     val isSelecting: Boolean get() = selectedIds.isNotEmpty()
     val canInteract: Boolean get() = !isLoading && !isDeleting && !isMoving && !isExporting && error == null
@@ -86,9 +87,19 @@ sealed interface NotesListError {
 interface VaultExportTarget {
     fun open(): OutputStream
 
-    /** Removes a partially written destination after a failed or cancelled export. */
-    fun discard()
+    /**
+     * Removes a partially written destination after a failed or cancelled export.
+     * Returns false when the destination could not be removed.
+     */
+    fun discard(): Boolean
 }
+
+/**
+ * A failed export. [reason] is null when a destination arrived with no export pending, for example
+ * after the process was recreated while the picker was open. [partialFileRemains] is true when the
+ * destination could not be removed.
+ */
+data class VaultExportError(val reason: String?, val partialFileRemains: Boolean)
 
 class NotesListViewModel(
     private val noteRepository: NoteRepository,
@@ -292,11 +303,18 @@ class NotesListViewModel(
     }
 
     fun exportVault(target: VaultExportTarget) {
+        val attempt = ++exportAttempt
         val state = _uiState.value
-        val ids = state.pendingExportIds ?: return
-        if (!state.canInteract) {
+        val ids = state.pendingExportIds
+        if (ids == null || !state.canInteract) {
             cancelVaultExport()
-            runCatching { target.discard() }
+            viewModelScope.launch {
+                val removed = discard(target)
+                // A later export owns the result once it has started.
+                if (attempt == exportAttempt) {
+                    _uiState.update { it.copy(exportError = VaultExportError(reason = null, partialFileRemains = !removed)) }
+                }
+            }
             return
         }
         val wanted = ids.toSet()
@@ -307,23 +325,28 @@ class NotesListViewModel(
             try {
                 val summary = withContext(ioDispatcher) {
                     target.open().use { output ->
-                        MarkdownVaultArchive.write(notes, options, output) { note ->
-                            noteRepository.readSourceImage(note).getOrThrow()
-                        }
+                        noteRepository.readSourceImages { readImage ->
+                            MarkdownVaultArchive.write(notes, options, output, readImage)
+                        }.getOrThrow()
                     }
                 }
                 _uiState.update { it.copy(exportedCount = summary.notes) }
             } catch (cancelled: CancellationException) {
-                runCatching { target.discard() }
+                discard(target)
                 throw cancelled
             } catch (error: Exception) {
-                runCatching { target.discard() }
-                _uiState.update { it.copy(exportError = error.description()) }
+                val removed = discard(target)
+                _uiState.update { it.copy(exportError = VaultExportError(error.description(), partialFileRemains = !removed)) }
             } finally {
                 _uiState.update { it.copy(isExporting = false) }
             }
         }
     }
+
+    private var exportAttempt = 0
+
+    private suspend fun discard(target: VaultExportTarget): Boolean =
+        withContext(NonCancellable + ioDispatcher) { runCatching { target.discard() }.getOrDefault(false) }
 
     fun dismissExportError() {
         _uiState.update { it.copy(exportError = null) }

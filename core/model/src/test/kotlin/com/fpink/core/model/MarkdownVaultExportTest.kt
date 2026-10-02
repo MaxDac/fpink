@@ -99,6 +99,13 @@ class MarkdownVaultExportTest {
     }
 
     @Test
+    fun `shortening a title never splits a surrogate pair`() {
+        val title = MarkdownVaultExport.title(note("a", "x".repeat(59) + "\uD83D\uDE00tail"))
+        assertEquals("x".repeat(59), title)
+        assertFalse(title.any { it.isSurrogate() })
+    }
+
+    @Test
     fun `yaml strings escape control characters`() {
         assertEquals("\"a\\nb\\t\\\\\\\"\\u0001\"", MarkdownVaultExport.yamlString("a\nb\t\\\"\u0001"))
     }

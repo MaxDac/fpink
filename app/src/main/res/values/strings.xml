@@ -60,6 +60,9 @@
     <string name="export_all_notes_markdown_vault">Export all to Markdown vault</string>
     <string name="exporting_notes">Exporting notes…</string>
     <string name="notes_export_error">Export failed: %1$s. No file was kept; try again.</string>
+    <string name="notes_export_error_partial">Export failed: %1$s. A partial file may remain at the chosen location; delete it and try again.</string>
+    <string name="notes_export_interrupted">The export was interrupted. No file was kept; try again.</string>
+    <string name="notes_export_interrupted_partial">The export was interrupted. An empty file may remain at the chosen location; delete it and try again.</string>
     <string name="notes_export_picker_unavailable">No app is available to save the export.</string>
     <string name="delete_selected_notes">Delete selected</string>
     <string name="zettelkasten_move_selected_notes">Move to Zettelkasten category</string>

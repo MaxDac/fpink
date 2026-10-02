@@ -205,12 +205,18 @@ Markdown documents:
 
 `MarkdownVaultArchive` (`core:storage`) streams the vault as a zip:
 
-- Each distinct source image is written once, via `NoteRepository.readSourceImage`.
+- Each distinct source image is written once, read through
+  `NoteRepository.readSourceImages`, which holds the repository lock and runs
+  recovery once for the whole export.
 - Embeds are emitted only for images actually written.
 
 The app writes the archive into a Storage Access Framework `CreateDocument`
-destination (`SafVaultExportTarget`) and deletes that document if the export
-fails or is cancelled. No permissions, network access or `FileProvider` are needed.
+destination (`SafVaultExportTarget`). If the export fails or is cancelled, the
+app tries to delete that document, off the main thread. When the provider cannot
+delete it, the error says a partial file may remain. A destination that arrives
+with no export pending, for example after process death while the picker was
+open, is deleted the same way and reported as interrupted. No permissions,
+network access or `FileProvider` are needed.
 
 ## Input, lifecycle and settings
 

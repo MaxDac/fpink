@@ -66,7 +66,11 @@ object MarkdownVaultExport {
         val firstLine = note.text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
         val words = firstLine.replace(FORBIDDEN_FILENAME_CHARS, " ").trim().split(WHITESPACE).filter { it.isNotEmpty() }
         var title = words.take(TITLE_WORDS).joinToString(" ")
-        if (title.length > MAX_TITLE_LENGTH) title = title.take(MAX_TITLE_LENGTH)
+        if (title.length > MAX_TITLE_LENGTH) {
+            // Never split a surrogate pair: a lone surrogate cannot be encoded in a file name.
+            val end = if (title[MAX_TITLE_LENGTH - 1].isHighSurrogate()) MAX_TITLE_LENGTH - 1 else MAX_TITLE_LENGTH
+            title = title.take(end)
+        }
         title = title.trimStart('.', ' ').trimEnd('.', ' ')
         return title.ifEmpty { "Untitled" }
     }
