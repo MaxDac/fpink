@@ -184,12 +184,15 @@ in-memory fuzzy scorer:
   string alignment distance (0, 1 or 2 edits by token length) > subsequence.
 - All tokens must match. Tags and ink-colour names are weighted lower.
 - Ties keep date order.
+- With Zettelkasten enabled, the ranked list is still grouped into the fixed
+  Fleeting, Literature and Permanent sections, so ranking holds within each one.
 
 `NotesListViewModel` debounces the query, ranks on a background dispatcher, and
 discards results whose query or note list has since changed. The Zettelkasten
 category filter applies only while the feature is enabled. Selections are pruned
-to the visible notes whenever the query, filter or setting changes, so bulk
-actions never touch hidden notes.
+to the visible notes whenever the query, filter or setting changes, and a pending
+deletion that would touch a newly hidden note is cancelled, so bulk actions never
+touch hidden notes.
 
 ## Input, lifecycle and settings
 

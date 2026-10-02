@@ -264,21 +264,28 @@ class NotesListViewModel(
         }
     }
 
-    /** Hidden notes are deselected so bulk actions never affect notes the user cannot see. */
+    /**
+     * Hidden notes are deselected so bulk actions never affect notes the user cannot see. A pending
+     * deletion that would touch a hidden note is cancelled rather than narrowed, so the user always
+     * confirms exactly what will be deleted.
+     */
     private fun NotesListUiState.pruned(): NotesListUiState {
-        if (selectedIds.isEmpty()) return this
+        if (selectedIds.isEmpty() && pendingDeletionIds.isEmpty()) return this
         val visible = visibleNotes.mapTo(mutableSetOf()) { it.id }
-        return copy(selectedIds = selectedIds.intersect(visible))
+        val pending = if (pendingDeletionIds.all { it in visible }) pendingDeletionIds else emptyList()
+        return copy(selectedIds = selectedIds.intersect(visible), pendingDeletionIds = pending)
     }
 
     private suspend fun loadNotes() {
         noteRepository.list().fold(
             onSuccess = { notes ->
                 val ids = notes.mapTo(mutableSetOf()) { it.id }
+                val byId = notes.associateBy { it.id }
                 _uiState.update {
                     it.copy(
                         notes = notes,
-                        searchResults = it.searchResults?.filter { note -> note.id in ids },
+                        // Keep the current ranking but show fresh note contents until the re-rank lands.
+                        searchResults = it.searchResults?.mapNotNull { note -> byId[note.id] },
                         selectedIds = it.selectedIds.intersect(ids),
                         error = null,
                     ).pruned()

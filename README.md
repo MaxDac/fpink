@@ -30,7 +30,8 @@ selection before trying again. If refresh fails, use **Retry** first.
 Tap the search icon in the notes list to search note text, tags and ink colour
 names. The search is fuzzy: it ignores case and accents and tolerates small
 recognition typos. Every word you type must match. While a search is active,
-results are ranked by relevance; clear the search to return to date order. When
+results are ranked by relevance (within each type section when Zettelkasten
+organisation is enabled); clear the search to return to date order. When
 Zettelkasten organisation is enabled, use the Fleeting, Literature and Permanent
 chips to show only those types. With no chip selected, every type is shown.
 **Select all** and other selection actions apply only to the notes that are
