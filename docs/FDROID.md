@@ -126,7 +126,11 @@ release must be pushed to the MR, so testers get the version we actually ship.
 `CurrentVersion`/`CurrentVersionCode` for a release tag. It doesn't append a
 new block, so the MR always covers one version. It reads `version.properties`
 at the tag and rejects a mismatched tag, an empty changelog, or a versionCode
-that doesn't supersede the current one.
+that doesn't supersede the current one. With `--commit-style sha` (the fork), it
+first replaces the fork's whole build entry with the mirror's entry at the tag,
+so build steps such as `sudo`, `rm`, `prebuild` or `ndk` follow the source tree
+instead of lingering after the code that needed them is gone. Change build steps
+in the mirror, not in the fork.
 
 ### Automatic: the Release workflow
 
