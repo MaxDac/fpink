@@ -95,6 +95,41 @@ class BumpTextTests(unittest.TestCase):
             bumper.bump(doubled, "0.1.0-preview.9", 9, SHA)
 
 
+def stale_fork(text=MIRROR):
+    # A fork recipe that kept build steps the mirror has since dropped.
+    return text.replace(
+        "      - foss\n",
+        "      - foss\n    rm:\n      - recognition/paddle/native/lib.so\n"
+        "    build: bash ../build.sh\n      build\n    ndk: 28.2.13676358\n",
+        1,
+    )
+
+
+class SyncBuildTests(unittest.TestCase):
+    def test_replaces_stale_build_entry_with_mirror(self):
+        self.assertEqual(bumper.sync_build(stale_fork(), MIRROR), MIRROR)
+
+    def test_keeps_recipe_version_fields(self):
+        # The mirror at a tag still names the previous release (it is bumped after tagging).
+        fork = bumper.bump(stale_fork(), "0.1.0-preview.9", 9, SHA)
+        synced = bumper.sync_build(fork, MIRROR)
+        self.assertEqual(synced, bumper.bump(MIRROR, "0.1.0-preview.9", 9, SHA))
+        self.assertEqual(bumper.bump(synced, "0.1.0-preview.9", 9, SHA), synced)
+
+    def test_preserves_fork_crlf(self):
+        fork = stale_fork().replace("\n", "\r\n")
+        self.assertEqual(bumper.sync_build(fork, MIRROR), MIRROR.replace("\n", "\r\n"))
+
+    def test_rejects_multiple_entries(self):
+        start = MIRROR.index("  - versionName:")
+        end = MIRROR.index("\nAllowedAPKSigningKeys")
+        doubled = MIRROR[:end] + "\n" + MIRROR[start:end] + MIRROR[end:]
+        with self.assertRaisesRegex(bumper.BumpError, "mirror: expected exactly one build entry"):
+            bumper.sync_build(MIRROR, doubled)
+        with self.assertRaisesRegex(bumper.BumpError, "recipe: expected exactly one build entry"):
+            bumper.sync_build(doubled, MIRROR)
+
+
 class ResolveReleaseTests(unittest.TestCase):
     def setUp(self):
         self.root = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -114,6 +149,9 @@ class ResolveReleaseTests(unittest.TestCase):
         log = self.root / bumper.CHANGELOG.format(code=code)
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text(changelog, encoding="utf-8")
+        mirror = self.root / bumper.MIRROR_PATH
+        mirror.parent.mkdir(parents=True, exist_ok=True)
+        mirror.write_text(MIRROR, encoding="utf-8")
         self.git("add", "-A")
         self.git("commit", "-qm", name)
         self.git("tag", "-a", f"v{name}", "-m", name)
@@ -161,13 +199,22 @@ class ResolveReleaseTests(unittest.TestCase):
     def test_main_rewrites_fork_recipe_with_sha(self):
         sha = self.release("0.1.0-preview.9", 9)
         recipe = self.root / "recipe.yml"
-        recipe.write_bytes(MIRROR.encode("utf-8"))
+        recipe.write_bytes(stale_fork().encode("utf-8"))
         status = bumper.main(
             ["--tag", "v0.1.0-preview.9", "--metadata", str(recipe),
              "--commit-style", "sha", "--source", str(self.root)]
         )
         self.assertEqual(status, 0)
-        self.assertEqual(build_fields(recipe.read_text(encoding="utf-8"))["commit"], sha)
+        text = recipe.read_text(encoding="utf-8")
+        self.assertEqual(build_fields(text)["commit"], sha)
+        self.assertEqual(text, bumper.bump(MIRROR, "0.1.0-preview.9", 9, sha))
+
+    def test_main_tag_style_keeps_build_steps(self):
+        self.release("0.1.0-preview.9", 9)
+        recipe = self.root / "recipe.yml"
+        recipe.write_bytes(stale_fork().encode("utf-8"))
+        bumper.main(["--tag", "v0.1.0-preview.9", "--metadata", str(recipe), "--source", str(self.root)])
+        self.assertIn("    rm:\n", recipe.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
