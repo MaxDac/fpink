@@ -23,11 +23,12 @@
       "tools/ci_build"
     ],
     "remove": [
+      "cmake/external/git.Win32.2.41.03.patch",
       "onnxruntime/test",
       "onnxruntime/python",
       "onnxruntime/wasm"
     ],
-    "note": "Everything outside 'keep' (tests, test models, other language bindings, the Java Gradle wrapper and the telemetry-only java/src/main/android-telemetry) is deleted before the source scan; none of it is used by this build."
+    "note": "Everything outside 'keep' (tests, test models, other language bindings, the Java Gradle wrapper and the telemetry-only java/src/main/android-telemetry) is deleted before the source scan; none of it is used by this build. 'remove' prunes inside kept directories, including the Windows patch.exe and msys DLLs that CMake uses only on Windows."
   },
   "dependencies": {
     "note": "Fetched in the fetch phase from the URLs pinned in cmake/deps.txt of source.commit, verified against these SHA-1s (the same ones deps.txt pins), and served to CMake through onnxruntime_CMAKE_DEPS_MIRROR_DIR so the build phase downloads nothing. The mirror lives outside the source tree (FPINK_ORT_DEPS_DIR, default ~/.cache/fpink/onnxruntime-deps). Telemetry-only dependencies (cpp_client_telemetry, curl, mbedtls) are not fetched.",
