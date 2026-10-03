@@ -268,13 +268,17 @@ def main(argv=None) -> int:
         env = build_environment(base, ndk, epoch)
 
         write_local_properties(build_dir, recipe["subdir"], ndk)
+        # common.prepare_source: rm entries are globs, and any that match nothing fail the build.
+        unmatched = [path for path in recipe["rm"] if not list(build_dir.glob(path))]
+        if unmatched:
+            raise RbBuildError("Some glob paths did not match any files/dirs: " + ", ".join(unmatched))
         for path in recipe["rm"]:
-            target = build_dir / path
-            log(f"Removing {path}")
-            if target.is_dir() and not target.is_symlink():
-                shutil.rmtree(target)
-            elif target.exists() or target.is_symlink():
-                target.unlink()
+            for target in sorted(build_dir.glob(path)):
+                log(f"Removing {target.relative_to(build_dir)}")
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                elif target.exists() or target.is_symlink():
+                    target.unlink()
         bash = ["bash", "-e", "-u", "-o", "pipefail", "-x", "-c"]
         if recipe["prebuild"]:
             command = substitute("; ".join(recipe["prebuild"]), ndk, commit, version_name, version_code)

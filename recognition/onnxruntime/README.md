@@ -65,12 +65,13 @@ for the host `protoc`. The stripped `libonnxruntime.so` is about 19 MB.
 Host tools: bash, git, python3, curl, CMake 3.28 or newer, Ninja, patch, a host
 C++ compiler and a JDK (`javac`, for the JNI headers).
 
-The output is reproducible only for the same build path, toolchain and
-`SOURCE_DATE_EPOCH`. The script sets `SOURCE_DATE_EPOCH` to the ONNX Runtime
-commit time. The pinned hashes come from the Reproducibility workflow, which
-builds in F-Droid's `buildserver-trixie` image at F-Droid's build path. To
-update them, copy the hashes from that workflow's `fdroid build` log into
-`build.expectedSha256`, then commit the files it built.
+The output depends on the NDK, the ONNX Runtime sources and
+`SOURCE_DATE_EPOCH`, which the script sets to the ONNX Runtime commit time.
+Build paths are mapped away, so a build in F-Droid's `buildserver-trixie` image
+at `/home/vagrant/build/com.fpink.capture` matched a local WSL build in another
+directory byte for byte. The pinned hashes come from the Reproducibility
+workflow. To update them, copy `onnxruntime/SHA256SUMS` from its `rb-*`
+artifacts into `build.expectedSha256`, then commit the files it built.
 
 Gradle properties:
 
