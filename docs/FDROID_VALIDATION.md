@@ -7,9 +7,10 @@ clean Linux environment. It does not create or submit fdroiddata changes.
 
 Run this procedure only after:
 
-1. **#27** has an F-Droid-acceptable OCR runtime path. Recognition uses the
-   `com.microsoft.onnxruntime:onnxruntime-android` AAR from Maven Central; an
-   F-Droid maintainer must confirm that dependency is acceptable.
+1. **#27** has an F-Droid-acceptable OCR runtime path (done: release builds
+   use ONNX Runtime built from source by
+   `recognition/onnxruntime/scripts/build-runtime.sh`, see
+   `recognition/onnxruntime/README.md`).
 2. **#28** has resolved model, dictionary, and license provenance (done:
    `recognition/models/artifacts.lock.json` and `recognition/models/README.md`).
 3. **#31** has produced finalized metadata for an immutable release commit.
@@ -135,8 +136,11 @@ entry/hash report. The APK must satisfy all of the following:
   `ai.onnxruntime.TelemetryInitializer` (`:app:verifyFossReleaseOfflineManifest`,
   part of `check`, enforces this on the merged manifest). `CAMERA` and
   AndroidX's signature-level `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` remain.
-- Its dex carries an R8 marker (`~~R8{...}`), and it packages ONNX Runtime's
-  `lib/arm64-v8a/libonnxruntime.so` and `libonnxruntime4j_jni.so`.
+- Its dex carries an R8 marker (`~~R8{...}`), and it packages the
+  source-built ONNX Runtime: `lib/arm64-v8a/libonnxruntime.so`,
+  `libonnxruntime4j_jni.so` and `assets/onnxruntime/` notices. No dex or
+  native library mentions `ai/onnxruntime/telemetry` or
+  `events.data.microsoft.com` (`:app:verifyFossReleaseRecognitionPackage`).
 - It contains the three models (PP-OCRv6 small detector, PP-OCRv6 medium
   recognizer, Kraken recognizer), both dictionaries, notices, and license texts,
   byte-identical to `recognition/models/artifacts.lock.json`.
@@ -209,7 +213,7 @@ attaches reports) and look at the first differing entry:
 
 | Differing entry | Usual cause | Fix |
 | --- | --- | --- |
-| `lib/arm64-v8a/libonnxruntime*.so` | Different ONNX Runtime AAR or AGP stripping behaviour | Check the resolved `onnxruntime-android` version in `gradle/libs.versions.toml` |
+| `lib/arm64-v8a/libonnxruntime*.so` | The source-built ONNX Runtime differs (toolchain, build path, `SOURCE_DATE_EPOCH`) | `:recognition:onnxruntime:verifyOrtRuntime` names the file; compare the replay's `onnxruntime/SHA256SUMS` with `build.expectedSha256` in `recognition/onnxruntime/source-runtime.lock.json` |
 | `classes*.dex` | R8 nondeterminism or a different JDK/AGP | Same image and JDK; check keep rules |
 | `assets/dexopt/baseline.prof*` | Profile ordering | Compare with a rebuild on the same side first |
 | `META-INF/version-control-info.textproto` or dependency metadata | Checkout state, `dependenciesInfo` | Build a clean checkout; `dependenciesInfo` is disabled |

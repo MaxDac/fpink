@@ -1,0 +1,124 @@
+{
+  "schema": 1,
+  "source": {
+    "repository": "https://github.com/microsoft/onnxruntime.git",
+    "tag": "v1.30.0",
+    "commit": "f2c39fe2f838cf35ce7da92824f5a5e3ee6e88a7",
+    "license": "MIT"
+  },
+  "preparation": {
+    "keep": [
+      "LICENSE",
+      "ThirdPartyNotices.txt",
+      "VERSION_NUMBER",
+      "cmake",
+      "include",
+      "onnxruntime",
+      "java/src/main/android",
+      "java/src/main/java",
+      "java/src/main/jvm",
+      "java/src/main/native",
+      "model_package",
+      "orttraining/orttraining/training_api/include",
+      "tools/ci_build"
+    ],
+    "remove": [
+      "onnxruntime/test",
+      "onnxruntime/python",
+      "onnxruntime/wasm"
+    ],
+    "note": "Everything outside 'keep' (tests, test models, other language bindings, the Java Gradle wrapper and the telemetry-only java/src/main/android-telemetry) is deleted before the source scan; none of it is used by this build."
+  },
+  "dependencies": {
+    "note": "Fetched in the fetch phase from the URLs pinned in cmake/deps.txt of source.commit, verified against these SHA-1s (the same ones deps.txt pins), and served to CMake through onnxruntime_CMAKE_DEPS_MIRROR_DIR so the build phase downloads nothing. The mirror lives outside the source tree (FPINK_ORT_DEPS_DIR, default ~/.cache/fpink/onnxruntime-deps). Telemetry-only dependencies (cpp_client_telemetry, curl, mbedtls) are not fetched.",
+    "archives": {
+      "abseil_cpp": "a9eb1d648cbca4d4d788737e971a6a7a63726b07",
+      "date": "2dac0c81dc54ebdd8f8d073a75c053b04b56e159",
+      "eigen": "05b19b49e6fbb91246be711d801160528c135e34",
+      "flatbuffers": "59422c3b5e573dd192fead2834d25951f1c1670c",
+      "json": "5e88795165cc8590138d1f47ce94ee567b85b4d6",
+      "kleidiai": "6895e72b3d5cf1173358164cb3d64c9d7d33cc84",
+      "microsoft_gsl": "1094e3bb7a8af763dcb136ccd676e6e75e614eec",
+      "mp11": "9bc9e01dffb64d9e0773b2e44d2f22c51aace063",
+      "onnx": "2b2cd58ac7a26df5371266149e0c76776330cdf1",
+      "protobuf": "051fee744fcca04dab37eb009d49aa3e9546acda",
+      "pytorch_cpuinfo": "6e2be17c110e4f4184b059303c722b3c5bd080a6",
+      "re2": "646e1728269cde7fcef990bf4a8e87b047882e88",
+      "safeint": "23f252040ff6cb9f1fd18575b32fa8fb5928daac"
+    },
+    "hostProtoc": "Built from the 'protobuf' and 'abseil_cpp' archives for the build host, with the protobuf patches ONNX Runtime applies, instead of ONNX Runtime's default download of a prebuilt protoc binary."
+  },
+  "build": {
+    "abi": "arm64-v8a",
+    "androidApi": 26,
+    "ndkRelease": "r28c",
+    "ndkRevision": "28.2.13676358",
+    "cmakeDefines": [
+      "CMAKE_BUILD_TYPE=Release",
+      "ANDROID_ABI=arm64-v8a",
+      "ANDROID_PLATFORM=android-26",
+      "ANDROID_USE_LEGACY_TOOLCHAIN_FILE=false",
+      "onnxruntime_USE_TELEMETRY=OFF",
+      "onnxruntime_BUILD_SHARED_LIB=ON",
+      "onnxruntime_BUILD_UNIT_TESTS=OFF",
+      "onnxruntime_BUILD_BENCHMARKS=OFF",
+      "onnxruntime_BUILD_JAVA=OFF",
+      "onnxruntime_BUILD_CSHARP=OFF",
+      "onnxruntime_BUILD_NODEJS=OFF",
+      "onnxruntime_BUILD_OBJC=OFF",
+      "onnxruntime_ENABLE_PYTHON=OFF",
+      "onnxruntime_RUN_ONNX_TESTS=OFF",
+      "onnxruntime_GENERATE_TEST_REPORTS=OFF",
+      "onnxruntime_USE_VCPKG=OFF",
+      "onnxruntime_USE_MIMALLOC=OFF",
+      "onnxruntime_USE_XNNPACK=OFF",
+      "onnxruntime_USE_NNAPI_BUILTIN=OFF",
+      "onnxruntime_USE_KLEIDIAI=ON",
+      "onnxruntime_USE_SVE=ON",
+      "onnxruntime_ENABLE_LTO=OFF",
+      "onnxruntime_DISABLE_FLOAT8_TYPES=ON",
+      "onnxruntime_DISABLE_FLOAT4_TYPES=ON"
+    ],
+    "outputs": [
+      "native/arm64-v8a/libonnxruntime.so",
+      "native/arm64-v8a/libonnxruntime4j_jni.so"
+    ],
+    "javaSources": {
+      "from": [
+        "java/src/main/java",
+        "java/src/main/android"
+      ],
+      "to": "src/main/java"
+    },
+    "notices": {
+      "from": [
+        "LICENSE",
+        "ThirdPartyNotices.txt"
+      ],
+      "to": "src/main/assets/onnxruntime"
+    },
+    "forbiddenStrings": [
+      "events.data.microsoft.com",
+      "OneCollector",
+      "1DS Java HttpClient"
+    ],
+    "expectedSha256": null,
+    "reproducibility": "expectedSha256 pins the stripped libraries built in registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie at /home/vagrant/build/com.fpink.capture (F-Droid's build path) with SOURCE_DATE_EPOCH set to the pinned ONNX Runtime commit time; null means not pinned yet. -PortRuntimeBuiltFromSource fails on a mismatch unless -PallowUnpinnedOrtRuntime is set.",
+    "networkInputs": [
+      "source.repository@source.commit (git, fetch phase only)",
+      "dependencies.archives (https, fetch phase only, SHA-1 verified)"
+    ],
+    "hostTools": [
+      "bash",
+      "git",
+      "python3",
+      "cmake (>= 3.28)",
+      "ninja",
+      "patch",
+      "c++ (host compiler, for protoc)",
+      "javac (JDK 17, for the JNI headers)",
+      "curl",
+      "sha1sum and sha256sum (coreutils)"
+    ]
+  }
+}

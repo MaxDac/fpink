@@ -62,8 +62,11 @@ ARM64 devices. Both strategies run on ONNX Runtime with bundled, SHA-256-pinned
 models: the official PP-OCRv6 small detector and medium recognizer (Printed),
 and a Kraken PP-OCRv6-medium recognizer (Cursive). The app never downloads or
 substitutes model bytes at runtime. The public
-build requests no network permissions, and ONNX Runtime's bundled telemetry
-initializer is removed from every build. Release builds are shrunk with R8.
+build requests no network permissions. Release builds run on ONNX Runtime
+built from source with telemetry compiled out
+([recognition/onnxruntime](recognition/onnxruntime/README.md)), and ONNX
+Runtime's telemetry initializer is removed from every build. Release builds
+are shrunk with R8.
 
 See [architecture](docs/ARCHITECTURE.md), [bundled recognition models](recognition/models/README.md),
 [recognition strategies](recognition/strategies/README.md),

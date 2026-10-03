@@ -110,6 +110,10 @@ android {
     // Model weights barely compress; storing them keeps the first-run copy out of the APK fast.
     androidResources { noCompress += "onnx" }
 
+    // Release's ONNX Runtime libraries are stripped by recognition/onnxruntime/scripts/build-runtime.sh
+    // with the pinned NDK and pinned by hash; AGP must not strip them again with the host's NDK.
+    packaging { jniLibs { keepDebugSymbols += "**/libonnxruntime*.so" } }
+
     // Reproducible builds: F-Droid compares its rebuild with our signed release. This block is
     // only added when AGP signs (we sign externally), but keep it out explicitly.
     dependenciesInfo {
@@ -217,7 +221,8 @@ androidComponents {
             doLast {
                 val apks = apkDirectory.get().asFile.listFiles()?.filter { it.extension == "apk" }.orEmpty()
                 check(apks.isNotEmpty()) { "No APK found for offline recognition package verification" }
-                val allowedAbis = if (variant.buildType == "debug") setOf("arm64-v8a", "x86_64") else setOf("arm64-v8a")
+                val release = variant.buildType != "debug"
+                val allowedAbis = if (release) setOf("arm64-v8a") else setOf("arm64-v8a", "x86_64")
                 val requiredEntries = listOf(
                     "assets/recognition/NOTICE.txt",
                     "assets/recognition/ppocrv6/PP-OCRv6_small_det.onnx",
@@ -225,13 +230,28 @@ androidComponents {
                     "assets/recognition/ppocrv6/PP-OCRv6_medium_rec_dict.txt",
                     "assets/recognition/kraken/ppocrv6-medium-recognition.onnx",
                     "assets/recognition/kraken/ppocrv6-medium-alphabet.txt",
-                ) + allowedAbis.map { "lib/$it/libonnxruntime.so" }
+                ) + allowedAbis.flatMap { listOf("lib/$it/libonnxruntime.so", "lib/$it/libonnxruntime4j_jni.so") } +
+                    // Release ships ONNX Runtime built from source (recognition/onnxruntime) with its notices.
+                    if (release) listOf("assets/onnxruntime/LICENSE", "assets/onnxruntime/ThirdPartyNotices.txt") else emptyList()
+                // Strings only present in the upstream AAR's 1DS telemetry client.
+                val telemetryMarkers = listOf("ai/onnxruntime/telemetry", "events.data.microsoft.com")
                 apks.forEach { apk ->
                     ZipFile(apk).use { archive ->
                         requiredEntries.forEach { name ->
                             check((archive.getEntry(name)?.size ?: 0L) > 0L) {
                                 "${apk.name} is missing the required offline recognition artifact $name"
                             }
+                        }
+                        if (release) {
+                            archive.entries().asSequence()
+                                .filter { it.name.endsWith(".dex") || it.name.endsWith(".so") }
+                                .forEach { entry ->
+                                    val content = archive.getInputStream(entry).use { it.readBytes() }.toString(Charsets.ISO_8859_1)
+                                    val found = telemetryMarkers.filter { content.contains(it) }
+                                    check(found.isEmpty()) {
+                                        "${apk.name} must ship ONNX Runtime without telemetry, but ${entry.name} contains $found"
+                                    }
+                                }
                         }
                         val unexpectedAbis = archive.entries().asSequence()
                             .map { it.name }

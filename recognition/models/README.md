@@ -2,7 +2,9 @@
 
 On-device models used by the built-in [recognition strategies](../strategies/README.md).
 Each class implements one `:core:ai` model interface and runs through the shared
-ONNX Runtime helpers in `:recognition:runtime`.
+ONNX Runtime helpers in `:recognition:runtime`. Release builds run them on ONNX
+Runtime built from source ([`:recognition:onnxruntime`](../onnxruntime/README.md));
+debug builds use the Maven Central AAR of the same version.
 
 | Class | Interface | Asset | Version string |
 |---|---|---|---|

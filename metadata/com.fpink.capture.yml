@@ -18,8 +18,20 @@ Builds:
     versionCode: 12
     commit: v0.1.0-preview.12
     subdir: app
+    sudo:
+      - apt-get update
+      - apt-get install -y cmake curl g++ git ninja-build patch python3
     gradle:
       - foss
+    rm:
+      - recognition/onnxruntime/native/arm64-v8a/libonnxruntime.so
+      - recognition/onnxruntime/native/arm64-v8a/libonnxruntime4j_jni.so
+    prebuild: bash -x ../recognition/onnxruntime/scripts/build-runtime.sh fetch
+    build: NDK_ROOT=$$NDK$$ bash -x ../recognition/onnxruntime/scripts/build-runtime.sh
+      build
+    ndk: 28.2.13676358
+    gradleprops:
+      - ortRuntimeBuiltFromSource
 
 AllowedAPKSigningKeys: 2058d113771276175856ad9c6d3f24e4f95f54500995d5171a61e73333ab6155
 

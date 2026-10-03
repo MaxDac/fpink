@@ -18,6 +18,7 @@ include(":core:model")
 include(":core:ai")
 include(":core:storage")
 include(":recognition:runtime")
+include(":recognition:onnxruntime")
 include(":recognition:models")
 include(":recognition:strategies")
 
