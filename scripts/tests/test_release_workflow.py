@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 WORKFLOW = (Path(__file__).resolve().parents[2] / ".github" / "workflows" / "release.yml").read_text()
 SCRIPTS = re.findall(r"          python3 -I - <<'PY'\n(.*?)          PY", WORKFLOW, re.DOTALL)
-SIGN, PUBLISH = [compile("\n".join(line.removeprefix("          ") for line in source.splitlines()),
+FIND, SIGN, PUBLISH = [compile("\n".join(line.removeprefix("          ") for line in source.splitlines()),
                          "release.yml", "exec") for source in SCRIPTS]
 CERTIFICATE = "b" * 64
 SHA = "a" * 40
@@ -264,6 +264,82 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "checksum mismatch"):
             self.publish()
         self.assertFalse(any(args[1:3] == ["release", "edit"] for args in self.calls))
+
+
+class VerifiedBuildTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.output = self.root / "output.txt"
+        self.summary = self.root / "summary.txt"
+        environment = patch.dict(os.environ, {
+            "GITHUB_REPOSITORY": "owner/repo", "GITHUB_SHA": SHA,
+            "GITHUB_OUTPUT": str(self.output), "GITHUB_STEP_SUMMARY": str(self.summary),
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.runs = {"reproducibility.yml": [self.workflow_run(1, "reproducibility.yml")], "ci.yml": [self.workflow_run(2, "ci.yml")]}
+        self.artifacts = {1: [{"expired": False}]}
+        self.calls = []
+
+    @staticmethod
+    def workflow_run(run_id, workflow, **overrides):
+        return {"id": run_id, "run_number": run_id, "head_sha": SHA, "head_branch": "main", "event": "push",
+                "path": f".github/workflows/{workflow}", "head_repository": {"full_name": "owner/repo"},
+                "html_url": f"https://example.test/{run_id}", **overrides}
+
+    def github(self, args, **kwargs):
+        self.calls.append(args)
+        endpoint = args[-1]
+        if "/actions/workflows/" in endpoint:
+            return json.dumps({"workflow_runs": self.runs[endpoint.split("/workflows/")[1].split("/")[0]]})
+        run_id = int(endpoint.split("/runs/")[1].split("/")[0])
+        return json.dumps({"artifacts": self.artifacts.get(run_id, [])})
+
+    def find(self):
+        with patch("subprocess.check_output", side_effect=self.github):
+            exec(FIND, {})
+        return self.output.read_text()
+
+    def test_reuses_a_verified_build_of_this_commit(self):
+        self.assertEqual(self.find(), "run_id=1\n")
+        self.assertIn("Reusing", self.summary.read_text())
+        self.assertTrue(all(f"head_sha={SHA}" in args[-1] and "status=success" in args[-1]
+                            for args in self.calls if "/actions/workflows/" in args[-1]))
+
+    def test_picks_the_latest_reproducibility_run(self):
+        self.runs["reproducibility.yml"].append(self.workflow_run(5, "reproducibility.yml"))
+        self.artifacts[5] = [{"expired": False}]
+        self.assertEqual(self.find(), "run_id=5\n")
+
+    def test_builds_when_no_verified_build_qualifies(self):
+        cases = {
+            "no CI": lambda: self.runs.update({"ci.yml": []}),
+            "expired artifact": lambda: self.artifacts.update({1: [{"expired": True}]}),
+            "no artifact": lambda: self.artifacts.clear(),
+            "pull request run": lambda: self.runs["reproducibility.yml"][0].update(event="pull_request"),
+            "other branch": lambda: self.runs["reproducibility.yml"][0].update(head_branch="feature"),
+            "other commit": lambda: self.runs["reproducibility.yml"][0].update(head_sha="c" * 40),
+            "fork": lambda: self.runs["reproducibility.yml"][0].update(head_repository={"full_name": "fork/repo"}),
+            "other workflow": lambda: self.runs["reproducibility.yml"][0].update(path=".github/workflows/x.yml"),
+            "CI from a pull request": lambda: self.runs["ci.yml"][0].update(event="pull_request"),
+        }
+        for name, change in cases.items():
+            with self.subTest(name):
+                self.setUp()
+                change()
+                self.assertEqual(self.find(), "run_id=\n")
+                self.assertIn("building here", self.summary.read_text())
+
+    def test_fallback_build_keeps_unit_tests_and_release_checks(self):
+        build = WORKFLOW.split("- name: Build the reproducible release like F-Droid\n", 1)[1].split("\n      - ", 1)[0]
+        self.assertIn("if: steps.verified.outputs.run_id == ''", build)
+        for task in (":app:testFossDebugUnitTest", ":core:ai:test", ":recognition:strategies:test",
+                     ":app:lintFossRelease", ":app:verifyFossReleaseOfflineManifest"):
+            self.assertIn(task, build)
+        self.assertIn("sha256sum --check --strict SHA256SUMS", WORKFLOW)
+        self.assertIn("name: verified-release-${{ github.sha }}", WORKFLOW)
 
 
 if __name__ == "__main__":
