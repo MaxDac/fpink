@@ -184,7 +184,9 @@ and releases are never overwritten.
 
 ## Reproducible release builds
 
-The release build job runs `scripts/fdroid-rb-docker.sh`, which replays the last
+The release build job reuses the APK verified by the Reproducibility workflow for
+the same commit when there is one (see below); otherwise it runs
+`scripts/fdroid-rb-docker.sh`, which replays the last
 build block of `metadata/com.fpink.capture.yml` with `scripts/fdroid_rb_build.py`
 inside the digest-pinned `registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie`
 image, like `fdroid build --on-server`: the same apt packages, OpenJDK 21,
@@ -197,10 +199,24 @@ bash scripts/fdroid-server-build.sh out-fd  # the real fdroid build, for compari
 cmp out/unsigned.apk out-fd/unsigned.apk
 ```
 
-The **Reproducibility** workflow runs both builders (twice for the replay) on
+The **Reproducibility** workflow builds with both builders, independently, on
 pull requests that touch build inputs and fails unless the APKs are identical;
-it attaches diffoscope reports otherwise. See
+it attaches diffoscope reports otherwise. The replay build also runs the release
+check tasks (`lintFossRelease` and the release recognition/offline-manifest
+verifications) after copying its APK out, and fails if they change it; JVM unit
+tests run in [CI](CI.md). See
 [F-Droid validation](FDROID_VALIDATION.md#reproducible-builds) for debugging.
+
+The workflow also runs on pushes to `main` that change `version.properties`
+(release-bump merges) and on manual runs on `main`. Those runs upload the
+verified replay APK as `verified-release-<sha>` (kept 30 days). Because
+`SOURCE_DATE_EPOCH` is the commit time, a build can only be reused for the exact
+same commit. The Release workflow reuses that artifact, without rebuilding, when
+a successful Reproducibility run and a successful CI run exist for the release
+commit on `main`. Otherwise (a later commit on `main`, or an expired artifact) it
+builds the APK itself as before, with the unit tests and release checks. To avoid
+that rebuild, run **Actions > Reproducibility > Run workflow** on `main` first.
+The release summary says which path was used.
 
 ## Build and validate locally
 

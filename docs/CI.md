@@ -105,8 +105,8 @@ python3 -m unittest discover -s scripts/tests
    are separate policy choices; requiring zero approvals still requires a PR
    and does not weaken the required CI checks.
 4. Enable **Require status checks to pass before merging**. Add
-   `Build and JVM unit tests`, `Build (replay)`, `Build (replay, release checks)`
-   and `Build (fdroid build)`. Remove any old `Native C++ unit tests`,
+   `Build and JVM unit tests`, `Build (replay, release checks)`
+   and `Build (fdroid build)`. Remove any old `Build (replay)`, `Native C++ unit tests`,
    `Build (replay, all cores)` and `Build (replay, 2 threads, release checks)`
    requirements: those jobs no longer exist. Select **GitHub Actions**
    as the expected source where offered. Do not require the old `build` check or
