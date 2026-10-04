@@ -7,14 +7,18 @@ built from source by `scripts/build-runtime.sh`, with telemetry compiled out
 because emulator tests also need its x86_64 libraries. Recognition uses only
 the CPU execution provider, so this build leaves out NNAPI and XNNPACK.
 
-The module ships:
+The module contains:
 
 | Path | Content |
 |---|---|
-| `native/arm64-v8a/libonnxruntime.so` | ONNX Runtime, built with the pinned NDK and stripped |
-| `native/arm64-v8a/libonnxruntime4j_jni.so` | ONNX Runtime's Java JNI binding, built from `java/src/main/native` |
+| `native/arm64-v8a/libonnxruntime.so` | ONNX Runtime, built with the pinned NDK and stripped. Written by the script, never committed |
+| `native/arm64-v8a/libonnxruntime4j_jni.so` | ONNX Runtime's Java JNI binding, built from `java/src/main/native`. Written by the script, never committed |
 | `src/main/java` | ONNX Runtime's Java API (`java/src/main/java` and `java/src/main/android`), unchanged |
 | `src/main/assets/onnxruntime` | ONNX Runtime's `LICENSE` and `ThirdPartyNotices.txt` |
+
+The native libraries are git-ignored: every release APK, whether from the
+Release workflow, the Reproducibility workflow or F-Droid, builds them from
+source with the F-Droid recipe.
 
 It leaves out the AAR's `java/src/main/android-telemetry` sources: the
 `ai.onnxruntime.TelemetryInitializer` provider and the 1DS HTTP client that
@@ -35,7 +39,10 @@ APK whose dex or native code still mentions `ai/onnxruntime/telemetry` or
   the entry is a digest over `<sha256>  <path>` lines sorted by path.
 
 `:recognition:onnxruntime:verifyOrtRuntime` runs before every build of the
-module and checks the checked-in files against `build.expectedSha256`.
+module. It checks the committed Java API and notices, and any native libraries
+present in `native/`, against `build.expectedSha256`. The libraries may be
+absent for JVM unit tests and lint, but packaging a release APK or AAR without
+them fails (`requireOrtNativeLibraries`).
 
 ## Rebuilding
 
@@ -71,7 +78,13 @@ Build paths are mapped away, so a build in F-Droid's `buildserver-trixie` image
 at `/home/vagrant/build/com.fpink.capture` matched a local WSL build in another
 directory byte for byte. The pinned hashes come from the Reproducibility
 workflow. To update them, copy `onnxruntime/SHA256SUMS` from its `rb-*`
-artifacts into `build.expectedSha256`, then commit the files it built.
+artifacts into `build.expectedSha256`, and commit the Java API and notices it
+built if they changed (not the libraries).
+
+To build a release APK locally, run the F-Droid replay
+(`scripts/fdroid-rb-docker.sh`), which runs the script and Gradle in F-Droid's
+buildserver image. Running the script directly on Linux or WSL also works, but
+only the buildserver image's toolchain matches the pinned hashes.
 
 Gradle properties:
 
@@ -83,7 +96,6 @@ Gradle properties:
 
 The F-Droid recipe (`metadata/com.fpink.capture.yml`) runs the script itself:
 
-- `rm:` the two checked-in libraries;
 - `prebuild: build-runtime.sh fetch`;
 - `build: build-runtime.sh build`;
 - `gradleprops: ortRuntimeBuiltFromSource`.

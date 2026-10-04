@@ -7,9 +7,10 @@ plugins {
 }
 
 // ONNX Runtime built from source with telemetry compiled out (scripts/build-runtime.sh).
-// The checked-in libraries, Java API sources and notices are that build, pinned in
-// source-runtime.lock.json build.expectedSha256. Release builds use this module; debug builds
-// use the Maven AAR because they also need x86_64 for emulator tests.
+// The checked-in Java API sources and notices, and the native libraries the script writes to
+// native/ (never committed), are that build, pinned in source-runtime.lock.json
+// build.expectedSha256. Release builds use this module; debug builds use the Maven AAR because
+// they also need x86_64 for emulator tests.
 android {
     namespace = "com.fpink.recognition.onnxruntime"
     compileSdk = 37
@@ -54,6 +55,8 @@ val sourceRuntimeFiles = (lockBuild["outputs"] as List<String>).toSet() +
     ((lockBuild["notices"] as Map<String, Any>).let { notices ->
         (notices["from"] as List<String>).map { "${notices["to"]}/$it" }
     }) + javaSourcesDir
+@Suppress("UNCHECKED_CAST")
+val nativeLibraries = (lockBuild["outputs"] as List<String>).filter { it.startsWith("native/") }
 @Suppress("UNCHECKED_CAST")
 val pinnedSourceRuntime = lockBuild["expectedSha256"] as Map<String, String>?
 check(pinnedSourceRuntime == null || pinnedSourceRuntime.keys == sourceRuntimeFiles) {
@@ -139,13 +142,17 @@ fun verifySourceRuntimeProvenance() {
     }
 }
 
+// Without -PortRuntimeBuiltFromSource: the checked-in Java API and notices must match the pin,
+// and native libraries left in native/ by an earlier build must too. Missing libraries only
+// fail when a release APK packages them (requireOrtNativeLibraries), so JVM tests still run.
 fun verifyCheckedInRuntime() {
     checkNotNull(pinnedSourceRuntime) {
         "source-runtime.lock.json does not pin build.expectedSha256 yet; build the runtime with " +
             "scripts/build-runtime.sh and pass -PortRuntimeBuiltFromSource -PallowUnpinnedOrtRuntime."
     }.forEach { (path, hash) ->
+        if (path in nativeLibraries && !file(path).exists()) return@forEach
         check(artifactSha256(path) == hash) {
-            "Checked-in ONNX Runtime artifact $path is not the source build pinned in source-runtime.lock.json " +
+            "ONNX Runtime artifact $path is not the source build pinned in source-runtime.lock.json " +
                 "build.expectedSha256; restore it from git or rebuild it with scripts/fdroid-rb-docker.sh."
         }
     }
@@ -155,7 +162,7 @@ val verifyOrtRuntime = tasks.register("verifyOrtRuntime") {
     group = "verification"
     description = "Verify the source-built ONNX Runtime libraries, Java API and notices against source-runtime.lock.json."
     inputs.file(sourceRuntimeManifest)
-    inputs.files(sourceRuntimeFiles.map(::file))
+    inputs.files(sourceRuntimeFiles.map(::file)).optional()
     if (sourceBuiltRuntime) {
         inputs.files(sourceProvenance, sourceChecksums)
     }
@@ -164,3 +171,21 @@ val verifyOrtRuntime = tasks.register("verifyOrtRuntime") {
     }
 }
 tasks.named("preBuild") { dependsOn(verifyOrtRuntime) }
+
+val requireOrtNativeLibraries = tasks.register("requireOrtNativeLibraries") {
+    group = "verification"
+    description = "Fail when the source-built ONNX Runtime libraries are missing from native/."
+    val libraries = nativeLibraries.map(::file)
+    doLast {
+        val missing = libraries.filterNot { it.isFile }
+        check(missing.isEmpty()) {
+            "The source-built ONNX Runtime libraries ${missing.map { it.relativeTo(projectDir).invariantSeparatorsPath }} " +
+                "are missing; they are built, not committed. Release APKs come from the F-Droid replay " +
+                "(scripts/fdroid-rb-docker.sh), which runs recognition/onnxruntime/scripts/build-runtime.sh. " +
+                "See recognition/onnxruntime/README.md."
+        }
+    }
+}
+// Every release task that hands the JNI libraries to a consumer (APK or AAR).
+tasks.matching { it.name in setOf("mergeReleaseJniLibFolders", "copyReleaseJniLibsProjectOnly") }
+    .configureEach { dependsOn(requireOrtNativeLibraries) }

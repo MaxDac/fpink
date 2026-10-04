@@ -48,3 +48,6 @@ secrets.properties
 # tracked here so the public repo stays 100% FOSS.
 # ──────────────────────────────────────────────
 /private/
+
+# Source-built ONNX Runtime libraries (recognition/onnxruntime/scripts/build-runtime.sh); never committed
+recognition/onnxruntime/native/

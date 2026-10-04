@@ -12,7 +12,7 @@ Keep their evidence current:
 
 | Gate | Required evidence |
 |---|---|
-| #27 | The OCR runtime has an F-Droid-acceptable source-build path or an explicit maintainer-approved dependency path. Release builds use ONNX Runtime 1.30.0 built from source with telemetry compiled out (`recognition/onnxruntime`); the F-Droid recipe deletes the checked-in libraries and rebuilds them, and the build fails unless they match the pinned hashes. Debug builds keep the Maven Central AAR. |
+| #27 | The OCR runtime has an F-Droid-acceptable source-build path or an explicit maintainer-approved dependency path. Release builds use ONNX Runtime 1.30.0 built from source with telemetry compiled out (`recognition/onnxruntime`); the native libraries are never committed: the F-Droid recipe and the Release workflow build them from source, and the build fails unless they match the pinned hashes. Debug builds keep the Maven Central AAR. |
 | #28 | Model sources, licenses, redistribution rights, and regeneration limits are recorded in `recognition/models/artifacts.lock.json` and `recognition/models/README.md`. |
 | #30 | `fastlane/metadata/android/en-US/` contains truthful listing text, rights-cleared graphics, and version-code-named changelogs. |
 | #31 | `metadata/com.fpink.capture.yml` is finalized against an immutable installable release without guessed scanner exemptions. |
