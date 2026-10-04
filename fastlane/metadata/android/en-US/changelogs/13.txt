@@ -1,0 +1,1 @@
+Text recognition now runs on ONNX Runtime built from source, with Microsoft's telemetry client left out entirely. The app is smaller and still works fully offline. Also includes dependency updates.
