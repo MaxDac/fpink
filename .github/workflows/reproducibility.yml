@@ -3,16 +3,20 @@ name: Reproducibility
 # Builds the same commit independently, like F-Droid's buildserver, and requires
 # byte-identical unsigned APKs. F-Droid publishes our signed APK only when its build
 # matches ours apart from the signature (fdroiddata Binaries + AllowedAPKSigningKeys).
+# On main (release-bump merges and manual runs) the verified APK is uploaded as
+# verified-release-<sha>, which the Release workflow reuses instead of rebuilding.
 on:
   workflow_dispatch:
   pull_request:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: reproducibility-${{ github.ref }}
-  cancel-in-progress: true
+  group: reproducibility-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 defaults:
   run:
@@ -21,7 +25,9 @@ defaults:
 jobs:
   # Filtering in the job, not with on.pull_request.paths: the Build and compare checks are
   # required, and a workflow that never starts leaves them pending forever. Unaffected PRs
-  # still get every check, with each step skipped.
+  # still get every check, with each step skipped. On main, only release-bump pushes
+  # (version.properties changed) build: releases must be declared that way, and the
+  # APK embeds the commit timestamp, so Release can only reuse a build of its exact SHA.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -29,22 +35,24 @@ jobs:
       relevant: ${{ steps.diff.outputs.relevant }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'workflow_dispatch'
         with:
           fetch-depth: 0
           persist-credentials: false
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - id: diff
         env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
-            echo relevant=true >> "$GITHUB_OUTPUT"
-            exit 0
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch || "$BASE" =~ ^0+$ ]]; then
+            files="(all)"
+          elif [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            files="$(git diff --name-only "$BASE" "$HEAD" -- version.properties)"
+          else
+            files="$(git diff --name-only "$BASE...$HEAD" -- '.github/workflows/reproducibility.yml' '.github/workflows/release.yml' 'app/**' 'core/**' 'recognition/**' 'gradle/**' '*.gradle.kts' 'gradle.properties' 'version.properties' 'metadata/**' 'scripts/fdroid*')"
           fi
-          files="$(git diff --name-only "$BASE...$HEAD" -- '.github/workflows/reproducibility.yml' '.github/workflows/release.yml' 'app/**' 'core/**' 'recognition/**' 'gradle/**' '*.gradle.kts' 'gradle.properties' 'version.properties' 'metadata/**' 'scripts/fdroid*')"
           if [[ -n "$files" ]]; then relevant=true; else relevant=false; fi
           echo "relevant=$relevant" >> "$GITHUB_OUTPUT"
           echo "Reproducibility build needed: $relevant" >> "$GITHUB_STEP_SUMMARY"
@@ -57,21 +65,19 @@ jobs:
     timeout-minutes: 180
     strategy:
       fail-fast: false
+      # Two independent builders. The replay copies its APK out before running the
+      # release-only check tasks and fails if they change it; JVM unit tests run in CI.
       matrix:
         include:
-          - name: replay
-            builder: replay
-          # Also runs the release workflow's check tasks, which must not change the APK.
           - name: replay, release checks
             builder: replay
+            artifact: rb-replay
             checks: >-
-              --check-task :app:testFossDebugUnitTest --check-task :core:ai:test --check-task :core:model:test
-              --check-task :core:storage:test --check-task :recognition:runtime:test --check-task :recognition:models:test
-              --check-task :recognition:strategies:test
               --check-task :app:lintFossRelease --check-task :app:verifyFossReleaseRecognitionPackage
               --check-task :app:verifyFossReleaseOfflineManifest
           - name: fdroid build
             builder: fdroidserver
+            artifact: rb-fdroid
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: needs.changes.outputs.relevant == 'true'
@@ -106,7 +112,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always() && needs.changes.outputs.relevant == 'true'
         with:
-          name: rb-${{ strategy.job-index }}
+          name: ${{ matrix.artifact }}
           path: out/
           if-no-files-found: warn
           retention-days: 14
@@ -126,7 +132,8 @@ jobs:
         if: needs.changes.outputs.relevant == 'true'
         run: |
           sha256sum builds/*/unsigned.apk | tee -a "$GITHUB_STEP_SUMMARY"
-          reference=builds/rb-0/unsigned.apk
+          reference=builds/rb-replay/unsigned.apk
+          test -f "$reference" && test -f builds/rb-fdroid/unsigned.apk
           status=0
           for apk in builds/*/unsigned.apk; do
             if ! cmp -s "$reference" "$apk"; then
@@ -145,6 +152,22 @@ jobs:
             done
           fi
           exit $status
+
+      # The payload the Release workflow reuses for this exact commit.
+      - name: Stage the verified release build
+        if: needs.changes.outputs.relevant == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir verified-release
+          cp builds/rb-replay/unsigned.apk builds/rb-replay/build-env.txt verified-release/
+          (cd verified-release && sha256sum unsigned.apk build-env.txt > SHA256SUMS && cat SHA256SUMS)
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: needs.changes.outputs.relevant == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        with:
+          name: verified-release-${{ github.sha }}
+          path: verified-release/
+          if-no-files-found: error
+          retention-days: 30
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: failure() && needs.changes.outputs.relevant == 'true'

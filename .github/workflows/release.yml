@@ -36,6 +36,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read
     outputs:
       version_name: ${{ steps.version.outputs.version_name }}
       version_code: ${{ steps.version.outputs.version_code }}
@@ -73,7 +76,63 @@ jobs:
       - name: Test release tooling
         run: python3 -m unittest discover -s scripts/tests -v
 
+      # A release-bump merge to main already ran the Reproducibility workflow (two
+      # independent builds, byte-identical, plus the release check tasks) and CI (JVM unit
+      # tests) on this exact commit. Reuse that APK; otherwise build it here.
+      - name: Find a verified build of this commit
+        id: verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -I - <<'PY'
+          import json, os, subprocess
+
+          repo, sha = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_SHA"]
+
+          def successful_runs(workflow):
+              runs = json.loads(subprocess.check_output(["gh", "api",
+                  f"repos/{repo}/actions/workflows/{workflow}/runs?head_sha={sha}&status=success&per_page=100"], text=True))
+              return [r for r in runs["workflow_runs"]
+                      if r["head_sha"] == sha and r["head_branch"] == "main"
+                      and r["event"] in ("push", "workflow_dispatch")
+                      and r["path"] == f".github/workflows/{workflow}"
+                      and r["head_repository"]["full_name"] == repo]
+
+          def artifact(run):
+              artifacts = json.loads(subprocess.check_output(["gh", "api",
+                  f"repos/{repo}/actions/runs/{run['id']}/artifacts?name=verified-release-{sha}"], text=True))
+              return any(not a["expired"] for a in artifacts["artifacts"])
+
+          reproducibility = sorted((r for r in successful_runs("reproducibility.yml") if artifact(r)),
+                                   key=lambda r: r["run_number"], reverse=True)
+          ci = successful_runs("ci.yml")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output, open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              if reproducibility and ci:
+                  run = reproducibility[0]
+                  output.write(f"run_id={run['id']}\n")
+                  summary.write(f"Reusing the verified APK from [Reproducibility run {run['id']}]({run['html_url']}) "
+                                f"(CI passed in [run {ci[0]['id']}]({ci[0]['html_url']})).\n\n")
+              else:
+                  output.write("run_id=\n")
+                  summary.write("No verified Reproducibility build and passing CI for this commit; building here.\n\n")
+          PY
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        if: steps.verified.outputs.run_id != ''
+        with:
+          name: verified-release-${{ github.sha }}
+          path: rb-output
+          run-id: ${{ steps.verified.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Check the verified build
+        if: steps.verified.outputs.run_id != ''
+        run: |
+          (cd rb-output && sha256sum --check --strict SHA256SUMS)
+          cat rb-output/build-env.txt >> "$GITHUB_STEP_SUMMARY"
+
       - name: Free disk space for the buildserver image
+        if: steps.verified.outputs.run_id == ''
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/share/swift
           df -h /
@@ -81,6 +140,7 @@ jobs:
       # Built exactly like F-Droid's buildserver, so F-Droid can reproduce this APK and
       # publish it with our signature (fdroiddata Binaries + AllowedAPKSigningKeys).
       - name: Build the reproducible release like F-Droid
+        if: steps.verified.outputs.run_id == ''
         run: |
           bash scripts/fdroid-rb-docker.sh rb-output \
             --check-task :app:testFossDebugUnitTest --check-task :core:ai:test --check-task :core:model:test \
