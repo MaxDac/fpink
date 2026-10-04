@@ -17,11 +17,7 @@
 gradlew  text eol=lf
 *.jar    binary
 
-# Native libraries (the source-built ONNX Runtime ones are never committed)
 *.so     binary
-# ONNX Runtime's upstream Java API and notices, pinned byte-for-byte in
-# recognition/onnxruntime/source-runtime.lock.json
-recognition/onnxruntime/src/** -text
 
 # ML model exports (binary; must never be line-ending normalized)
 *.onnx   binary

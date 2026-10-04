@@ -7,18 +7,21 @@ built from source by `scripts/build-runtime.sh`, with telemetry compiled out
 because emulator tests also need its x86_64 libraries. Recognition uses only
 the CPU execution provider, so this build leaves out NNAPI and XNNPACK.
 
-The module contains:
+Nothing from ONNX Runtime is committed. The module holds only the build
+script, the lock file and the Gradle wiring; the script writes everything it
+packages into the git-ignored `generated/` directory:
 
 | Path | Content |
 |---|---|
-| `native/arm64-v8a/libonnxruntime.so` | ONNX Runtime, built with the pinned NDK and stripped. Written by the script, never committed |
-| `native/arm64-v8a/libonnxruntime4j_jni.so` | ONNX Runtime's Java JNI binding, built from `java/src/main/native`. Written by the script, never committed |
-| `src/main/java` | ONNX Runtime's Java API (`java/src/main/java` and `java/src/main/android`), unchanged |
-| `src/main/assets/onnxruntime` | ONNX Runtime's `LICENSE` and `ThirdPartyNotices.txt` |
+| `generated/jniLibs/arm64-v8a/libonnxruntime.so` | ONNX Runtime, built with the pinned NDK and stripped |
+| `generated/jniLibs/arm64-v8a/libonnxruntime4j_jni.so` | ONNX Runtime's Java JNI binding, built from `java/src/main/native` |
+| `generated/java` | ONNX Runtime's Java API (`java/src/main/java` and `java/src/main/android`), copied unchanged from the pinned checkout |
+| `generated/assets/onnxruntime` | ONNX Runtime's `LICENSE` and `ThirdPartyNotices.txt`, copied from the pinned checkout |
 
-The native libraries are git-ignored: every release APK, whether from the
-Release workflow, the Reproducibility workflow or F-Droid, builds them from
-source with the F-Droid recipe.
+Every release APK, whether from the Release workflow, the Reproducibility
+workflow or F-Droid, generates them from source with the F-Droid recipe. An
+ONNX Runtime update therefore touches only `source-runtime.lock.json` and
+`gradle/libs.versions.toml`.
 
 It leaves out the AAR's `java/src/main/android-telemetry` sources: the
 `ai.onnxruntime.TelemetryInitializer` provider and the 1DS HTTP client that
@@ -35,14 +38,14 @@ APK whose dex or native code still mentions `ai/onnxruntime/telemetry` or
 - the SHA-1 of every CMake dependency archive (the same ones that
   `cmake/deps.txt` pins);
 - the NDK revision and CMake options;
-- `build.expectedSha256`, the SHA-256 of every shipped file. For `src/main/java`
+- `build.expectedSha256`, the SHA-256 of every shipped file. For `generated/java`
   the entry is a digest over `<sha256>  <path>` lines sorted by path.
 
 `:recognition:onnxruntime:verifyOrtRuntime` runs before every build of the
-module. It checks the committed Java API and notices, and any native libraries
-present in `native/`, against `build.expectedSha256`. The libraries may be
-absent for JVM unit tests and lint, but packaging a release APK or AAR without
-them fails (`requireOrtNativeLibraries`).
+module and checks whatever is present in `generated/` against
+`build.expectedSha256`. Only release variants use the module (debug uses the
+Maven AAR), so debug builds, unit tests and lint work without `generated/`.
+A release build without it fails (`requireSourceBuiltOrtRuntime`).
 
 ## Rebuilding
 
@@ -78,8 +81,7 @@ Build paths are mapped away, so a build in F-Droid's `buildserver-trixie` image
 at `/home/vagrant/build/com.fpink.capture` matched a local WSL build in another
 directory byte for byte. The pinned hashes come from the Reproducibility
 workflow. To update them, copy `onnxruntime/SHA256SUMS` from its `rb-*`
-artifacts into `build.expectedSha256`, and commit the Java API and notices it
-built if they changed (not the libraries).
+artifacts into `build.expectedSha256`.
 
 To build a release APK locally, run the F-Droid replay
 (`scripts/fdroid-rb-docker.sh`), which runs the script and Gradle in F-Droid's

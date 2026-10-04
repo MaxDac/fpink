@@ -214,7 +214,7 @@ def describe_environment(output: Path, env, build_dir: Path, ndk):
 
 
 def save_source_runtime(build_dir: Path, output: Path):
-    # The pinned bytes of recognition/onnxruntime come from this image; keep them to commit.
+    # build.expectedSha256 in recognition/onnxruntime/source-runtime.lock.json pins this output.
     module = build_dir / "recognition" / "onnxruntime"
     sums = module / "build" / "source-output" / "SHA256SUMS"
     if not sums.is_file():
@@ -222,7 +222,7 @@ def save_source_runtime(build_dir: Path, output: Path):
     target = output / "onnxruntime"
     if target.exists():
         shutil.rmtree(target)
-    shutil.copytree(module / "native", target / "native")
+    shutil.copytree(module / "generated", target / "generated")
     shutil.copyfile(sums, target / "SHA256SUMS")
     shutil.copyfile(module / "build" / "source-output" / "PROVENANCE", target / "PROVENANCE")
     log("Source-built ONNX Runtime:\n" + sums.read_text(encoding="utf-8"))

@@ -14,11 +14,10 @@ Configure the **job name**, not the workflow title `CI`, as the required check:
 
 The job runs on Ubuntu 24.04 with JDK 17, the checked-in Gradle wrapper and
 Android API 36. No NDK or CMake is needed: debug builds use the prebuilt
-ONNX Runtime Android AAR from Maven Central, and release unit tests compile
-against the source-built ONNX Runtime's Java API (`recognition/onnxruntime`),
-verified against its pinned hashes; they don't need its native libraries,
-which are never committed. AGP selects any additional SDK Build
-Tools it requires.
+ONNX Runtime Android AAR from Maven Central, and unit tests run only for
+debug. The source-built ONNX Runtime (`recognition/onnxruntime`) is used only by
+release builds, which come from the F-Droid replay; nothing from it is
+committed. AGP selects any additional SDK Build Tools it requires.
 
 The workflow uses one Gradle invocation with `--continue`, so independent tasks
 can finish after a failure without turning that failure into success. It builds

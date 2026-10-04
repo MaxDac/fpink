@@ -81,22 +81,22 @@
       "onnxruntime_DISABLE_FLOAT4_TYPES=ON"
     ],
     "outputs": [
-      "native/arm64-v8a/libonnxruntime.so",
-      "native/arm64-v8a/libonnxruntime4j_jni.so"
+      "generated/jniLibs/arm64-v8a/libonnxruntime.so",
+      "generated/jniLibs/arm64-v8a/libonnxruntime4j_jni.so"
     ],
     "javaSources": {
       "from": [
         "java/src/main/java",
         "java/src/main/android"
       ],
-      "to": "src/main/java"
+      "to": "generated/java"
     },
     "notices": {
       "from": [
         "LICENSE",
         "ThirdPartyNotices.txt"
       ],
-      "to": "src/main/assets/onnxruntime"
+      "to": "generated/assets/onnxruntime"
     },
     "forbiddenStrings": [
       "events.data.microsoft.com",
@@ -104,11 +104,11 @@
       "1DS Java HttpClient"
     ],
     "expectedSha256": {
-      "native/arm64-v8a/libonnxruntime.so": "a1604b60bdfe4ba874a419093c4d3c03c1044a54a4cd625d12aea773d035c117",
-      "native/arm64-v8a/libonnxruntime4j_jni.so": "b64713e4f4fde6dcc9d733b29167c798995373a579c00816c49db3a0b8ea529c",
-      "src/main/assets/onnxruntime/LICENSE": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
-      "src/main/assets/onnxruntime/ThirdPartyNotices.txt": "143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3",
-      "src/main/java": "c4a7f594b0f5522fe674b007307c678580cfa86835ad39ac811df7e7e2ffbc4e"
+      "generated/jniLibs/arm64-v8a/libonnxruntime.so": "a1604b60bdfe4ba874a419093c4d3c03c1044a54a4cd625d12aea773d035c117",
+      "generated/jniLibs/arm64-v8a/libonnxruntime4j_jni.so": "b64713e4f4fde6dcc9d733b29167c798995373a579c00816c49db3a0b8ea529c",
+      "generated/assets/onnxruntime/LICENSE": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
+      "generated/assets/onnxruntime/ThirdPartyNotices.txt": "143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3",
+      "generated/java": "c4a7f594b0f5522fe674b007307c678580cfa86835ad39ac811df7e7e2ffbc4e"
     },
     "reproducibility": "expectedSha256 pins the stripped libraries built by scripts/build-runtime.sh with NDK 28.2.13676358 and SOURCE_DATE_EPOCH set to the pinned ONNX Runtime commit time. Build paths are mapped away (-ffile-prefix-map), so F-Droid's buildserver-trixie image at /home/vagrant/build/com.fpink.capture and other Linux x86_64 hosts produce the same bytes. -PortRuntimeBuiltFromSource fails on a mismatch unless -PallowUnpinnedOrtRuntime is set.",
     "networkInputs": [

@@ -49,5 +49,5 @@ secrets.properties
 # ──────────────────────────────────────────────
 /private/
 
-# Source-built ONNX Runtime libraries (recognition/onnxruntime/scripts/build-runtime.sh); never committed
-recognition/onnxruntime/native/
+# Source-built ONNX Runtime (recognition/onnxruntime/scripts/build-runtime.sh); never committed
+recognition/onnxruntime/generated/

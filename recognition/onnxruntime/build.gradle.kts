@@ -7,10 +7,10 @@ plugins {
 }
 
 // ONNX Runtime built from source with telemetry compiled out (scripts/build-runtime.sh).
-// The checked-in Java API sources and notices, and the native libraries the script writes to
-// native/ (never committed), are that build, pinned in source-runtime.lock.json
-// build.expectedSha256. Release builds use this module; debug builds use the Maven AAR because
-// they also need x86_64 for emulator tests.
+// The script writes the native libraries, the matching upstream Java API and the notices into
+// generated/, which is git-ignored: nothing from ONNX Runtime is committed, and bumping it only
+// changes source-runtime.lock.json. Release builds use this module; debug builds use the Maven
+// AAR because they also need x86_64 for emulator tests.
 android {
     namespace = "com.fpink.recognition.onnxruntime"
     compileSdk = 37
@@ -29,7 +29,13 @@ androidComponents {
     onVariants { variant ->
         checkNotNull(variant.sources.jniLibs) {
             "JNI library sources are unavailable for ${variant.name}"
-        }.addStaticSourceDirectory("native")
+        }.addStaticSourceDirectory("generated/jniLibs")
+        checkNotNull(variant.sources.java) {
+            "Java sources are unavailable for ${variant.name}"
+        }.addStaticSourceDirectory("generated/java")
+        checkNotNull(variant.sources.assets) {
+            "Assets are unavailable for ${variant.name}"
+        }.addStaticSourceDirectory("generated/assets")
     }
 }
 
@@ -55,8 +61,6 @@ val sourceRuntimeFiles = (lockBuild["outputs"] as List<String>).toSet() +
     ((lockBuild["notices"] as Map<String, Any>).let { notices ->
         (notices["from"] as List<String>).map { "${notices["to"]}/$it" }
     }) + javaSourcesDir
-@Suppress("UNCHECKED_CAST")
-val nativeLibraries = (lockBuild["outputs"] as List<String>).filter { it.startsWith("native/") }
 @Suppress("UNCHECKED_CAST")
 val pinnedSourceRuntime = lockBuild["expectedSha256"] as Map<String, String>?
 check(pinnedSourceRuntime == null || pinnedSourceRuntime.keys == sourceRuntimeFiles) {
@@ -142,18 +146,18 @@ fun verifySourceRuntimeProvenance() {
     }
 }
 
-// Without -PortRuntimeBuiltFromSource: the checked-in Java API and notices must match the pin,
-// and native libraries left in native/ by an earlier build must too. Missing libraries only
-// fail when a release APK packages them (requireOrtNativeLibraries), so JVM tests still run.
-fun verifyCheckedInRuntime() {
+// Without -PortRuntimeBuiltFromSource: whatever an earlier build-runtime.sh run left in
+// generated/ must still match the pin. Missing files fail only release builds of this module
+// (requireSourceBuiltOrtRuntime), so debug builds and JVM tests run without them.
+fun verifyGeneratedRuntime() {
     checkNotNull(pinnedSourceRuntime) {
         "source-runtime.lock.json does not pin build.expectedSha256 yet; build the runtime with " +
             "scripts/build-runtime.sh and pass -PortRuntimeBuiltFromSource -PallowUnpinnedOrtRuntime."
     }.forEach { (path, hash) ->
-        if (path in nativeLibraries && !file(path).exists()) return@forEach
+        if (!file(path).exists()) return@forEach
         check(artifactSha256(path) == hash) {
             "ONNX Runtime artifact $path is not the source build pinned in source-runtime.lock.json " +
-                "build.expectedSha256; restore it from git or rebuild it with scripts/fdroid-rb-docker.sh."
+                "build.expectedSha256; delete generated/ and rebuild it with scripts/fdroid-rb-docker.sh."
         }
     }
 }
@@ -167,25 +171,24 @@ val verifyOrtRuntime = tasks.register("verifyOrtRuntime") {
         inputs.files(sourceProvenance, sourceChecksums)
     }
     doLast {
-        if (sourceBuiltRuntime) verifySourceRuntimeProvenance() else verifyCheckedInRuntime()
+        if (sourceBuiltRuntime) verifySourceRuntimeProvenance() else verifyGeneratedRuntime()
     }
 }
 tasks.named("preBuild") { dependsOn(verifyOrtRuntime) }
 
-val requireOrtNativeLibraries = tasks.register("requireOrtNativeLibraries") {
+val requireSourceBuiltOrtRuntime = tasks.register("requireSourceBuiltOrtRuntime") {
     group = "verification"
-    description = "Fail when the source-built ONNX Runtime libraries are missing from native/."
-    val libraries = nativeLibraries.map(::file)
+    description = "Fail when generated/ lacks the source-built ONNX Runtime that release builds need."
+    val generated = sourceRuntimeFiles.map(::file)
     doLast {
-        val missing = libraries.filterNot { it.isFile }
+        val missing = generated.filterNot { it.exists() }
         check(missing.isEmpty()) {
-            "The source-built ONNX Runtime libraries ${missing.map { it.relativeTo(projectDir).invariantSeparatorsPath }} " +
-                "are missing; they are built, not committed. Release APKs come from the F-Droid replay " +
-                "(scripts/fdroid-rb-docker.sh), which runs recognition/onnxruntime/scripts/build-runtime.sh. " +
-                "See recognition/onnxruntime/README.md."
+            "Release builds need ONNX Runtime built from source, but " +
+                "${missing.map { it.relativeTo(projectDir).invariantSeparatorsPath }} are missing. Nothing from " +
+                "ONNX Runtime is committed: build release APKs with the F-Droid replay (scripts/fdroid-rb-docker.sh), " +
+                "which runs recognition/onnxruntime/scripts/build-runtime.sh. See recognition/onnxruntime/README.md."
         }
     }
 }
-// Every release task that hands the JNI libraries to a consumer (APK or AAR).
-tasks.matching { it.name in setOf("mergeReleaseJniLibFolders", "copyReleaseJniLibsProjectOnly") }
-    .configureEach { dependsOn(requireOrtNativeLibraries) }
+// Debug consumers use the Maven AAR, so only release builds reach this module.
+tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(requireSourceBuiltOrtRuntime) }

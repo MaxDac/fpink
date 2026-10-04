@@ -8,7 +8,8 @@
 #          dependency archives (SHA-1 verified) into a mirror outside the source tree.
 #   build  Offline phase (F-Droid `build`, after the source scan): build a host protoc from
 #          source, build libonnxruntime.so and libonnxruntime4j_jni.so with the pinned NDK,
-#          strip them, copy them and the matching Java API sources into the module and write
+#          strip them, copy them, the matching Java API sources and the notices into the
+#          module's git-ignored generated/ directory, and write
 #          build/source-output/{PROVENANCE,SHA256SUMS}. The output is reproducible for a fixed
 #          build path, toolchain and SOURCE_DATE_EPOCH; see build.expectedSha256.
 #   all    fetch + build (default).
@@ -306,7 +307,9 @@ build() {
     -Wl,-soname,libonnxruntime4j_jni.so $link_flags -Wl,--no-undefined \
     -L"$ort_build" -lonnxruntime
 
-  local native_dir="$root/native/$abi"
+  local -a outputs
+  mapfile -t outputs < <(lock_value build.outputs)
+  local native_dir="$root/$(dirname "${outputs[0]}")"
   mkdir -p "$native_dir"
   cp "$core" "$native_dir/libonnxruntime.so"
   cp "$jni" "$native_dir/libonnxruntime4j_jni.so"
@@ -314,8 +317,6 @@ build() {
   # Strip with the pinned NDK so the shipped bytes do not depend on debug info. The app
   # packages these files with keepDebugSymbols, so AGP never strips them a second time.
   local bin="$ndk/toolchains/llvm/prebuilt/linux-x86_64/bin"
-  local -a outputs
-  mapfile -t outputs < <(lock_value build.outputs)
   local output align needed forbidden
   for output in "${outputs[@]}"; do
     "$bin/llvm-strip" --strip-unneeded "$root/$output"
