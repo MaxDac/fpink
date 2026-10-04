@@ -7,6 +7,8 @@ does it with the exact published tag; ``--tag latest`` picks it locally). This r
 build block (versionName, versionCode, commit) and CurrentVersion(Code) in
 place, keeping the rewritemeta layout. The mirror in this repository uses the
 tag as ``commit``; the fdroiddata fork uses the full SHA (``--commit-style sha``).
+For the fork, the whole build block is first replaced with the mirror's block
+at the tag, so build steps (sudo, rm, prebuild, ...) never drift from the source.
 """
 
 from __future__ import annotations
@@ -18,7 +20,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_METADATA = ROOT / "metadata" / "com.fpink.capture.yml"
+MIRROR_PATH = "metadata/com.fpink.capture.yml"
+DEFAULT_METADATA = ROOT / MIRROR_PATH
 CHANGELOG = "fastlane/metadata/android/en-US/changelogs/{code}.txt"
 # Same pattern as the recipe's UpdateCheckMode, so we pick what checkupdates would.
 RELEASE_TAG = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?")
@@ -32,8 +35,43 @@ FIELDS = {
 }
 
 
+# The Builds list: the header plus every following two-space-indented line.
+BUILDS = re.compile(r"^Builds:\r?\n((?:  [^\r\n]*(?:\r?\n|$))+)", re.MULTILINE)
+BUILD_ENTRY = re.compile(r"^  - versionName:", re.MULTILINE)
+
+
 class BumpError(Exception):
     pass
+
+
+def build_block(text: str, label: str) -> re.Match:
+    matches = list(BUILDS.finditer(text))
+    if len(matches) != 1:
+        raise BumpError(f"{label}: expected exactly one 'Builds:' list, found {len(matches)}")
+    entries = len(BUILD_ENTRY.findall(text))
+    if entries != 1 or not BUILD_ENTRY.search(matches[0].group(1)):
+        raise BumpError(f"{label}: expected exactly one build entry, found {entries}")
+    return matches[0]
+
+
+def sync_build(text: str, mirror: str) -> str:
+    """Return ``text`` with its single build entry replaced by ``mirror``'s.
+
+    The entry keeps ``text``'s versionName/versionCode/commit, so ``bump`` still
+    checks the new release against what the recipe currently ships.
+    """
+    target = build_block(text, "recipe")
+    block = build_block(mirror, "mirror").group(1).replace("\r\n", "\n")
+    for key in ("versionName", "versionCode", "commit"):
+        current = FIELDS[key].search(target.group(1))
+        if current is None or len(FIELDS[key].findall(block)) != 1:
+            raise BumpError(f"expected exactly one '{key}' line in each build entry")
+        block = FIELDS[key].sub(lambda m, v=current.group(2): m.group(1) + v, block, count=1)
+    if "\r\n" in target.group(1):
+        block = block.replace("\n", "\r\n")
+    if not block.endswith("\n"):
+        block += "\r\n" if "\r\n" in target.group(1) else "\n"
+    return text[: target.start(1)] + block + text[target.end(1):]
 
 
 def bump(text: str, version_name: str, version_code: int, commit: str) -> str:
@@ -141,7 +179,11 @@ def main(argv=None) -> int:
         name, code, sha = resolve_release(arguments.source, arguments.tag)
         commit = arguments.tag if arguments.commit_style == "tag" else sha
         original = arguments.metadata.read_bytes().decode("utf-8")
-        updated = bump(original, name, code, commit)
+        updated = original
+        if arguments.commit_style == "sha":
+            mirror = git(arguments.source, "show", f"{arguments.tag}:{MIRROR_PATH}")
+            updated = sync_build(updated, mirror)
+        updated = bump(updated, name, code, commit)
     except (BumpError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

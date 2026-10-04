@@ -99,12 +99,13 @@ git clone -q --single-branch --branch com.fpink.capture git@gitlab.com:MaxDac/fd
 python3 scripts/fdroid_mr_bump.py --tag "v$V" --commit-style sha --metadata "$W/fdd/metadata/com.fpink.capture.yml"
 cd "$W/fdd"
 fdroid rewritemeta com.fpink.capture && fdroid lint com.fpink.capture   # if fdroidserver is installed
-git diff --stat      # expect only metadata/com.fpink.capture.yml, 5 lines
+git diff --stat      # expect only metadata/com.fpink.capture.yml: 5 version lines, plus any build-step change from the mirror
 git commit -qam "FPInk: update to v$V" && git push origin HEAD:com.fpink.capture
 ```
 
 The script must run against a checkout that has the new tag (`git fetch --tags`
-first). Keep its `MR note:` line.
+first). In `sha` mode it copies the build entry from the mirror at the tag, so the
+fork's build steps always match the source. Keep its `MR note:` line.
 
 ## 5. Update the in-repo mirror
 
