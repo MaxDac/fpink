@@ -262,7 +262,7 @@ until issues #27, #28, #30, #31, and #32 are complete.
 | Area | Remaining work |
 |---|---|
 | Rights and dependency audit | Confirm GPL compatibility and redistribution rights for transitive dependencies, artwork, dictionaries and model weights; preserve their licenses and notices. |
-| ONNX Runtime | Recognition uses the `com.microsoft.onnxruntime:onnxruntime-android` AAR from Maven Central; obtain F-Droid maintainer agreement that this dependency is acceptable. Do not bypass review with scanner exclusions. |
+| ONNX Runtime | Done: release builds use ONNX Runtime built from source with telemetry compiled out (`recognition/onnxruntime/README.md`); the F-Droid recipe rebuilds it. When bumping ONNX Runtime, update `source-runtime.lock.json` and repin `build.expectedSha256` from the Reproducibility workflow. Do not bypass review with scanner exclusions. |
 | Model provenance | Upstream sources, revisions, SHA-256 hashes and licences of the shipped ONNX models are pinned in `recognition/models/artifacts.lock.json` and documented in `recognition/models/README.md`; obtain maintainer agreement on their asset treatment. |
 | Linux/F-Droid recipe | Validate all preparation and model checks in a clean supported build environment without private credentials, local paths or unpublished inputs. Pin permitted downloads and tools. |
 | Version discovery | Done from 0.1.0-preview.8: releases are declared in `version.properties`, which the recipe reads with `UpdateCheckMode: Tags` and `UpdateCheckData`, and the version-agnostic build block lets `AutoUpdateMode: Version` copy it. |

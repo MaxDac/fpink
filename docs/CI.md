@@ -13,9 +13,11 @@ Configure the **job name**, not the workflow title `CI`, as the required check:
 | `Build and JVM unit tests` | Release-tooling unit tests, the debug production build, configured JVM unit tests (including the recognition runtime, models and strategies modules), SHA-256 verification of the bundled models, the recognition APK package and offline-manifest checks, and compilation of both instrumentation APKs |
 
 The job runs on Ubuntu 24.04 with JDK 17, the checked-in Gradle wrapper and
-Android API 36. No NDK or CMake is needed: recognition runs on the prebuilt
-ONNX Runtime Android AAR from Maven Central. AGP selects any additional SDK Build
-Tools it requires.
+Android API 36. No NDK or CMake is needed: debug builds use the prebuilt
+ONNX Runtime Android AAR from Maven Central, and unit tests run only for
+debug. The source-built ONNX Runtime (`recognition/onnxruntime`) is used only by
+release builds, which come from the F-Droid replay; nothing from it is
+committed. AGP selects any additional SDK Build Tools it requires.
 
 The workflow uses one Gradle invocation with `--continue`, so independent tasks
 can finish after a failure without turning that failure into success. It builds

@@ -11,7 +11,8 @@ environment and absolute paths.
 
 Run it as root inside registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie
 from an fpink checkout; the checked-out HEAD is built. The output directory
-receives unsigned.apk and build-env.txt.
+receives unsigned.apk, build-env.txt and, under onnxruntime/, the libraries and
+SHA256SUMS of the ONNX Runtime the recipe built from source.
 See docs/FDROID_VALIDATION.md for comparing two builds.
 
 Intentional differences from fdroidserver, none of which reach the APK: no
@@ -175,6 +176,8 @@ def build_environment(base, ndk, epoch: str):
     # fdroid build runs `sudo --preserve-env --user vagrant env HOME=/home/vagrant fdroid`
     # with `CI` unset, then common.set_FDroidPopen_env adds the SDK/NDK variables.
     path = base.get("PATH", "/usr/local/bin:/usr/bin:/bin")
+    if ndk is not None:
+        path = os.pathsep.join([str(ndk), path])
     env = {
         "PATH": path, "HOME": str(HOME), "USER": "vagrant", "LOGNAME": "vagrant",
         "LANG": base.get("LANG", "C.UTF-8"), "LC_ALL": base.get("LC_ALL", "C.UTF-8"),
@@ -208,6 +211,21 @@ def describe_environment(output: Path, env, build_dir: Path, ndk):
         for name, command in commands.items():
             result = subprocess.run([str(c) for c in command], env=env, capture_output=True, text=True)
             report.write(f"## {name}\n{result.stdout}{result.stderr}\n")
+
+
+def save_source_runtime(build_dir: Path, output: Path):
+    # build.expectedSha256 in recognition/onnxruntime/source-runtime.lock.json pins this output.
+    module = build_dir / "recognition" / "onnxruntime"
+    sums = module / "build" / "source-output" / "SHA256SUMS"
+    if not sums.is_file():
+        return
+    target = output / "onnxruntime"
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.copytree(module / "generated", target / "generated")
+    shutil.copyfile(sums, target / "SHA256SUMS")
+    shutil.copyfile(module / "build" / "source-output" / "PROVENANCE", target / "PROVENANCE")
+    log("Source-built ONNX Runtime:\n" + sums.read_text(encoding="utf-8"))
 
 
 def main(argv=None) -> int:
@@ -250,13 +268,17 @@ def main(argv=None) -> int:
         env = build_environment(base, ndk, epoch)
 
         write_local_properties(build_dir, recipe["subdir"], ndk)
+        # common.prepare_source: rm entries are globs, and any that match nothing fail the build.
+        unmatched = [path for path in recipe["rm"] if not list(build_dir.glob(path))]
+        if unmatched:
+            raise RbBuildError("Some glob paths did not match any files/dirs: " + ", ".join(unmatched))
         for path in recipe["rm"]:
-            target = build_dir / path
-            log(f"Removing {path}")
-            if target.is_dir() and not target.is_symlink():
-                shutil.rmtree(target)
-            elif target.exists() or target.is_symlink():
-                target.unlink()
+            for target in sorted(build_dir.glob(path)):
+                log(f"Removing {target.relative_to(build_dir)}")
+                if target.is_dir() and not target.is_symlink():
+                    shutil.rmtree(target)
+                elif target.exists() or target.is_symlink():
+                    target.unlink()
         bash = ["bash", "-e", "-u", "-o", "pipefail", "-x", "-c"]
         if recipe["prebuild"]:
             command = substitute("; ".join(recipe["prebuild"]), ndk, commit, version_name, version_code)
@@ -265,6 +287,10 @@ def main(argv=None) -> int:
         if recipe["build"]:
             command = substitute("; ".join(recipe["build"]), ndk, commit, version_name, version_code)
             as_vagrant([*bash, command], root_dir, env)
+        output = arguments.output.resolve()
+        output.mkdir(parents=True, exist_ok=True)
+        # Before Gradle, so the source-built runtime is kept even when it misses its pin.
+        save_source_runtime(build_dir, output)
         flavors = "" if recipe["gradle"] in ([], ["yes"]) else "".join(f[:1].upper() + f[1:] for f in recipe["gradle"])
         as_vagrant(["gradle", *("-P" + prop for prop in recipe["gradleprops"]), f"assemble{flavors}Release"],
                    root_dir, env)
@@ -273,8 +299,6 @@ def main(argv=None) -> int:
         apks = [apk for apk in apks if apk.parent.parent.name.lower() == flavors.lower()] or apks
         if len(apks) != 1:
             raise RbBuildError(f"Expected exactly one unsigned release APK, found {apks}")
-        output = arguments.output.resolve()
-        output.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(apks[0], output / "unsigned.apk")
         describe_environment(output, env, build_dir, ndk)
         digest = hashlib.sha256((output / "unsigned.apk").read_bytes()).hexdigest()

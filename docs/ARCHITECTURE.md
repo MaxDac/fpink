@@ -8,6 +8,7 @@
 | `:core:ai` | Recognition model/strategy contracts, config-map settings, plugin registry, paragraph and colour processing |
 | `:core:storage` | Portable note repository and recoverable batch publication |
 | `:recognition:runtime` | ONNX Runtime sessions, SHA-pinned asset materialisation, ABI checks, DB post-processing, quad crops, CTC decoding |
+| `:recognition:onnxruntime` | Release-only ONNX Runtime 1.30.0 built from source (arm64-v8a, telemetry compiled out), hash-pinned; debug builds use the Maven Central AAR |
 | `:recognition:models` | Individual bundled models: PP-OCRv6 small detector, PP-OCRv6 medium recognizer, Kraken recognizer |
 | `:recognition:strategies` | Built-in Printed and Cursive strategies combining a detector with a line recognizer |
 | `:app` | Image intake, permissions, encrypted settings, lifecycle, UI and manual DI |

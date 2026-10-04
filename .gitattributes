@@ -17,6 +17,8 @@
 gradlew  text eol=lf
 *.jar    binary
 
+*.so     binary
+
 # ML model exports (binary; must never be line-ending normalized)
 *.onnx   binary
 *.nb     binary

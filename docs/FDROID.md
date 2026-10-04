@@ -12,7 +12,7 @@ Keep their evidence current:
 
 | Gate | Required evidence |
 |---|---|
-| #27 | The OCR runtime has an F-Droid-acceptable source-build path or an explicit maintainer-approved dependency path. Recognition now uses the `com.microsoft.onnxruntime:onnxruntime-android` AAR from Maven Central; confirm F-Droid accepts it. |
+| #27 | The OCR runtime has an F-Droid-acceptable source-build path or an explicit maintainer-approved dependency path. Release builds use ONNX Runtime 1.30.0 built from source with telemetry compiled out (`recognition/onnxruntime`); nothing from ONNX Runtime is committed: the F-Droid recipe and the Release workflow build the native libraries and copy the Java API and notices from the pinned source, and the build fails unless they match the pinned hashes. Debug builds keep the Maven Central AAR. |
 | #28 | Model sources, licenses, redistribution rights, and regeneration limits are recorded in `recognition/models/artifacts.lock.json` and `recognition/models/README.md`. |
 | #30 | `fastlane/metadata/android/en-US/` contains truthful listing text, rights-cleared graphics, and version-code-named changelogs. |
 | #31 | `metadata/com.fpink.capture.yml` is finalized against an immutable installable release without guessed scanner exemptions. |
@@ -88,8 +88,8 @@ branch with a focused title such as **New app: FPInk**. Include:
 - runtime and model provenance decisions and their limitations;
 - ARM64-only and offline behavior (the APK packages `lib/arm64-v8a/` only, the
   public `foss` build requests no `INTERNET` or `ACCESS_NETWORK_STATE`
-  permission, and ONNX Runtime's bundled 1DS telemetry initializer is removed
-  from the merged manifest);
+  permission, and it ships ONNX Runtime built from source without its 1DS
+  telemetry client);
 - that release builds are shrunk with R8 (`proguard-android-optimize.txt` plus
   `app/proguard-rules.pro`) while the SHA-256-pinned model assets keep their
   exact verified bytes;
