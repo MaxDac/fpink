@@ -128,8 +128,16 @@ Post it only if the prompt asks you to and an authenticated `glab` is available:
 `glab mr note 50122 -R fdroid/fdroiddata -m "<comment>"`. Otherwise give the
 draft to the user.
 
+Then refresh the MR description, which reviewers check against the recipe. Fill
+the template in `docs/FDROID.md` ("MR description") with the new tag, full SHA,
+versionCode, APK size and fork pipeline/`fdroid build` job links. Carry over any
+build-step, runtime, model, update-check or reproducibility change from the
+mirror diff. Keep F-Droid's checklist from the current description. Update it
+with `glab mr update 50122 -R fdroid/fdroiddata -d "<description>"` under the same
+conditions as the comment; otherwise give the full draft to the user.
+
 ## Done
 
-Report the release URL, the tag and SHA, the fdroiddata fork commit, the mirror PR
-and the MR comment. After F-Droid merges the MR, checkupdates takes over. Delete the
+Report the release URL, the tag and SHA, the fdroiddata fork commit, the mirror PR,
+the MR comment and the MR description. After F-Droid merges the MR, checkupdates takes over. Delete the
 `fdroid-mr` job, its secret and steps 4 to 6 of this skill.

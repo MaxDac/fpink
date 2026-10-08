@@ -79,28 +79,65 @@ workstation-specific state. Confirm the recipe points at an installable
 release, not a source-only preview.
 
 Open a merge request from the fork branch to the official fdroiddata default
-branch with a focused title such as **New app: FPInk**. Include:
-
-- upstream repository, release tag, full source SHA, version name, and version
-  code;
-- the validation commands, tool versions, and results;
-- links to gates #27, #28, #30, #31, and #32;
-- runtime and model provenance decisions and their limitations;
-- ARM64-only and offline behavior (the APK packages `lib/arm64-v8a/` only, the
-  public `foss` build requests no `INTERNET` or `ACCESS_NETWORK_STATE`
-  permission, and it ships ONNX Runtime built from source without its 1DS
-  telemetry client);
-- that release builds are shrunk with R8 (`proguard-android-optimize.txt` plus
-  `app/proguard-rules.pro`) while the SHA-256-pinned model assets keep their
-  exact verified bytes;
-- the optional cloud-recognition-provider network behavior (present only in privately
-  built, non-public variants) and any applicable `NonFreeNet` discussion;
-- the F-Droid signing versus shared-signature reproducibility decision; and
-- the update-check configuration and the reproducibility evidence (the
-  Reproducibility workflow run for the release commit).
+branch with a focused title such as **New app: FPInk**, using the description
+template below.
 
 Do not claim acceptance, reproducibility, broader ABI support, or privacy
 properties that the recorded evidence does not demonstrate.
+
+### MR description
+
+Reviewers read the MR description, not the Fastlane text. Keep it current: update
+it with every release pushed to the MR, and whenever the build steps, OCR runtime,
+models, update check or reproducible-build setup change. Write the part below and
+keep F-Droid's `## Checklist` under it, ticking each item that applies. The
+checklist items with FPInk-specific notes are:
+
+- srclibs: "No srclibs are used; the ONNX Runtime source is fetched at a pinned
+  commit in `prebuild`, explained above."
+- ABI split: "Not needed: the only native code is arm64-v8a."
+- Auto update and reproducible builds: both ticked. If either is ever disabled,
+  untick it and explain why above the checklist.
+
+Replace the `<...>` placeholders. Update the runtime and model notes from
+`recognition/onnxruntime/README.md`, `recognition/onnxruntime/source-runtime.lock.json`
+and `recognition/models/README.md` at the tag.
+
+```markdown
+## New app: FPInk
+
+FPInk (`com.fpink.capture`) is a handwriting capture app. It recognizes handwritten notes entirely on-device and never uses a network service.
+
+* Upstream: https://github.com/MaxDac/fpink (GPL-3.0-only). I am the upstream author.
+* Release: [`v<versionName>`](https://github.com/MaxDac/fpink/releases/tag/v<versionName>), commit `<full SHA>`, versionCode <versionCode>.
+* Fastlane metadata (en-US title, summary, description, icon, screenshots, changelogs) lives upstream in `fastlane/metadata/android/en-US/`.
+
+### Build notes
+
+* The build uses only the `foss` Gradle flavor. The `full` flavor needs a private companion repository and is never built here.
+* OCR runs on ONNX Runtime <ORT version>, built from source. The prebuilt Maven AAR is used only by debug builds.
+  * `prebuild` fetches ONNX Runtime at pinned commit `<ORT commit>` (tag `v<ORT version>`, MIT). It deletes the parts the build doesn't use, including tests and the telemetry sources. Every CMake dependency archive is checked against the hashes pinned in `cmake/deps.txt` and `source-runtime.lock.json`.
+  * `build` compiles offline after the scanner runs, with NDK <release> (`ndk: <revision>`). It builds a host `protoc` from the pinned sources instead of downloading one. It fails if CMake fetches anything outside the pinned mirror.
+  * Options: `onnxruntime_USE_TELEMETRY=OFF`, CPU execution provider only, `onnxruntime_USE_KLEIDIAI=ON` (Arm KleidiAI, Apache-2.0, fetched as source through the same mirror).
+  * The script checks that `libonnxruntime.so` and the JNI library contain no telemetry strings. Gradle, with `-PortRuntimeBuiltFromSource`, refuses the build unless both libraries, the Java API and the notices match the hashes pinned upstream.
+  * The release APK has no `TelemetryInitializer` provider and requests only `CAMERA`.
+  * Details: [`recognition/onnxruntime/README.md`](https://github.com/MaxDac/fpink/blob/v<versionName>/recognition/onnxruntime/README.md).
+* Native code is **arm64-v8a only**. The APK is about <size> MB.
+
+### Assets to review
+
+The APK bundles three ONNX models, all Apache-2.0: PP-OCRv6 small detection and medium recognition (with its dictionary), and the Kraken PP-OCRv6-medium recognizer (with its alphabet). They are downloaded from pinned Hugging Face and Zenodo revisions and pinned by size and SHA-256 in `recognition/models/artifacts.lock.json`. Provenance is in [`recognition/models/README.md`](https://github.com/MaxDac/fpink/blob/v<versionName>/recognition/models/README.md). The source scanner did not flag them. Please tell me if they need different treatment.
+
+### Auto update and reproducible builds
+
+* **Auto update:** `UpdateCheckMode: Tags` + `UpdateCheckData` read `versionCode` and `versionName` from `version.properties`, and `AutoUpdateMode: Version`. Every release tag declares its version there, and the build block has no version-specific values.
+* **Reproducible builds:** enabled. `Binaries` points at the signed GitHub release APK, and `AllowedAPKSigningKeys` holds its certificate. The release CI builds in `fdroidserver:buildserver-trixie` at F-Droid's build path, so the APK reproduces.
+
+### Validation
+
+* `fdroid lint` and `fdroid rewritemeta` produce no changes.
+* All jobs in the fork pipeline pass: <pipeline URL>. `fdroid build` ([job](<job URL>)) reports "compared built binary to supplied reference binary successfully".
+```
 
 ## Reviewer-response loop
 
