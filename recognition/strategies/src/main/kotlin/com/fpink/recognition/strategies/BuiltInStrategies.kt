@@ -5,6 +5,7 @@ import com.fpink.core.ai.RecognitionStrategyId
 import com.fpink.recognition.models.KrakenRecognizer
 import com.fpink.recognition.models.PpOcrV6MediumRecognizer
 import com.fpink.recognition.models.PpOcrV6SmallDetector
+import com.fpink.recognition.runtime.OnnxRuntimeSupport
 
 /** Printed text: PP-OCRv6 small detector + official PP-OCRv6 medium recognizer. */
 class PrintedStrategy(context: Context) : DetectThenRecognizeStrategy(
@@ -29,6 +30,9 @@ object BuiltInStrategies {
         RecognitionStrategyId.CURSIVE -> "Cursive"
         else -> null
     }
+
+    /** Cheap device check (no model load): fails when ONNX Runtime must not be loaded here. */
+    fun deviceSupport(context: Context): Result<Unit> = runCatching { OnnxRuntimeSupport.checkDevice(context) }
 
     fun create(context: Context, id: RecognitionStrategyId): DetectThenRecognizeStrategy? = when (id) {
         RecognitionStrategyId.PRINTED -> PrintedStrategy(context)

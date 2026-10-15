@@ -181,7 +181,8 @@ confirm Settings lists both Printed and Cursive as ready, and recognize an
 imported page with each strategy. On x86_64 emulators with ARM64 native-bridge
 translation, the arm64 ONNX Runtime crashes in its static initializers, so both
 strategies detect the translation layer and fail closed as an unsupported device
-(their acceptance tests are skipped there); validate them on real ARM64 hardware
+(their acceptance tests are skipped there); Add notes shows the same reason and
+disables Take photo up front. Validate them on real ARM64 hardware
 or with the x86_64 debug build.
 
 ## Reproducible builds
