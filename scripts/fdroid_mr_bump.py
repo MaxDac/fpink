@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Point an F-Droid recipe at a new FPInk release tag.
 
-While the fdroiddata merge request is unmerged, checkupdates does not run, so
-every new release must be pushed to the MR (the Release workflow's fdroid-mr job
-does it with the exact published tag; ``--tag latest`` picks it locally). This rewrites the single
-build block (versionName, versionCode, commit) and CurrentVersion(Code) in
-place, keeping the rewritemeta layout. The mirror in this repository uses the
-tag as ``commit``; the fdroiddata fork uses the full SHA (``--commit-style sha``).
-For the fork, the whole build block is first replaced with the mirror's block
-at the tag, so build steps (sudo, rm, prebuild, ...) never drift from the source.
+checkupdates handles routine releases now that fdroiddata!50122 is merged. Use
+this to keep the in-repo mirror on the latest release (``--tag latest``) and to
+write the recipe for an fdroiddata MR when a release changes build steps. It
+rewrites the single build block (versionName, versionCode, commit) and
+CurrentVersion(Code) in place, keeping the rewritemeta layout. The mirror in this
+repository uses the tag as ``commit``; fdroiddata uses the full SHA
+(``--commit-style sha``). For fdroiddata, the whole build block is first replaced
+with the mirror's block at the tag, so build steps (sudo, rm, prebuild, ...)
+never drift from the source.
 """
 
 from __future__ import annotations

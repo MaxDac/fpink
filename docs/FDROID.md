@@ -6,7 +6,7 @@ technical prerequisites tracked in issues #27, #28, #30, #31, and #32.
 
 ## Submission gates
 
-All five gates are closed and the merge request is open
+All five gates are closed and the merge request was merged on 2026-10-15
 ([fdroiddata!50122](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/50122)).
 Keep their evidence current:
 
@@ -87,6 +87,7 @@ properties that the recorded evidence does not demonstrate.
 
 ### MR description
 
+This section is kept for reference and for any later fdroiddata MR.
 Reviewers read the MR description, not the Fastlane text. Keep it current: update
 it with every release pushed to the MR, and whenever the build steps, OCR runtime,
 models, update check or reproducible-build setup change. Write the part below and
@@ -154,72 +155,38 @@ Treat every maintainer comment and CI failure as a required evidence change.
 - Before accepting the merge, confirm the diff remains focused and all five
   submission gates are still closed.
 
-## While the merge request is open
+## New releases (since the merge)
 
-Reviewers may leave an approved MR in the test queue for a long time, and
-checkupdates only runs for merged apps. Until the merge, every new installable
-release must be pushed to the MR, so testers get the version we actually ship.
-`scripts/fdroid_mr_bump.py` rewrites the single build block and
-`CurrentVersion`/`CurrentVersionCode` for a release tag. It doesn't append a
-new block, so the MR always covers one version. It reads `version.properties`
-at the tag and rejects a mismatched tag, an empty changelog, or a versionCode
-that doesn't supersede the current one. With `--commit-style sha` (the fork), it
-first replaces the fork's whole build entry with the mirror's entry at the tag,
-so build steps such as `sudo`, `rm`, `prebuild` or `ndk` follow the source tree
-instead of lingering after the code that needed them is gone. Change build steps
-in the mirror, not in the fork.
+[fdroiddata!50122](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/50122)
+was merged on 2026-10-15 at `v0.1.0-preview.13` (fdroiddata commit
+`ab5e68df4d076960bc784bd7109cddb0f311223b`). From then on, F-Droid's
+checkupdates bot owns version updates. Publishing a release with the Release
+workflow is all FPInk does: the bot finds the new tag (`UpdateCheckMode: Tags`),
+reads `version.properties` at that tag, copies the last build block
+(`AutoUpdateMode: Version`) and builds it. Nothing is pushed to fdroiddata.
 
-### Automatic: the Release workflow
+- Updates show up in the [package page](https://f-droid.org/packages/com.fpink.capture/)
+  after the bot's next run and the following build and index cycle, usually a
+  few days. Follow them in the
+  [fdroiddata history for the recipe](https://gitlab.com/fdroid/fdroiddata/-/commits/master/metadata/com.fpink.capture.yml)
+  and the [build status](https://monitor.f-droid.org/builds).
+- Because the bot copies the last build block, a release that needs different
+  build steps (`sudo`, `prebuild`, `build`, `ndk`, `rm`, ...) also needs an
+  fdroiddata MR against `master`. Make the change in the in-repo mirror
+  `metadata/com.fpink.capture.yml` first, publish the release, then open an MR
+  that updates the recipe to that tag. Write that MR's recipe with
+  `scripts/fdroid_mr_bump.py --tag v<versionName> --commit-style sha --metadata <fdroiddata>/metadata/com.fpink.capture.yml`
+  on a branch of an up-to-date fork, then run `fdroid rewritemeta`,
+  `fdroid lint` and `fdroid build com.fpink.capture:<versionCode>`.
+- Keep the mirror pointing at the latest release, so it stays a valid recipe:
+  `python3 scripts/fdroid_mr_bump.py --tag latest` in a PR. `--tag latest`
+  selects the release tag with the highest `versionCode` that matches
+  `UpdateCheckMode` and declares itself in `version.properties`.
 
-When a publishing run succeeds, the `fdroid-mr` job in `release.yml` runs the
-script with the exact tag that run just published. You never pick the tag by
-hand. It pushes a commit to the MR's source branch, `com.fpink.capture` on
-[`MaxDac/fdroiddata`](https://gitlab.com/MaxDac/fdroiddata/-/tree/com.fpink.capture),
-whose GitLab CI then runs lint and build. The job summary shows the line to post
-as an MR comment.
-
-The only setup is the repository secret `FDROIDDATA_DEPLOY_KEY`, the private half
-of an SSH [deploy key](https://docs.gitlab.com/user/project/deploy_keys/) that
-can push to the fork and nothing else. Deploy keys are available on GitLab's free
-tier; project access tokens are not.
-
-```text
-ssh-keygen -t ed25519 -N "" -C fpink-release -f fdroiddata_deploy
-# GitLab: MaxDac/fdroiddata > Settings > Repository > Deploy keys > Add new key
-#   paste fdroiddata_deploy.pub, tick "Grant write permissions to this key"
-gh secret set FDROIDDATA_DEPLOY_KEY -R MaxDac/fpink < fdroiddata_deploy
-rm fdroiddata_deploy fdroiddata_deploy.pub
-```
-
-If `com.fpink.capture` is a protected branch, allow the deploy key to push to it.
-The job pins GitLab's published ed25519 host key and never force-pushes.
-Without the secret, the job warns and the release stays green, so update the MR
-manually. The variables `FDROIDDATA_FORK` and `FDROID_MR_BRANCH` override the
-fork and branch. Once the MR is merged, delete the job, the secret and the
-deploy key; from then on checkupdates handles new releases.
-
-### Manual fallback and the mirror
-
-For the in-repo mirror, or when the job isn't configured, `--tag latest` selects
-the release tag with the highest `versionCode`, not the newest tag date. Only
-tags that match `UpdateCheckMode` and declare themselves in `version.properties`
-count:
-
-```text
-git fetch --tags origin
-python3 scripts/fdroid_mr_bump.py --tag latest
-python3 scripts/fdroid_mr_bump.py --tag latest --commit-style sha \
-  --metadata ../fdroiddata/metadata/com.fpink.capture.yml
-```
-
-The mirror here keeps the tag as `commit`; commit its change in a PR. The
-fdroiddata fork uses the full SHA. If you update the fork by hand, run
-`fdroid rewritemeta`, `fdroid lint` and `fdroid build com.fpink.capture:<versionCode>`
-before pushing. Either way, comment on the MR with the `MR note` line (tag, SHA,
-versionName, versionCode).
-
-If you want to help the queue move, you can test other waiting MRs and post the
-results. This is optional.
+Before the merge, the Release workflow's `fdroid-mr` job pushed every release to
+the MR's fork branch. It was removed after the merge. Delete the
+`FDROIDDATA_DEPLOY_KEY` repository secret and the write deploy key on
+`MaxDac/fdroiddata` if they still exist.
 
 ## After merge
 
