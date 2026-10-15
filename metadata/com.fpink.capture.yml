@@ -20,7 +20,7 @@ Builds:
     subdir: app
     sudo:
       - apt-get update
-      - apt-get install -y cmake curl g++ git ninja-build patch python3
+      - apt-get install -y cmake g++ ninja-build
     gradle:
       - foss
     prebuild: bash -x ../recognition/onnxruntime/scripts/build-runtime.sh fetch
