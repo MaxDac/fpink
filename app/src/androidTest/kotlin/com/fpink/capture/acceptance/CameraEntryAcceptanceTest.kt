@@ -25,6 +25,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -85,14 +86,20 @@ class CameraEntryAcceptanceTest {
         storage.close()
     }
 
-    private fun createModel(savedState: SavedStateHandle = SavedStateHandle()): CaptureViewModel {
+    private fun createModel(
+        savedState: SavedStateHandle = SavedStateHandle(),
+        onDeviceUnsupportedReason: String? = null,
+    ): CaptureViewModel {
         lateinit var created: CaptureViewModel
         compose.runOnUiThread {
             val coordinator = RecognitionCoordinator(
                 storage.images, storage.settings, NoteRepository(AndroidFileStore(storage.context)),
                 DefaultNoteProcessor(), { error("Camera entry tests must never run recognition") },
             )
-            created = CaptureViewModel(storage.images, coordinator, storage.settings, savedState)
+            created = CaptureViewModel(
+                storage.images, coordinator, storage.settings, savedState,
+                onDeviceUnsupportedReason = onDeviceUnsupportedReason,
+            )
             models.put("capture-${modelNumber++}", created)
             model = created
         }
@@ -346,6 +353,23 @@ class CameraEntryAcceptanceTest {
             assertFalse(current.uiState.value.cameraChosen)
             assertTrue(launches.isEmpty())
             assertNull(current.uiState.value.sourceId)
+        }
+    }
+
+    @Test fun unsupportedOnDeviceRecognitionBlocksCameraBeforeCaptureAndShowsReason() {
+        val reason = "On-device recognition cannot run through this device's ARM translation layer."
+        val current = createModel(onDeviceUnsupportedReason = reason)
+        showCapture()
+        compose.onNodeWithText(reason).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Take photo").assertIsDisplayed().assertIsNotEnabled()
+        compose.runOnIdle {
+            assertTrue(launches.isEmpty())
+            assertTrue(current.uiState.value.cameraBlocked)
+            assertFalse(current.uiState.value.providerAvailable)
+            assertFalse(current.canChooseCamera())
+            current.chooseCamera()
+            assertFalse(current.uiState.value.cameraChosen)
+            assertFalse(current.consumeCameraEntry(true))
         }
     }
 

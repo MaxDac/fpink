@@ -44,6 +44,10 @@ class AppContainer(context: Context) {
         BuiltInStrategies.ids.map { RecognitionOption(it, checkNotNull(BuiltInStrategies.label(it)), requiresNetwork = false) } +
             RecognitionStrategyRegistry.all().map { RecognitionOption(it.id, it.label, it.requiresNetwork) }
 
+    /** Why built-in (on-device) recognition cannot run on this device, or null when it can. */
+    fun onDeviceUnsupportedReason(): String? =
+        BuiltInStrategies.deviceSupport(appContext).exceptionOrNull()?.let { it.message ?: "On-device recognition cannot run on this device." }
+
     fun recognitionReadinessChecks(): Map<RecognitionStrategyId, suspend () -> Result<Unit>> =
         BuiltInStrategies.ids.associateWith { id -> suspend { checkNotNull(BuiltInStrategies.create(appContext, id)).readiness() } }
 }

@@ -42,6 +42,8 @@ data class CaptureUiState(
     val selectedStrategy: RecognitionStrategyId = RecognitionStrategyId.DEFAULT,
     /** True once a photo was taken with the camera, so the picker stays through crop and review. */
     val fromCamera: Boolean = false,
+    /** True when the default recognition is on-device and this device cannot run it, so capture is not offered. */
+    val cameraBlocked: Boolean = false,
 ) {
     /** The picker is offered on the camera viewfinder and kept through crop and review. */
     val showStrategyPicker: Boolean get() = fromCamera || (cameraChosen && sourceId == null)
@@ -60,12 +62,18 @@ class CaptureViewModel(
     settings: SettingsStore,
     private val savedState: SavedStateHandle,
     private val options: List<RecognitionOption> = builtInRecognitionOptions(),
+    /** Why on-device recognition cannot run here (e.g. ARM translation), or null when it can. */
+    private val onDeviceUnsupportedReason: String? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         CaptureUiState(
             cameraChosen = savedState.get<Boolean>("cameraChosen") == true,
             cropRect = restoredCropRect(),
             fromCamera = savedState.get<Boolean>("fromCamera") == true,
+            // Until settings load, the default strategy is built-in.
+            cameraBlocked = onDeviceUnsupportedReason != null,
+            providerAvailable = false,
+            settingsError = onDeviceUnsupportedReason,
         ),
     )
     private var stored: StoredRecognitionSettings? = null
@@ -133,7 +141,7 @@ class CaptureViewModel(
                 ?.takeIf { id -> state.showStrategyPicker && choices.any { it.id == id } }
             val strategy = picked ?: default
             val settingsError = when {
-                strategy in RecognitionStrategyId.BUILT_IN -> null
+                strategy in RecognitionStrategyId.BUILT_IN -> onDeviceUnsupportedReason
                 choices.none { it.id == strategy } -> "The default recognition is not available in this build. Choose another in Settings."
                 else -> current.keyError ?: if (current.settings.config.isEmpty()) {
                     "Configure the selected recognition service's settings before using this image."
@@ -142,6 +150,7 @@ class CaptureViewModel(
             state.copy(
                 strategyOptions = choices,
                 selectedStrategy = strategy,
+                cameraBlocked = onDeviceUnsupportedReason != null && default in RecognitionStrategyId.BUILT_IN,
                 providerAvailable = settingsError == null,
                 settingsError = settingsError,
                 providerLabel = recognitionLabel(
@@ -158,7 +167,7 @@ class CaptureViewModel(
     }
 
     fun canChooseCamera(): Boolean = _uiState.value.let {
-        !it.busy && it.sourceId == null && it.previewFile == null && it.cameraCropFile == null &&
+        !it.busy && !it.cameraBlocked && it.sourceId == null && it.previewFile == null && it.cameraCropFile == null &&
             !it.cameraChosen && it.confirmedSourceId == null
     }
 
