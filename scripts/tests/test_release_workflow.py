@@ -110,7 +110,6 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn('RELEASE_TYPE: ${{ inputs.release_type }}', WORKFLOW)
         self.assertIn('--release-type "$RELEASE_TYPE"', WORKFLOW)
         build, publish = WORKFLOW.split("\n  publish:\n")
-        publish, fdroid_mr = publish.split("\n  fdroid-mr:\n")
         self.assertNotIn("contents: write", build)
         self.assertNotIn("actions/checkout@", publish)
         self.assertIn("persist-credentials: false", build)
@@ -118,26 +117,10 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("environment: release", publish)
         self.assertIn("RELEASE_PUBLICATION_APPROVED", publish)
 
-    def test_fdroid_mr_job_uses_the_published_tag(self):
-        job = WORKFLOW.split("\n  fdroid-mr:\n", 1)[1]
-        self.assertEqual(job.split("\n", 1)[0].strip(), "if: ${{ inputs.publish }}")
-        self.assertIn("'MaxDac/fdroiddata'", job)
-        self.assertIn("'com.fpink.capture'", job)
-        self.assertIn("needs: [build, publish]", job)
-        self.assertIn("TAG: ${{ needs.build.outputs.tag }}", job)
-        self.assertIn('--tag "$TAG" --commit-style sha', job)
-        self.assertNotIn("--tag latest", job)
-        self.assertNotIn("contents: write", job)
-        self.assertIn("persist-credentials: false", job)
-        self.assertNotIn("--force", job)
-        self.assertIn("DEPLOY_KEY: ${{ secrets.FDROIDDATA_DEPLOY_KEY }}", job)
-        self.assertIn('"git@gitlab.com:$FORK.git"', job)
-        self.assertIn("StrictHostKeyChecking=yes", job)
-        self.assertNotIn("StrictHostKeyChecking=no", job)
-        self.assertNotIn("ssh-keyscan", job)
-        self.assertIn(
-            "gitlab.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfuCHKVTjquxvt6CM6tdG4SLp1Btn/nOeHHE5UOzRdf", job
-        )
+    def test_no_fdroiddata_push_after_merge(self):
+        # fdroid/fdroiddata!50122 is merged; checkupdates discovers new tags itself.
+        self.assertNotIn("fdroid-mr:", WORKFLOW)
+        self.assertNotIn("FDROIDDATA_DEPLOY_KEY", WORKFLOW)
 
     def test_sign_manifest_and_temporary_key_cleanup(self):
         self.sign()

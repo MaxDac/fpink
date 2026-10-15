@@ -7,6 +7,17 @@ FOSS: two bundled on-device recognition strategies are available. **Cursive**
 the default under Settings → Default recognition; when capturing with the camera,
 you can also pick a strategy for that one photo.
 
+## Install
+
+[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png" alt="Get it on F-Droid" height="80">](https://f-droid.org/packages/com.fpink.capture/)
+
+FPInk was accepted into [F-Droid](https://f-droid.org/packages/com.fpink.capture/)
+on 2026-10-15. Until F-Droid's build and index cycle publishes it, that page may
+still be missing. Signed APKs are also on
+[GitHub Releases](https://github.com/MaxDac/fpink/releases); both channels ship
+the same reproducible, upstream-signed APK, so you can switch between them
+without reinstalling. FPInk needs an arm64 device.
+
 ## Correcting captured notes
 
 After a new image is recognized and saved, the app opens a review screen containing

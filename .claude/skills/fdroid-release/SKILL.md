@@ -1,25 +1,26 @@
 ---
 name: fdroid-release
-description: Cut an FPInk release end to end and ship it to F-Droid. Declares the version in a release-bump PR, runs the Release workflow, verifies the signed GitHub release, then points the open fdroiddata merge request (MaxDac/fdroiddata@com.fpink.capture) and this repo's recipe mirror at the new tag. Use when asked to release, cut a preview or stable version, ship to F-Droid, or update the F-Droid MR/GitLab branch to the latest version.
+description: Cut an FPInk release end to end and ship it to F-Droid. Declares the version in a release-bump PR, runs the Release workflow, verifies the signed GitHub release, points this repo's recipe mirror at the new tag and checks that F-Droid's checkupdates picks it up (FPInk is merged in fdroiddata). Use when asked to release, cut a preview or stable version, or ship to F-Droid.
 ---
 
 # FPInk release to F-Droid
 
-Drive the whole flow with `gh`, `git` and `python3`. It is described in
+Drive the whole flow with `gh`, `git` and `python3` (on Windows, run `python3`
+in WSL if it isn't on the PATH). It is described in
 `docs/RELEASING.md` and `docs/FDROID.md`; read them if a step fails. Report every
 PR, run, tag and commit you create.
 
 Inputs, taken from the prompt:
-- **type**: `prerelease` (default) or `stable`.
+- **type**: `prerelease` (default) or `stable`. A stable release has no
+  suffix (`0.1.0`, then `0.2.0`...) and becomes GitHub's Latest release; use the
+  same type in steps 2 and 3.
 - **version**: optional; leave it out so the tooling picks the next version.
-- **mode**: whether to stop after the F-Droid update or also post the MR comment.
-  Default: draft the comment only.
 
 ## Guardrails
 
 - Never move, delete or replace a tag, release or asset. Never reuse a versionCode.
-- Never force-push to `main`, the fdroiddata fork or `fdroid/fdroiddata`. Only push
-  to the fork branch `com.fpink.capture`.
+- Never force-push to `main`. Never push to `fdroid/fdroiddata`; changes there go
+  through a merge request from a fork.
 - Never bypass required checks (`--admin`) or edit `version.properties` by hand.
 - If a check or run fails, stop, show the failing log (`gh run view <id> --log-failed`)
   and propose a fix. Do not retry by publishing a different version.
@@ -77,37 +78,18 @@ gh run watch "$RUN" --exit-status --interval 60      # about 20 minutes
 gh release view "v$V" --json tagName,isPrerelease,assets -q '{tagName,isPrerelease,assets:[.assets[].name]}'
 ```
 
+The `publish` job waits for the `release` environment. If it stays `waiting`,
+ask the user to approve the deployment in the run page; don't try to bypass it.
+`isPrerelease` must be `false` for a stable release.
+
 Confirm that the release has `FPInk-$V.apk`, `SHA256SUMS`, `release-manifest.json` and `LICENSE`,
 and that `git rev-parse "v$V^{commit}"` equals `$MAIN`.
 
-## 4. Point the fdroiddata MR at the release
+## 4. Update the in-repo mirror
 
-The `fdroid-mr` job in the same run does this when the `FDROIDDATA_DEPLOY_KEY` secret (a write deploy key on the fork) is set:
-
-```bash
-gh run view "$RUN" --json jobs -q '.jobs[] | select(.name=="fdroid-mr") | .conclusion'
-git ls-remote git@gitlab.com:MaxDac/fdroiddata.git refs/heads/com.fpink.capture
-```
-
-If the job only warned (no token), push it over SSH yourself. On Windows, the GitLab
-SSH key may only be set up in WSL; if `git ls-remote` fails with `publickey`, run
-this block inside `wsl -e bash -lc '...'`:
-
-```bash
-W=$(mktemp -d)
-git clone -q --single-branch --branch com.fpink.capture git@gitlab.com:MaxDac/fdroiddata.git "$W/fdd"
-python3 scripts/fdroid_mr_bump.py --tag "v$V" --commit-style sha --metadata "$W/fdd/metadata/com.fpink.capture.yml"
-cd "$W/fdd"
-fdroid rewritemeta com.fpink.capture && fdroid lint com.fpink.capture   # if fdroidserver is installed
-git diff --stat      # expect only metadata/com.fpink.capture.yml: 5 version lines, plus any build-step change from the mirror
-git commit -qam "FPInk: update to v$V" && git push origin HEAD:com.fpink.capture
-```
-
-The script must run against a checkout that has the new tag (`git fetch --tags`
-first). In `sha` mode it copies the build entry from the mirror at the tag, so the
-fork's build steps always match the source. Keep its `MR note:` line.
-
-## 5. Update the in-repo mirror
+FPInk is merged in fdroiddata (fdroid/fdroiddata!50122), so checkupdates finds the
+new tag on its own. Nothing is pushed to fdroiddata for a routine release. Keep the
+mirror on the latest release:
 
 ```bash
 git switch -c "fdroid-mirror/$V" origin/main
@@ -116,28 +98,19 @@ git commit -am "Point F-Droid mirror recipe at v$V" && git push -u origin HEAD
 gh pr create --fill && gh pr merge --squash --auto --delete-branch
 ```
 
-## 6. Tell the F-Droid reviewer
+If the mirror's build entry (`sudo`, `prebuild`, `build`, `ndk`, `rm`, ...)
+changed since the previous release, checkupdates would copy the old steps, so the
+release also needs an fdroiddata MR. Don't open it yourself: tell the user and
+point to "New releases (since the merge)" in `docs/FDROID.md`.
 
-Draft this comment for https://gitlab.com/fdroid/fdroiddata/-/merge_requests/50122:
+## 5. Check F-Droid
 
-```text
-Updated to v<V> (commit <full SHA>, versionCode <code>), the latest release. <One sentence on what changed.> The build block, CurrentVersion and CurrentVersionCode were rewritten; rewritemeta and lint pass.
-```
-
-Post it only if the prompt asks you to and an authenticated `glab` is available:
-`glab mr note 50122 -R fdroid/fdroiddata -m "<comment>"`. Otherwise give the
-draft to the user.
-
-Then refresh the MR description, which reviewers check against the recipe. Fill
-the template in `docs/FDROID.md` ("MR description") with the new tag, full SHA,
-versionCode, APK size and fork pipeline/`fdroid build` job links. Carry over any
-build-step, runtime, model, update-check or reproducibility change from the
-mirror diff. Keep F-Droid's checklist from the current description. Update it
-with `glab mr update 50122 -R fdroid/fdroiddata -d "<description>"` under the same
-conditions as the comment; otherwise give the full draft to the user.
+Report where to watch the update: the
+[recipe history](https://gitlab.com/fdroid/fdroiddata/-/commits/master/metadata/com.fpink.capture.yml),
+where the bot commits `Update FPInk to <V>`, and the
+[package page](https://f-droid.org/packages/com.fpink.capture/). Both usually lag the
+release by days, so don't wait for them.
 
 ## Done
 
-Report the release URL, the tag and SHA, the fdroiddata fork commit, the mirror PR,
-the MR comment and the MR description. After F-Droid merges the MR, checkupdates takes over. Delete the
-`fdroid-mr` job, its secret and steps 4 to 6 of this skill.
+Report the release-bump PR, the release URL, the tag and SHA, the run, and the mirror PR.

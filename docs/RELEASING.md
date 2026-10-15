@@ -46,9 +46,13 @@ approval, not something a routine CI run should create.
 ## Run a release
 
 To have an agent do all of this, prompt Claude Code or Copilot CLI with something
-like "Use the fdroid-release skill to cut the next preview". The skill lives in
-`.claude/skills/fdroid-release/SKILL.md`. It runs the steps below, then updates
-the fdroiddata MR and the recipe mirror.
+like "Use the fdroid-release skill to cut the next preview" (or "the next stable
+release"). The skill lives in `.claude/skills/fdroid-release/SKILL.md`. It runs
+the steps below, then keeps the recipe mirror current and checks that F-Droid
+picks the release up.
+
+The scripts need Python 3 as `python3` (CI uses Ubuntu 24.04's). On Windows, run
+them in WSL if `python3` isn't on the PATH.
 
 First declare the release in a release-bump PR. F-Droid's auto-update reads the
 version from `version.properties` at the release tag, so the tagged commit must
@@ -57,6 +61,8 @@ already contain it:
 ```text
 git switch -c release/next origin/main
 python3 scripts/release_version.py --repository MaxDac/fpink --release-type prerelease --prepare
+# or, for a stable release:
+python3 scripts/release_version.py --repository MaxDac/fpink --release-type stable --prepare
 # edit fastlane/metadata/android/en-US/changelogs/<versionCode>.txt (max 500 characters)
 git commit -am "Release <versionName>" && gh pr create --fill
 ```
@@ -101,10 +107,10 @@ It must contain the latest released source. A concurrency group prevents active
 release runs from overlapping; GitHub may replace an older *pending* run when
 multiple dispatches queue, so confirm that the intended run actually started.
 
-While the fdroiddata merge request is unmerged, the `fdroid-mr` job pushes the new tag to it
-automatically once `FDROIDDATA_DEPLOY_KEY` is set, copying the build entry from the
-in-repo mirror at that tag. See
-[FDROID.md](FDROID.md#while-the-merge-request-is-open).
+After publishing, F-Droid's checkupdates bot picks up the new tag on its own;
+nothing is pushed to fdroiddata. Releases that change build steps also need an
+fdroiddata MR, and the in-repo recipe mirror should follow the latest release.
+See [FDROID.md](FDROID.md#new-releases-since-the-merge).
 
 ## Versioning and output
 
@@ -287,7 +293,7 @@ until issues #27, #28, #30, #31, and #32 are complete.
 | Optional cloud OCR provider | Public releases (`foss` flavor) are offline-only (bundled Printed and Cursive strategies only) and never contact a cloud service; there is nothing to disclose. A private, non-F-Droid "full" build variant, built from a separate private companion repo, may add optional cloud/proprietary recognition strategies for the maintainer's own signed releases — see `docs/ARCHITECTURE.md`'s flavor-split section — but that variant is never published to F-Droid. |
 | Identity and signing | Confirm the long-term `com.fpink.capture` identity. Choose F-Droid signing or upstream-signed reproducible builds before first distribution. Do not share the private key. Different certificates normally prevent switching channels in place. |
 | Shared-signature reproducibility | Releases from 0.1.0-preview.8 are built like the buildserver and checked by the Reproducibility workflow; the recipe sets `Binaries` and `AllowedAPKSigningKeys`. |
-| Submission | Prepare `metadata/com.fpink.capture.yml` in `fdroiddata`, lint/build it, submit a merge request, resolve review, push every new release to the open MR (`scripts/fdroid_mr_bump.py`), and maintain update checks. Acceptance and timing belong to F-Droid. |
+| Submission | Prepare `metadata/com.fpink.capture.yml` in `fdroiddata`, lint/build it, submit a merge request, resolve review and maintain update checks. Done: [fdroiddata!50122](https://gitlab.com/fdroid/fdroiddata/-/merge_requests/50122) was merged on 2026-10-15; checkupdates now handles new releases. Acceptance and timing belong to F-Droid. |
 
 A self-hosted F-Droid repository is a different distribution route. It requires
 hosting, signed indexes and maintenance and does not remove licensing duties.
