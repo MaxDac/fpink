@@ -1,0 +1,1 @@
+First stable release, now on F-Droid. When on-device recognition can't run on your device, for example through an ARM translation layer, Add notes now explains why and disables Take photo before you capture, instead of failing afterwards.
