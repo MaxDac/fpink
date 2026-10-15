@@ -80,7 +80,7 @@ fun CaptureScreen(
     viewModel: CaptureViewModel = savedContainerViewModel { container, savedState ->
         CaptureViewModel(
             container.imageImports, container.recognitionCoordinator, container.settingsStore, savedState,
-            container.recognitionOptions(),
+            container.recognitionOptions(), container.onDeviceUnsupportedReason(),
         )
     },
 ) {
@@ -224,7 +224,7 @@ fun CaptureScreen(
                     R.drawable.ic_camera,
                     R.string.take_photo,
                     filled = true,
-                    enabled = !state.busy && !requestingPermission,
+                    enabled = !state.busy && !state.cameraBlocked && !requestingPermission,
                     onClick = ::requestCamera,
                 )
                 if (state.busy) CircularProgressIndicator()
