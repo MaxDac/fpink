@@ -108,6 +108,14 @@ See [architecture](docs/ARCHITECTURE.md), [bundled recognition models](recogniti
 [release setup and versioning](docs/RELEASING.md), and the
 [F-Droid submission and maintenance runbook](docs/FDROID.md).
 
+## Support
+
+If you find FPInk useful, you can [leave a tip on Ko-fi](https://ko-fi.com/maxdac).
+Tips are entirely optional and do not unlock features. **Settings → Leave a tip**
+opens that page in your external browser; FPInk does not process payments or
+send note data. Ko-fi is a third-party website with its own privacy and payment
+terms.
+
 ## License
 
 Copyright (C) 2026 FPInk contributors.

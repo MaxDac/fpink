@@ -209,7 +209,7 @@ the toolchain matches: OpenJDK 21 and gradlew-fdroid. The build path is F-Droid'
 commit time. When bumping the image digest in `scripts/fdroid-rb-docker.sh`,
 rerun the Reproducibility workflow.
 
-The current Linux/amd64 image is pinned to
+The current Linux/amd64 image was re-pinned on 2026-10-24 to
 `sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac`
 (upstream image revision `8f52ae3ce287bc28964db544b970b88dce9c38bf`,
 created 2026-10-21). It replaces the retired `9cb681...469a8` manifest, which

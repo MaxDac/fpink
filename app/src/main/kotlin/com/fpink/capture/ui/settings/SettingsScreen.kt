@@ -1,14 +1,17 @@
 package com.fpink.capture.ui.settings
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.view.WindowManager
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,11 +27,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fpink.capture.ui.containerViewModel
 import com.fpink.capture.R
@@ -54,6 +64,8 @@ fun SettingsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val settingsExtension = remember { SettingsExtensionRegistry.find() }
+    val tipUrl = stringResource(R.string.tip_url)
+    var tipError by rememberSaveable { mutableStateOf<Int?>(null) }
     DisposableEffect(context) {
         val window = context.findActivity()?.window
         val wasSecure = window?.attributes?.flags?.and(WindowManager.LayoutParams.FLAG_SECURE) != 0
@@ -124,6 +136,32 @@ fun SettingsScreen(
             settingsExtension?.let {
                 HorizontalDivider()
                 it.Content(Modifier.fillMaxWidth())
+            }
+            HorizontalDivider()
+            TextButton(
+                modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                onClick = {
+                    tipError = null
+                    try {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, tipUrl.toUri()).addCategory(Intent.CATEGORY_BROWSABLE),
+                        )
+                    } catch (_: ActivityNotFoundException) {
+                        tipError = R.string.tip_browser_unavailable
+                    } catch (_: SecurityException) {
+                        tipError = R.string.tip_browser_blocked
+                    }
+                },
+            ) {
+                Text(stringResource(R.string.leave_a_tip))
+            }
+            Text(stringResource(R.string.tip_help), style = MaterialTheme.typography.bodySmall)
+            tipError?.let {
+                Text(
+                    stringResource(it),
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
             }
         }
     }
