@@ -1,5 +1,10 @@
 package com.fpink.capture.data
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -35,7 +40,10 @@ import kotlinx.coroutines.withContext
 data class StagedImage(val sourceId: String, val file: File)
 
 /** Only app-owned UUIDs cross navigation. External URI grants are consumed during import. */
-class ImageImportStore(context: Context) {
+class ImageImportStore(
+    context: Context,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
+) {
     private val context = context.applicationContext
     private val directory = File(context.noBackupFilesDir, "image-imports")
     private val cameraDirectory = File(context.cacheDir, "camera-captures")
@@ -69,7 +77,7 @@ class ImageImportStore(context: Context) {
         try {
             return importOwned { sourceId -> FileInputStream(file).use { stage(it, sourceId) } }
         } finally {
-            file.delete()
+            cleanupFile(file)
         }
     }
 
@@ -80,7 +88,7 @@ class ImageImportStore(context: Context) {
                 FileInputStream(file).use { stage(it, sourceId, cameraCropFile(sourceId)) }
             }
         } finally {
-            file.delete()
+            cleanupFile(file)
         }
     }
 
@@ -116,7 +124,7 @@ class ImageImportStore(context: Context) {
             check(input.delete()) { "Could not remove the uncropped camera image." }
             StagedImage(sourceId, previewFile(sourceId))
         } catch (error: Throwable) {
-            temporary.delete()
+            cleanupFile(temporary)
             throw error
         } finally {
             cropped?.takeIf { it !== bitmap }?.recycle()
@@ -130,7 +138,7 @@ class ImageImportStore(context: Context) {
     }
 
     fun deleteCameraFile(file: File) {
-        if (file.canonicalFile.parentFile == cameraDirectory.canonicalFile) file.delete()
+        if (file.canonicalFile.parentFile == cameraDirectory.canonicalFile) cleanupFile(file)
     }
 
     suspend fun load(sourceId: String): PreparedImage = withContext(Dispatchers.IO) {
@@ -209,8 +217,8 @@ class ImageImportStore(context: Context) {
 
     suspend fun cleanExpired() = withContext(Dispatchers.IO) {
         val cutoff = System.currentTimeMillis() - 7L * 24 * 60 * 60 * 1000
-        directory.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.deleteRecursively() }
-        cameraDirectory.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.delete() }
+        directory.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { cleanupFile(it, recursive = true) }
+        cameraDirectory.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { cleanupFile(it) }
     }
 
     /**
@@ -234,7 +242,7 @@ class ImageImportStore(context: Context) {
             return withContext(Dispatchers.IO) { import(sourceId) }
         } catch (error: Throwable) {
             // Also covers cancellation at withContext's return boundary, after decoding finished.
-            withContext(NonCancellable + Dispatchers.IO) { sourceDirectory(sourceId).deleteRecursively() }
+            withContext(NonCancellable + Dispatchers.IO) { cleanupFile(sourceDirectory(sourceId), recursive = true) }
             throw error
         }
     }
@@ -268,8 +276,15 @@ class ImageImportStore(context: Context) {
             check(original.delete()) { "Could not remove the intermediate image." }
             return StagedImage(sourceId, destination)
         } catch (error: Throwable) {
-            folder.deleteRecursively()
+            cleanupFile(folder, recursive = true)
             throw error
+        }
+    }
+
+    private fun cleanupFile(file: File, recursive: Boolean = false) {
+        val removed = if (recursive) file.deleteRecursively() else file.delete()
+        if (!removed && file.exists()) {
+            reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(IOException()))
         }
     }
 

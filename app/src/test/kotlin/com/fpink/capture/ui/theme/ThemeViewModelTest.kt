@@ -1,5 +1,9 @@
 package com.fpink.capture.ui.theme
 
+import com.fpink.capture.diagnostics.DiagnosticCategory
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+
 import com.fpink.capture.data.ThemeMode
 import com.fpink.capture.data.ThemeSettings
 import java.io.IOException
@@ -123,6 +127,37 @@ class ThemeViewModelTest {
         runCurrent()
         assertEquals(ThemeMode.DARK, model.uiState.value.mode)
         assertNull(model.uiState.value.error)
+    }
+
+    @Test fun `handled read and write failures report typed settings events and remain retryable`() = runTest(dispatcher) {
+        val events = mutableListOf<Pair<DiagnosticOperation, DiagnosticCategory>>()
+        val reporter = object : DiagnosticReporter {
+            override fun report(operation: DiagnosticOperation, category: DiagnosticCategory) {
+                events += operation to category
+            }
+        }
+        val store = FakeSettings(ThemeMode.LIGHT).apply { failRead = true }
+        val model = ThemeViewModel(store, reporter = reporter)
+        runCurrent()
+        assertEquals(listOf(DiagnosticOperation.SETTINGS_LOAD to DiagnosticCategory.STORAGE), events)
+        store.failRead = false
+        model.retryLoad()
+        runCurrent()
+        store.failWrite = true
+        model.select(ThemeMode.DARK)
+        advanceUntilIdle()
+        assertEquals(ThemeMode.LIGHT, model.uiState.value.mode)
+        assertEquals(
+            listOf(
+                DiagnosticOperation.SETTINGS_LOAD to DiagnosticCategory.STORAGE,
+                DiagnosticOperation.SETTINGS_SAVE to DiagnosticCategory.STORAGE,
+            ),
+            events,
+        )
+        model.select(ThemeMode.DARK)
+        advanceUntilIdle()
+        assertEquals(ThemeMode.DARK, store.saved)
+        assertEquals(2, events.size)
     }
 
     private class FakeSettings(var saved: ThemeMode = ThemeMode.SYSTEM) : ThemeSettings {

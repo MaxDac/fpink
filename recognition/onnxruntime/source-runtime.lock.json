@@ -2,8 +2,8 @@
   "schema": 1,
   "source": {
     "repository": "https://github.com/microsoft/onnxruntime.git",
-    "tag": "v1.30.0",
-    "commit": "f2c39fe2f838cf35ce7da92824f5a5e3ee6e88a7",
+    "tag": "v1.31.0",
+    "commit": "402979ac1bef89dcd55add41eaa7277c407599eb",
     "license": "MIT"
   },
   "preparation": {
@@ -38,7 +38,7 @@
       "eigen": "05b19b49e6fbb91246be711d801160528c135e34",
       "flatbuffers": "59422c3b5e573dd192fead2834d25951f1c1670c",
       "json": "5e88795165cc8590138d1f47ce94ee567b85b4d6",
-      "kleidiai": "6895e72b3d5cf1173358164cb3d64c9d7d33cc84",
+      "kleidiai": "36aebdd5bd28c40b1943eb93498ae42e703510e5",
       "microsoft_gsl": "1094e3bb7a8af763dcb136ccd676e6e75e614eec",
       "mp11": "9bc9e01dffb64d9e0773b2e44d2f22c51aace063",
       "onnx": "2b2cd58ac7a26df5371266149e0c76776330cdf1",
@@ -80,6 +80,10 @@
       "onnxruntime_DISABLE_FLOAT8_TYPES=ON",
       "onnxruntime_DISABLE_FLOAT4_TYPES=ON"
     ],
+    "cxxFlags": [
+      "-Wno-error=unused-const-variable"
+    ],
+    "cxxFlagsNote": "Appended to CMAKE_CXX_FLAGS. ONNX Runtime 1.31.0 builds its own targets with COMPILE_WARNING_AS_ERROR, and onnxruntime/core/mlas/lib/kleidiai/halfgemm_kleidiai.cpp defines Sve2p1HalfGemmKernelName but only uses it with test hooks or KleidiAI kernel logging, so builds without unit tests fail on -Wunused-const-variable. The flag keeps the warning but stops it failing the build; it does not change generated code. Recorded in PROVENANCE and verified by Gradle.",
     "outputs": [
       "generated/jniLibs/arm64-v8a/libonnxruntime.so",
       "generated/jniLibs/arm64-v8a/libonnxruntime4j_jni.so"
@@ -104,11 +108,11 @@
       "1DS Java HttpClient"
     ],
     "expectedSha256": {
-      "generated/jniLibs/arm64-v8a/libonnxruntime.so": "a1604b60bdfe4ba874a419093c4d3c03c1044a54a4cd625d12aea773d035c117",
-      "generated/jniLibs/arm64-v8a/libonnxruntime4j_jni.so": "b64713e4f4fde6dcc9d733b29167c798995373a579c00816c49db3a0b8ea529c",
+      "generated/jniLibs/arm64-v8a/libonnxruntime.so": "6848848ed2f56d8902b6e52dad3ec1feac5c0565d1ffc848f3febeb6e02b544d",
+      "generated/jniLibs/arm64-v8a/libonnxruntime4j_jni.so": "f501fd7dcbe8101a5b1abbf78f1499bdcc35e1dcebbf9b52125237e944d7a075",
       "generated/assets/onnxruntime/LICENSE": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c",
       "generated/assets/onnxruntime/ThirdPartyNotices.txt": "143764b952fdb1a7c69ce653bfba74a7744d6a8a573bfb73e235fba356c83de3",
-      "generated/java": "c4a7f594b0f5522fe674b007307c678580cfa86835ad39ac811df7e7e2ffbc4e"
+      "generated/java": "474962b9abad0c8774323fb193fefba7c2b66a7f87ad86a94a86a6d3a6210458"
     },
     "reproducibility": "expectedSha256 pins the stripped libraries built by scripts/build-runtime.sh with NDK 28.2.13676358 and SOURCE_DATE_EPOCH set to the pinned ONNX Runtime commit time. Build paths are mapped away (-ffile-prefix-map), so F-Droid's buildserver-trixie image at /home/vagrant/build/com.fpink.capture and other Linux x86_64 hosts produce the same bytes. -PortRuntimeBuiltFromSource fails on a mismatch unless -PallowUnpinnedOrtRuntime is set.",
     "networkInputs": [
