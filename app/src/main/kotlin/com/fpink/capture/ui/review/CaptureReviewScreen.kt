@@ -47,7 +47,7 @@ fun CaptureReviewScreen(
     onComplete: () -> Unit,
     onExit: () -> Unit,
     viewModel: CaptureReviewViewModel = containerViewModel {
-        CaptureReviewViewModel(sourceId, it.noteRepository)
+        CaptureReviewViewModel(sourceId, it.noteRepository, reporter = it.diagnosticReporter)
     },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()

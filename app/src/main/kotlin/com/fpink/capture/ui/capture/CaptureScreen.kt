@@ -81,6 +81,7 @@ fun CaptureScreen(
         CaptureViewModel(
             container.imageImports, container.recognitionCoordinator, container.settingsStore, savedState,
             container.recognitionOptions(), container.onDeviceUnsupportedReason(),
+            reporter = container.diagnosticReporter,
         )
     },
 ) {
@@ -114,12 +115,12 @@ fun CaptureScreen(
             requestingPermission = true
             try {
                 permission.launch(Manifest.permission.CAMERA)
-            } catch (_: ActivityNotFoundException) {
+            } catch (failure: ActivityNotFoundException) {
                 requestingPermission = false
-                viewModel.error("Camera access could not be requested. Go back and choose Gallery or File instead.")
-            } catch (_: SecurityException) {
+                viewModel.cameraFailed(failure, "Camera access could not be requested. Go back and choose Gallery or File instead.")
+            } catch (failure: SecurityException) {
                 requestingPermission = false
-                viewModel.error(CAMERA_PERMISSION_DENIED)
+                viewModel.cameraFailed(failure, CAMERA_PERMISSION_DENIED)
             }
         }
     }
@@ -430,13 +431,19 @@ private fun CameraPreview(viewModel: CaptureViewModel, shutter: CameraShutter, m
     var capture by remember(previewView, lifecycleOwner) { mutableStateOf<ImageCapture?>(null) }
 
     DisposableEffect(previewView, lifecycleOwner, viewModel) {
-        val future = ProcessCameraProvider.getInstance(context)
+        val future = try {
+            ProcessCameraProvider.getInstance(context)
+        } catch (failure: Exception) {
+            viewModel.chooseOtherSource()
+            viewModel.cameraFailed(failure, "The camera is unavailable. You can still choose an image.")
+            return@DisposableEffect onDispose {}
+        }
         var provider: ProcessCameraProvider? = null
         var preview: Preview? = null
         var disposed = false
-        fun cameraUnavailable() {
+        fun cameraUnavailable(failure: Exception) {
             viewModel.chooseOtherSource()
-            viewModel.error("The camera is unavailable. You can still choose an image.")
+            viewModel.cameraFailed(failure, "The camera is unavailable. You can still choose an image.")
         }
         val rotation = CameraDisplayRotation(previewView, lifecycleOwner.lifecycle) { targetRotation ->
             val current = provider
@@ -459,8 +466,8 @@ private fun CameraPreview(viewModel: CaptureViewModel, shutter: CameraShutter, m
                     preview = cameraPreview
                     current.bindToLifecycle(lifecycleOwner, selector, cameraPreview, imageCapture)
                     capture = imageCapture
-                } catch (_: Exception) {
-                    cameraUnavailable()
+                } catch (failure: Exception) {
+                    cameraUnavailable(failure)
                 }
             }
         }
@@ -469,8 +476,8 @@ private fun CameraPreview(viewModel: CaptureViewModel, shutter: CameraShutter, m
                 try {
                     provider = future.get()
                     rotation.updateRotation()
-                } catch (_: Exception) {
-                    cameraUnavailable()
+                } catch (failure: Exception) {
+                    cameraUnavailable(failure)
                 }
             }
         }, executor)
@@ -499,13 +506,18 @@ private fun CameraPreview(viewModel: CaptureViewModel, shutter: CameraShutter, m
                         override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) = viewModel.importCamera(file)
                         override fun onError(exception: ImageCaptureException) {
                             viewModel.deleteCameraFile(file)
-                            viewModel.error("The camera could not save the photo. Try again or choose an image.")
+                            val message = "The camera could not save the photo. Try again or choose an image."
+                            if (lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+                                viewModel.cameraFailed(exception, message)
+                            } else {
+                                viewModel.error(message)
+                            }
                         }
                     },
                 )
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
                 pendingFile?.let(viewModel::deleteCameraFile)
-                viewModel.error("Could not start a capture. Check camera access and available storage.")
+                viewModel.cameraFailed(failure, "Could not start a capture. Check camera access and available storage.")
             }
         }
         onDispose { shutter.action = null }

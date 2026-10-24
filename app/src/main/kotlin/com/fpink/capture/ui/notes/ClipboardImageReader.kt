@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.notes
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -16,7 +21,10 @@ interface ClipboardImageReader {
     fun currentImage(): ClipboardImageResult
 }
 
-class AndroidClipboardImageReader(context: Context) : ClipboardImageReader {
+class AndroidClipboardImageReader(
+    context: Context,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
+) : ClipboardImageReader {
     private val appContext = context.applicationContext
     private val clipboard = appContext.getSystemService(ClipboardManager::class.java)
 
@@ -36,13 +44,17 @@ class AndroidClipboardImageReader(context: Context) : ClipboardImageReader {
             appContext.contentResolver.openInputStream(uri)?.use { }
                 ?: return ClipboardImageResult.Unavailable(UNREADABLE_IMAGE)
             ClipboardImageResult.Available(uri)
-        } catch (_: SecurityException) {
+        } catch (error: SecurityException) {
+            reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(error))
             ClipboardImageResult.Unavailable(UNREADABLE_IMAGE)
-        } catch (_: FileNotFoundException) {
+        } catch (error: FileNotFoundException) {
+            reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(error))
             ClipboardImageResult.Unavailable(UNREADABLE_IMAGE)
-        } catch (_: IllegalArgumentException) {
+        } catch (error: IllegalArgumentException) {
+            reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(error))
             ClipboardImageResult.Unavailable(UNREADABLE_IMAGE)
-        } catch (_: IOException) {
+        } catch (error: IOException) {
+            reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(error))
             ClipboardImageResult.Unavailable(UNREADABLE_IMAGE)
         }
     }

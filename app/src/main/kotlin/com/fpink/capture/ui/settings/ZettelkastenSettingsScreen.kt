@@ -47,7 +47,9 @@ fun ZettelkastenCategory.description(): String = when (this) {
 @Composable
 fun ZettelkastenSettingsScreen(
     onBack: () -> Unit,
-    viewModel: ZettelkastenSettingsViewModel = containerViewModel { ZettelkastenSettingsViewModel(it.settingsStore) },
+    viewModel: ZettelkastenSettingsViewModel = containerViewModel {
+        ZettelkastenSettingsViewModel(it.settingsStore, reporter = it.diagnosticReporter)
+    },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     Scaffold(

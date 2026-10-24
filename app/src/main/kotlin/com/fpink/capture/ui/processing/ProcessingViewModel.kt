@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.processing
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,9 +21,19 @@ class ProcessingViewModel(
     private val coordinator: RecognitionCoordinator,
     images: ImageImportStore,
     savedState: SavedStateHandle,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ViewModel() {
     val sourceId: String = savedState.get<String>("sourceId").orEmpty()
-    val previewFile = runCatching { images.previewFile(sourceId) }.getOrNull()
+    val previewFile = try {
+        images.previewFile(sourceId)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (error: Exception) {
+        reporter.report(DiagnosticOperation.STORAGE_LOAD, classifyDiagnostic(error))
+        null
+    }
     val uiState = coordinator.state(sourceId)
     private val _discardError = MutableStateFlow<String?>(null)
     val discardError = _discardError.asStateFlow()

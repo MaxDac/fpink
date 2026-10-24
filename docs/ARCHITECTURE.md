@@ -8,7 +8,7 @@
 | `:core:ai` | Recognition model/strategy contracts, config-map settings, plugin registry, paragraph and colour processing |
 | `:core:storage` | Portable note repository and recoverable batch publication |
 | `:recognition:runtime` | ONNX Runtime sessions, SHA-pinned asset materialisation, ABI checks, DB post-processing, quad crops, CTC decoding |
-| `:recognition:onnxruntime` | Release-only ONNX Runtime 1.30.0 built from source (arm64-v8a, telemetry compiled out), hash-pinned; debug builds use the Maven Central AAR |
+| `:recognition:onnxruntime` | Release-only ONNX Runtime 1.31.0 built from source (arm64-v8a, telemetry compiled out), hash-pinned; debug builds use the Maven Central AAR |
 | `:recognition:models` | Individual bundled models: PP-OCRv6 small detector, PP-OCRv6 medium recognizer, Kraken recognizer |
 | `:recognition:strategies` | Built-in Printed and Cursive strategies combining a detector with a line recognizer |
 | `:app` | Image intake, permissions, encrypted settings, lifecycle, UI and manual DI |
@@ -309,6 +309,52 @@ behavior beyond its offline strategies. See "Public/private flavor split" below.
 
 ## Errors and verification boundaries
 
+### Local diagnostics
+
+`FPInkApp` installs the common `DiagnosticStore` Java/Kotlin uncaught handler
+before constructing `AppContainer`. Fatal recording is synchronous and bounded;
+the prior platform handler is always called. Native crashes, ANRs and OS process
+kills are outside this handler's coverage. Normal handled-error recording runs
+off the main thread. Ownership boundaries report once: the recognition coordinator
+owns provider failures, while settings/import/storage/UI operations own their
+handled failures. Coroutine cancellation remains cancellation, not an error event.
+
+`AppContainer.diagnosticReporter` exposes only `report(DiagnosticOperation,
+DiagnosticCategory)`. The type-only classifier never serializes exception messages,
+causes, stack traces or arbitrary context. This deliberately sacrifices detailed
+stack diagnosis to exclude private overlay source details and user content in
+both debug and release. Core model/storage modules stay Android-free.
+
+Default-on records live in private no-backup storage. All diagnostics, emergency
+records, temporary files and prepared exports share a 5 MiB budget. Retention is
+at most seven days, enforced on startup/write/export; dormant apps prune when
+they execute again. Clear serializes with recording and invalidates older queued
+work, removes prepared exports and does not itself write an event.
+
+Settings retains `FLAG_SECURE` and the private extension slot, adding common
+Diagnostics actions for both flavors. Reporting first prepares a local review;
+only the explicit confirmation opens an external browser draft. The UTF-8
+URL-encoded draft is at most 2,000 ASCII characters, keeps whole recent events
+in chronological order and states omissions. `foss` routes to public
+`MaxDac/fpink`; `full` routes to private `MaxDac/fpink-private`, requiring
+collaborator access with no fallback. The warning explains that the URL sends
+the excerpt to browser/GitHub and potentially browser history before submission.
+The app does not authenticate, use GitHub APIs or claim that an issue was sent.
+
+Complete retained text export uses `ACTION_SEND`, a read-only content URI,
+`ClipData` and a narrow, non-exported AndroidX `FileProvider` exposing only
+`cache/diagnostics-share/`. It does not expose notes, source images or settings.
+Exports remain available after the chooser returns, subject to retention,
+storage bounds, cache eviction and Clear logs; already opened/recipient copies
+cannot be recalled. Browser launch, file preparation and clear failures are
+visible and never include raw error details.
+
+This feature adds no dependency, permission, tracker or automatic upload and is
+compatible with the public offline F-Droid flavor. It does not establish the
+private `full` variant's F-Droid eligibility: that variant already requests
+network permission and may bundle proprietary/cloud plugins. Public release
+source-built ONNX/telemetry and reproducibility gates remain unchanged.
+
 `RecognitionError` distinguishes configuration, unsupported device, missing model,
 network, authentication, rate limiting and malformed service responses. No-text
 results create zero notes and receive a visible outcome. Only unreliable colour
@@ -369,8 +415,9 @@ dimension:
     which is where a superset Settings UI (strategy selection, per-plugin
     credential fields) lives.
 
-  When `private/` is absent — always true for this public repo — `full` builds
-  as an exact, byte-for-byte-equivalent copy of `foss`. Building `full` never
+  When `private/` is absent, `full` has only the built-in recognition. It is
+  not byte-equivalent to `foss`: its manifest requests network access and its
+  diagnostic drafts target the private repository. Building `full` never
   requires or resolves any proprietary artifact from this repo alone.
 
 Public CI (`ci.yml`) and the public release workflow (`release.yml`) only ever

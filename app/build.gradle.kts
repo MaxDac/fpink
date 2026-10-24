@@ -90,6 +90,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     flavorDimensions += "distribution"
@@ -99,8 +100,8 @@ android {
             dimension = "distribution"
         }
         // Private-companion-repo build only: adds Azure/MyScript recognition providers via
-        // a private submodule. Degrades to an exact copy of `foss` when that submodule is
-        // absent, which is always true for public clones, CI, and F-Droid.
+        // a private submodule. Without the overlay it has only the built-in recognition,
+        // but still uses the full flavor's network manifest and private report destination.
         create("full") {
             dimension = "distribution"
         }
@@ -121,8 +122,7 @@ android {
         includeInBundle = false
     }
 
-    // Only wires in real content when the private submodule is present; otherwise `full`
-    // builds identically to `foss`. Never present in public clones, CI, or F-Droid.
+    // Private sources are never required by public clones, CI, or F-Droid.
     val privateOverlayKotlin = rootDir.resolve("private/app-overlay/kotlin")
     val privateOverlayResources = rootDir.resolve("private/app-overlay/resources")
     if (privateOverlayKotlin.isDirectory) {
@@ -130,6 +130,10 @@ android {
             kotlin.srcDir(privateOverlayKotlin)
             if (privateOverlayResources.isDirectory) {
                 resources.srcDir(privateOverlayResources)
+            }
+            val privateOverlayTests = rootDir.resolve("private/app-overlay/test/kotlin")
+            if (privateOverlayTests.isDirectory) {
+                sourceSets.getByName("testFull").kotlin.srcDir(privateOverlayTests)
             }
         }
     }

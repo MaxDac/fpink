@@ -122,6 +122,7 @@ fun verifySourceRuntimeProvenance() {
         "commit" to source["commit"] as String,
         "ndk" to lockBuild["ndkRevision"] as String,
         "cmakeDefines" to (lockBuild["cmakeDefines"] as List<String>).joinToString(" "),
+        "cxxFlags" to (lockBuild["cxxFlags"] as List<String>).joinToString(" "),
     )
     check(provenance == expected) {
         "ONNX Runtime source-runtime PROVENANCE $provenance does not match source-runtime.lock.json $expected."
