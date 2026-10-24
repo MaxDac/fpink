@@ -1,6 +1,6 @@
 # ONNX Runtime built from source
 
-Release builds (`foss` and `full`) run recognition on ONNX Runtime 1.30.0
+Release builds (`foss` and `full`) run recognition on ONNX Runtime 1.31.0
 built from source by `scripts/build-runtime.sh`, with telemetry compiled out
 (`onnxruntime_USE_TELEMETRY=OFF`). Debug builds keep the upstream
 `com.microsoft.onnxruntime:onnxruntime-android` AAR from Maven Central,
@@ -33,11 +33,12 @@ APK whose dex or native code still mentions `ai/onnxruntime/telemetry` or
 
 `source-runtime.lock.json` pins:
 
-- the ONNX Runtime commit (tag `v1.30.0`);
+- the ONNX Runtime commit (tag `v1.31.0`);
 - the source subset kept after the checkout;
 - the SHA-1 of every CMake dependency archive (the same ones that
   `cmake/deps.txt` pins);
-- the NDK revision and CMake options;
+- the NDK revision, CMake options and extra C++ flags (`build.cxxFlags`, see
+  `build.cxxFlagsNote` for why each is needed);
 - `build.expectedSha256`, the SHA-256 of every shipped file. For `generated/java`
   the entry is a digest over `<sha256>  <path>` lines sorted by path.
 
