@@ -20,6 +20,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.fpink.capture.BuildConfig
 import com.fpink.capture.diagnostics.DiagnosticCategory
 import com.fpink.capture.diagnostics.DiagnosticOperation
 import com.fpink.capture.diagnostics.DiagnosticStore
@@ -59,15 +60,22 @@ class DiagnosticsAcceptanceTest {
 
     @Test fun reportRequiresReviewAndClearKeepsLoggingAvailable() {
         lateinit var model: DiagnosticsViewModel
+        val full = BuildConfig.FLAVOR == "full"
         compose.runOnUiThread {
-            model = DiagnosticsViewModel(store, full = false)
+            model = DiagnosticsViewModel(store, full = full)
             models.put("diagnostics", model)
         }
         compose.setContent { MaterialTheme { Column { DiagnosticsSettingsSection(model) } } }
         compose.onNodeWithText("Report a problem").performClick()
         compose.waitUntil(10_000) { model.uiState.value.draft != null }
         compose.onNodeWithText("Open GitHub draft").assertExists()
-        assertTrue(model.uiState.value.draft!!.url.startsWith("https://github.com/MaxDac/fpink/issues/new?"))
+        val repository = if (full) "fpink-private" else "fpink"
+        assertTrue(model.uiState.value.draft!!.url.startsWith("https://github.com/MaxDac/$repository/issues/new?"))
+        compose.onNodeWithText(
+            if (full) "Your browser must be signed in as a collaborator with access."
+            else "This draft targets public MaxDac/fpink.",
+            substring = true,
+        ).assertExists()
         compose.onNodeWithText("Cancel").performClick()
         assertEquals(null, model.uiState.value.draft)
         compose.onNodeWithText("Clear logs").performClick()
