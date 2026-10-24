@@ -1,5 +1,11 @@
 package com.fpink.capture.data
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+import kotlinx.coroutines.CancellationException
+
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
@@ -86,13 +92,21 @@ data class StoredRecognitionSettings(
 class SettingsStore internal constructor(
     private val store: DataStore<Preferences>,
     private val cipher: CredentialCipher,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ThemeSettings {
-    constructor(context: Context) : this(context.applicationContext.recognitionDataStore, CredentialCipher())
+    constructor(context: Context, reporter: DiagnosticReporter = NoOpDiagnosticReporter) :
+        this(context.applicationContext.recognitionDataStore, CredentialCipher(), reporter)
 
     init {
         // Purge retired plaintext credentials even if this launch only opens existing notes.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            runCatching { store.data.first() }
+            try {
+                store.data.first()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_LOAD, classifyDiagnostic(error))
+            }
         }
     }
 
@@ -118,7 +132,7 @@ class SettingsStore internal constructor(
 
     /** The colours configured for each fixed Zettelkasten category, regardless of [zettelkastenEnabled]. */
     val zettelkastenCategoryColors: Flow<Map<ZettelkastenCategory, List<String>>> = store.data.map {
-        decodeZettelkastenCategoryColors(it[Keys.ZETTELKASTEN_CATEGORY_COLORS])
+        decodeZettelkastenCategoryColors(it[Keys.ZETTELKASTEN_CATEGORY_COLORS], reporter)
     }
 
     /**
@@ -127,7 +141,7 @@ class SettingsStore internal constructor(
      */
     val activeZettelkastenCategoryColors: Flow<Map<ZettelkastenCategory, List<String>>> = store.data.map { preferences ->
         if (preferences[Keys.ZETTELKASTEN_ENABLED] != true) return@map emptyMap()
-        decodeZettelkastenCategoryColors(preferences[Keys.ZETTELKASTEN_CATEGORY_COLORS])
+        decodeZettelkastenCategoryColors(preferences[Keys.ZETTELKASTEN_CATEGORY_COLORS], reporter)
     }
 
     suspend fun saveZettelkastenEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
@@ -138,15 +152,31 @@ class SettingsStore internal constructor(
         store.edit { it[Keys.ZETTELKASTEN_CATEGORY_COLORS] = encodeZettelkastenCategoryColors(colors) }
     }
 
+    private val credentialReadLock = Any()
+    private var credentialReadFailed = false
+
     val storedSettings: Flow<StoredRecognitionSettings> = store.data.map { preferences ->
         val strategy = storedStrategyId(preferences[Keys.STRATEGY])
         val encrypted = preferences[Keys.CONFIG]
         var keyError: String? = null
-        val config = if (encrypted == null) emptyMap() else {
+        val config = synchronized(credentialReadLock) {
             try {
-                Json.decodeFromString<Map<String, String>>(cipher.decrypt(encrypted))
+                val decoded = if (encrypted == null) emptyMap() else {
+                    Json.decodeFromString<Map<String, String>>(cipher.decrypt(encrypted))
+                }
+                credentialReadFailed = false
+                decoded
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
-                keyError = "The saved recognition service credentials are unavailable. Replace or remove them in Settings."
+                val failure = RecognitionError.Configuration(
+                    "The saved recognition service credentials are unavailable. Replace or remove them in Settings.",
+                )
+                keyError = failure.message
+                if (!credentialReadFailed) {
+                    credentialReadFailed = true
+                    reporter.report(DiagnosticOperation.SETTINGS_LOAD, classifyDiagnostic(failure))
+                }
                 emptyMap()
             }
         }
@@ -179,6 +209,8 @@ class SettingsStore internal constructor(
         val encrypted = config.takeIf { it.isNotEmpty() }?.let {
             try {
                 cipher.encrypt(Json.encodeToString(it))
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
                 throw RecognitionError.Configuration("Could not protect the credentials with Android Keystore. Nothing was saved.")
             }

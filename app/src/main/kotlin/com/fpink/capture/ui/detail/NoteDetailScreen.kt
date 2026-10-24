@@ -60,7 +60,7 @@ fun NoteDetailScreen(
     noteId: String,
     onBack: () -> Unit,
     viewModel: NoteDetailViewModel = containerViewModel {
-        NoteDetailViewModel(noteId = noteId, noteRepository = it.noteRepository)
+        NoteDetailViewModel(noteId = noteId, noteRepository = it.noteRepository, reporter = it.diagnosticReporter)
     },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()

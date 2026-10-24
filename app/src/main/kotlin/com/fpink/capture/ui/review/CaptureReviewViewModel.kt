@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.review
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fpink.capture.ui.applyTextEdit
@@ -33,6 +38,7 @@ data class CaptureReviewUiState(
 class CaptureReviewViewModel(
     private val sourceId: String,
     private val noteRepository: NoteRepository,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CaptureReviewUiState())
     val uiState: StateFlow<CaptureReviewUiState> = _uiState.asStateFlow()
@@ -68,6 +74,8 @@ class CaptureReviewViewModel(
                         }
                     },
                     onFailure = { error ->
+                        if (error is CancellationException) throw error
+                        reporter.report(DiagnosticOperation.STORAGE_LOAD, classifyDiagnostic(error))
                         _uiState.update {
                             it.copy(
                                 isLoading = false,
@@ -132,6 +140,8 @@ class CaptureReviewViewModel(
                             }
                         },
                         onFailure = {
+                            if (it is CancellationException) throw it
+                            reporter.report(DiagnosticOperation.STORAGE_SAVE, classifyDiagnostic(it))
                             failure = it
                         },
                     )

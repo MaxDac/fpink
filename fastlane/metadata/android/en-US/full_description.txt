@@ -7,3 +7,7 @@ After a photo is recognized, FPInk opens a review screen listing every generated
 From the notes list you can press and hold a note to start selecting, tap rows or checkboxes to change the selection, or use "Select all" to include every note, even ones off screen. Choose "Delete selected" and confirm once to permanently remove the selection; a shared source photo is kept until every note that uses it has been deleted.
 
 FPInk's original source code is licensed under the GNU General Public License, version 3 only (GPL-3.0-only). Third-party dependencies and bundled assets retain their own licenses.
+
+Local error logging is enabled by default, recording only timestamps and fixed error codes, never note text, images, credentials, addresses, identifiers, exception messages or stack traces. Java/Kotlin crashes and handled errors are covered; native crashes and ANRs are not. Diagnostics and prepared exports share a 5 MiB limit and seven-day retention, pruned when the app starts, writes or exports. Clear logs removes local records and exports while logging continues.
+
+Settings offers a reviewable GitHub issue draft in the public FPInk repository. Opening the draft sends the displayed excerpt in a URL to your browser and GitHub before you submit it, and it may remain in browser history. The app does not sign in, upload automatically or submit issues. Longer logs are explicitly abbreviated in the draft; export all retained logs using Android's share sheet instead. Local logging and export work offline without network or storage permissions.

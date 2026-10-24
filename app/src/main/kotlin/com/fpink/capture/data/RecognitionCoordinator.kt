@@ -1,5 +1,10 @@
 package com.fpink.capture.data
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import com.fpink.core.ai.NoteProcessor
 import com.fpink.core.ai.PreparedImage
 import com.fpink.core.ai.RecognitionError
@@ -54,6 +59,7 @@ class RecognitionCoordinator internal constructor(
     private val strategyFactory: (RecognitionSettings) -> RecognitionStrategy,
     private val readZettelkastenCategoryColors: suspend () -> Map<ZettelkastenCategory, List<String>> = { emptyMap() },
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) {
     constructor(
         images: ImageImportStore,
@@ -61,6 +67,15 @@ class RecognitionCoordinator internal constructor(
         repository: NoteRepository,
         processor: NoteProcessor,
         strategyFactory: (RecognitionSettings) -> RecognitionStrategy,
+    ) : this(images, settings, repository, processor, strategyFactory, NoOpDiagnosticReporter)
+
+    constructor(
+        images: ImageImportStore,
+        settings: SettingsStore,
+        repository: NoteRepository,
+        processor: NoteProcessor,
+        strategyFactory: (RecognitionSettings) -> RecognitionStrategy,
+        reporter: DiagnosticReporter,
     ) : this(
         { settings.recognitionSettings.first() },
         images::rememberSelection,
@@ -73,6 +88,7 @@ class RecognitionCoordinator internal constructor(
         processor,
         strategyFactory,
         { settings.activeZettelkastenCategoryColors.first() },
+        reporter = reporter,
     )
 
     private class Record {
@@ -122,7 +138,7 @@ class RecognitionCoordinator internal constructor(
         record.task = scope.launch {
             try {
                 inference.withLock {
-                    requireNotCancelled(sourceId)
+                    requireProcessingAllowed(sourceId)
                     if (repository.isSourceCommitted(sourceId).getOrThrow()) {
                         val existing = repository.list().getOrThrow().count { it.sourceId == sourceId }
                         finish(sourceId, record, generation, existing, previouslySaved = true)
@@ -131,7 +147,7 @@ class RecognitionCoordinator internal constructor(
                     val snapshot = record.snapshot ?: restoreSelection(sourceId).also { record.snapshot = it }
                     if (record.batch == null) {
                         val image = loadImage(sourceId)
-                        requireNotCancelled(sourceId)
+                        requireProcessingAllowed(sourceId)
                         record.state.value = RecognitionJobState.Working(
                             when (snapshot.strategy) {
                                 RecognitionStrategyId.PRINTED -> "Recognizing printed text on this device…"
@@ -141,7 +157,7 @@ class RecognitionCoordinator internal constructor(
                         )
                         val recognition = strategyFactory(snapshot).recognize(image).getOrThrow()
                         currentCoroutineContext().ensureActive()
-                        requireNotCancelled(sourceId)
+                        requireProcessingAllowed(sourceId)
                         record.state.value = RecognitionJobState.Working("Grouping paragraphs and measuring ink colour locally…")
                         val paragraphs = processor.process(image, recognition).getOrThrow().filter { it.text.isNotBlank() }
                         if (paragraphs.isEmpty()) {
@@ -170,7 +186,7 @@ class RecognitionCoordinator internal constructor(
                         }
                     }
                     currentCoroutineContext().ensureActive()
-                    requireNotCancelled(sourceId)
+                    requireProcessingAllowed(sourceId)
                     synchronized(record) {
                         if (record.generation != generation) return@withLock
                         record.state.value = RecognitionJobState.Working("Saving all paragraph notes locally…", saving = true)
@@ -183,6 +199,9 @@ class RecognitionCoordinator internal constructor(
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
+                if (error !is CancelledRecognitionException && error !is NoTextException) {
+                    reporter.report(DiagnosticOperation.RECOGNITION, classifyDiagnostic(error))
+                }
                 if (record.generation == generation) record.state.value = error.toJobFailure()
             }
         }
@@ -204,6 +223,7 @@ class RecognitionCoordinator internal constructor(
             running?.cancel()
             throw cancelled
         } catch (failure: Exception) {
+            reporter.report(DiagnosticOperation.CANCEL_PERSISTENCE, classifyDiagnostic(failure))
             running?.cancel()
             record?.state?.value = RecognitionJobState.Failed(
                 "Cancellation could not be recorded safely. Retry Discard before leaving this job.",
@@ -217,13 +237,24 @@ class RecognitionCoordinator internal constructor(
             snapshot = null
             state.value = RecognitionJobState.Failed(CANCELLED_JOB_MESSAGE, retryable = false)
         }
-        discardImage(sourceId)
+        try {
+            discardImage(sourceId)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(error))
+            throw error
+        }
         records.remove(sourceId)
         return true
     }
 
     private suspend fun requireNotCancelled(sourceId: String) {
         if (isCancelled(sourceId)) throw RecognitionError.Configuration(CANCELLED_JOB_MESSAGE)
+    }
+
+    private suspend fun requireProcessingAllowed(sourceId: String) {
+        if (isCancelled(sourceId)) throw CancelledRecognitionException()
     }
 
     fun release(sourceId: String) {
@@ -242,7 +273,8 @@ class RecognitionCoordinator internal constructor(
             false
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(error))
             true
         }
         if (record.generation == generation) {
@@ -254,10 +286,12 @@ class RecognitionCoordinator internal constructor(
 }
 
 private class NoTextException : Exception()
+private class CancelledRecognitionException : Exception()
 
 class CancellationPersistenceException(cause: Throwable) : IOException("Cancellation was not recorded safely.", cause)
 
 internal fun Throwable.toJobFailure(): RecognitionJobState.Failed = when (this) {
+    is CancelledRecognitionException -> RecognitionJobState.Failed(CANCELLED_JOB_MESSAGE, false)
     is RecognitionError.Configuration -> RecognitionJobState.Failed(
         message ?: "Check recognition settings before trying another image.", false,
     )

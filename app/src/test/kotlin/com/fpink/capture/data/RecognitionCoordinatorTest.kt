@@ -1,5 +1,10 @@
 package com.fpink.capture.data
 
+import com.fpink.capture.diagnostics.DiagnosticCategory
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import kotlinx.coroutines.CancellationException
+
 import com.fpink.core.ai.NoteProcessor
 import com.fpink.core.ai.ParagraphDraft
 import com.fpink.core.ai.PreparedImage
@@ -36,6 +41,52 @@ class RecognitionCoordinatorTest {
     private fun draft(text: String) = ParagraphDraft(text, emptyList(), "#000000", "Black", InkColorOrigin.DEFAULTED)
     private val cloudProvider = RecognitionStrategyId("cloud")
     private fun cloudSettings() = RecognitionSettings(cloudProvider, mapOf("endpoint" to "https://test.example", "apiKey" to "fixture-key"))
+
+    @Test
+    fun `handled recognition failure reports once and retry still succeeds`() = runTest {
+        val fixture = Fixture(this)
+        fixture.recognize = { Result.failure(RecognitionError.Network("private provider error")) }
+        val coordinator = fixture.coordinator()
+        coordinator.confirm(sourceId)
+        coordinator.start(sourceId)
+        coordinator.start(sourceId)
+        advanceUntilIdle()
+        assertEquals(listOf(DiagnosticOperation.RECOGNITION to DiagnosticCategory.NETWORK), fixture.events)
+        assertTrue((coordinator.state(sourceId).value as RecognitionJobState.Failed).retryable)
+        assertTrue(fixture.repository.list().getOrThrow().isEmpty())
+        fixture.recognize = { Result.success(document) }
+        coordinator.start(sourceId, retry = true)
+        advanceUntilIdle()
+        assertInstanceOf(RecognitionJobState.Complete::class.java, coordinator.state(sourceId).value)
+        assertEquals(2, fixture.calls)
+        assertEquals(1, fixture.events.size)
+    }
+
+    @Test
+    fun `recognition result cancellation is not reported or converted to failure`() = runTest {
+        val fixture = Fixture(this)
+        fixture.recognize = { Result.failure(CancellationException("cancelled")) }
+        val coordinator = fixture.coordinator()
+        coordinator.confirm(sourceId)
+        coordinator.start(sourceId)
+        advanceUntilIdle()
+        assertTrue(fixture.events.isEmpty())
+        assertInstanceOf(RecognitionJobState.Working::class.java, coordinator.state(sourceId).value)
+        assertTrue(fixture.repository.list().getOrThrow().isEmpty())
+    }
+
+    @Test
+    fun `cleanup warning reports separately without losing committed notes`() = runTest {
+        val fixture = Fixture(this)
+        fixture.cleanupFailure = IOException("private path")
+        val coordinator = fixture.coordinator()
+        coordinator.confirm(sourceId)
+        coordinator.start(sourceId)
+        advanceUntilIdle()
+        assertEquals(listOf(DiagnosticOperation.CLEANUP to DiagnosticCategory.STORAGE), fixture.events)
+        assertTrue((coordinator.state(sourceId).value as RecognitionJobState.Complete).cleanupWarning)
+        assertEquals(2, fixture.repository.list().getOrThrow().size)
+    }
 
     @Test
     fun `reentry is one job with separate stable ordered paragraph notes`() = runTest {
@@ -230,6 +281,7 @@ class RecognitionCoordinatorTest {
         assertEquals(1, fixture.imageLoads)
         assertEquals(0, fixture.processingCalls)
         assertEquals(0, fixture.files.writeCalls)
+        assertEquals(listOf(DiagnosticOperation.CLEANUP to DiagnosticCategory.STORAGE), fixture.events)
         assertTrue(fixture.repository.list().getOrThrow().isEmpty())
     }
 
@@ -253,6 +305,7 @@ class RecognitionCoordinatorTest {
             assertEquals(0, fixture.imageLoads)
             assertEquals(0, fixture.processingCalls)
             assertEquals(0, fixture.files.writeCalls)
+            assertTrue(fixture.events.isEmpty())
         }
     }
 
@@ -285,6 +338,7 @@ class RecognitionCoordinatorTest {
         var cleanupFailure: IOException? = null
         val cancelledSources = mutableSetOf<String>()
         val selectedProviders = mutableListOf<RecognitionStrategyId>()
+        val events = mutableListOf<Pair<DiagnosticOperation, DiagnosticCategory>>()
         var paragraphs = listOf(draft("Wrapped paragraph stays together."), draft("Second paragraph."))
         var recognize: suspend () -> Result<RecognitionDocument> = { Result.success(document) }
         var categoryColors: Map<ZettelkastenCategory, List<String>> = emptyMap()
@@ -316,6 +370,11 @@ class RecognitionCoordinatorTest {
             },
             readZettelkastenCategoryColors = { categoryColors },
             scope = scope,
+            reporter = object : DiagnosticReporter {
+                override fun report(operation: DiagnosticOperation, category: DiagnosticCategory) {
+                    events += operation to category
+                }
+            },
         )
     }
 

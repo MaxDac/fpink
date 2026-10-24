@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.notes
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -29,6 +34,7 @@ data class SourceImportUiState(
 class SourceImportViewModel(
     private val images: ImageImportStore,
     private val clipboard: ClipboardImageReader? = null,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SourceImportUiState())
     val uiState = _uiState.asStateFlow()
@@ -67,6 +73,12 @@ class SourceImportViewModel(
 
     fun error(message: String) = _uiState.update { it.copy(busy = false, error = message) }
 
+    fun pickerFailed(failure: Throwable, message: String) {
+        if (failure is CancellationException) throw failure
+        reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(failure))
+        error(message)
+    }
+
     fun consumeReadySourceId() = _uiState.update { it.copy(readySourceId = null) }
     fun dismissError() = _uiState.update { it.copy(error = null) }
 
@@ -81,11 +93,13 @@ class SourceImportViewModel(
                 }
             }
             throw cancelled
-        } catch (_: SecurityException) {
+        } catch (failure: SecurityException) {
+            reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(failure))
             error("The image provider denied access. Download the image locally and choose it again.")
         } catch (failure: IllegalArgumentException) {
             error(failure.message ?: "Choose a supported image no larger than 24 MB.")
-        } catch (_: Exception) {
+        } catch (failure: Exception) {
+            reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(failure))
             error("Could not import this image. It may be unavailable, corrupt, unsupported, or storage may be full.")
         }
     }

@@ -64,6 +64,30 @@ enabled, notes go into `Fleeting/`, `Literature/` and `Permanent/` folders and
 are tagged `zettelkasten/<type>`. The export stays on the device; FPInk only
 writes to the location you pick.
 
+## Error logs and reporting
+
+Local error logging is enabled by default. Settings → Diagnostics lets you review
+a short, sanitized excerpt before opening a GitHub issue draft, export all retained
+logs through Android's share sheet, or clear logs. Only timestamps and fixed error
+codes are recorded: no note/OCR text, images, credentials, endpoints, file paths,
+identifiers, exception messages or stack traces. Java/Kotlin crashes and handled
+application errors are covered; native crashes and ANRs are not.
+
+Logs, crash records and prepared exports together are limited to 5 MiB. Records
+expire after seven days and are pruned on startup, writes and export; a stopped
+app cannot run deletion until it starts again. Clear logs removes app-owned
+artifacts and invalidates pending writes, while logging continues. Recipient
+copies and already opened files cannot be recalled.
+
+The public build opens drafts in public `MaxDac/fpink`. The private `full` build
+opens private `MaxDac/fpink-private` and requires collaborator access; it never
+falls back to public reporting. Opening the draft sends the reviewed excerpt in
+the URL to the browser and GitHub **before submission**, and it can remain in
+browser history. The final encoded URL is limited to 2,000 characters, with older
+events omitted explicitly; export provides the complete retained log. FPInk has
+no GitHub authentication, automatic upload or issue-submission API. Browser
+reporting needs connectivity in the browser; logging and local export work offline.
+
 ## Build and releases
 
 Use JDK 17 and Android SDK 37.

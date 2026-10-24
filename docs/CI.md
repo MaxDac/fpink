@@ -40,6 +40,21 @@ caches. New commits cancel older runs of the same PR. Main pushes, manual runs,
 and merge-group runs have separate concurrency groups and do not cancel each
 other. The required job skips neither drafts nor documentation-only PRs.
 
+## Focused diagnostics checks
+
+For diagnostics changes, the focused host checks are
+`.\gradlew.bat :app:testFossDebugUnitTest :app:assembleFossDebugAndroidTest :app:verifyFossDebugOfflineManifest`.
+On an isolated emulator, run
+`.\gradlew.bat :app:connectedFossDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.fpink.capture.acceptance.DiagnosticsAcceptanceTest,com.fpink.capture.acceptance.AppearanceAcceptanceTest`.
+JVM diagnostics tests cover the shared byte budget, age/clear behavior, fatal
+delegation, enum-only privacy and final encoded draft URL bound. Android checks
+exercise the review/clear UI and narrow read-only provider. The acceptance runner
+uses a plain `Application`, so these tests do not intentionally crash the
+production app or establish native/ANR coverage. Validate startup fatal recording
+separately on an expendable app installation. Private companion tests under
+`private/app-overlay/test/kotlin` join `testFull` only when the overlay exists;
+they must consume the public API rather than copy its collector.
+
 ## Reports
 
 Open **Actions > CI > a run** and inspect the job's logs. The job uploads a

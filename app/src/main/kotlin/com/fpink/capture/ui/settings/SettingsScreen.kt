@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.fpink.capture.ui.containerViewModel
 import com.fpink.capture.R
+import com.fpink.capture.BuildConfig
 import com.fpink.capture.data.ThemeMode
 import com.fpink.capture.ui.components.ActionIconButton
 import com.fpink.capture.ui.theme.ThemeUiState
@@ -43,9 +44,12 @@ fun SettingsScreen(
     appearance: ThemeUiState,
     onThemeSelected: (ThemeMode) -> Unit,
     viewModel: SettingsViewModel = containerViewModel {
-        SettingsViewModel(it.settingsStore, it.recognitionReadinessChecks(), it.recognitionOptions())
+        SettingsViewModel(it.settingsStore, it.recognitionReadinessChecks(), it.recognitionOptions(), reporter = it.diagnosticReporter)
     },
     onZettelkastenConfigureClick: () -> Unit = {},
+    diagnosticsViewModel: DiagnosticsViewModel = containerViewModel {
+        DiagnosticsViewModel(it.diagnostics, full = BuildConfig.FLAVOR == "full")
+    },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -115,6 +119,8 @@ fun SettingsScreen(
             if (state.zettelkastenEnabled) {
                 TextButton(onClick = onZettelkastenConfigureClick) { Text("Configure Zettelkasten categories") }
             }
+            HorizontalDivider()
+            DiagnosticsSettingsSection(diagnosticsViewModel)
             settingsExtension?.let {
                 HorizontalDivider()
                 it.Content(Modifier.fillMaxWidth())
