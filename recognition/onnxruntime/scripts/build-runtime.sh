@@ -222,8 +222,9 @@ build() {
   local abi api
   abi="$(lock_value build.abi)"
   api="$(lock_value build.androidApi)"
-  local -a defines
+  local -a defines cxx_flags
   mapfile -t defines < <(lock_value build.cmakeDefines)
+  mapfile -t cxx_flags < <(lock_value build.cxxFlags)
 
   rm -rf "$work_dir" "$output_dir"
   mkdir -p "$work_dir" "$output_dir"
@@ -254,7 +255,7 @@ build() {
     "-Donnxruntime_CMAKE_DEPS_MIRROR_DIR=$deps_dir"
     "-DPython_EXECUTABLE=$(command -v python3)"
     "-DCMAKE_C_FLAGS=$prefix_map"
-    "-DCMAKE_CXX_FLAGS=$prefix_map"
+    "-DCMAKE_CXX_FLAGS=$prefix_map${cxx_flags[*]:+ ${cxx_flags[*]}}"
     "-DCMAKE_SHARED_LINKER_FLAGS=$link_flags"
   )
   local define
@@ -396,6 +397,7 @@ PY
     printf 'commit=%s\n' "$commit"
     printf 'ndk=%s\n' "$ndk_revision"
     printf 'cmakeDefines=%s\n' "${defines[*]}"
+    printf 'cxxFlags=%s\n' "${cxx_flags[*]}"
   } > "$output_dir/PROVENANCE"
   cat "$output_dir/PROVENANCE"
 }
