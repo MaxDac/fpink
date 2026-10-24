@@ -188,6 +188,31 @@ the MR's fork branch. It was removed after the merge. Delete the
 `FDROIDDATA_DEPLOY_KEY` repository secret and the write deploy key on
 `MaxDac/fdroiddata` if they still exist.
 
+## Donation link updates
+
+The upstream donation page is <https://ko-fi.com/maxdac>, also verified in
+[`README.md`](../README.md) and [`.github/FUNDING.yml`](../.github/FUNDING.yml).
+Keep its `Donate` field in `metadata/com.fpink.capture.yml` synchronized with
+the official fdroiddata recipe. Changing this repository's mirror alone does
+not update F-Droid's listing, and checkupdates discovers release versions, not
+changes to donation fields.
+Use the scalar `Donate: https://ko-fi.com/maxdac` for compatibility with
+fdroidserver 2.4.5, which does not accept a URL list in this field.
+
+Submit a separate, metadata-only merge request against current fdroiddata
+`master` to add or change `Donate`, preserving the live build history and commit
+hashes. In a clean Linux fdroidserver environment, run `fdroid readmeta`,
+`fdroid rewritemeta com.fpink.capture` and `fdroid lint com.fpink.capture`, then
+inspect the diff. Link the upstream README or funding file as ownership
+verification required by the [inclusion policy](https://f-droid.org/docs/Inclusion_Policy/).
+
+The optional Settings entry opens the page only after a tap, in an external
+browser. It adds no payment SDK, network permission, account requirement or
+paid feature. The website's privacy/payment behavior belongs to Ko-fi, not
+FPInk. Publish app changes through the normal immutable release and subsequent
+F-Droid build/index cycle; neither an upstream change nor validation guarantees
+F-Droid reviewer approval or an anti-feature classification.
+
 ## After merge
 
 Record the merged fdroiddata commit and monitor the official build and index

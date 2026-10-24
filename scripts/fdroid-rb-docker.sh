@@ -8,7 +8,7 @@
 # in sync with docs/FDROID_VALIDATION.md when bumping it.
 set -euo pipefail
 
-readonly default_image="registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie@sha256:9cb68105642ca4e7b295f0ceab10f069f5b3247dc18fa7c36046e9d81aa469a8"
+readonly default_image="registry.gitlab.com/fdroid/fdroidserver:buildserver-trixie@sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac"
 image="${FDROID_BUILDSERVER_IMAGE:-$default_image}"
 
 if [[ $# -lt 1 ]]; then
