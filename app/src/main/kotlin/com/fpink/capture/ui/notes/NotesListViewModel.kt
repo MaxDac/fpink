@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.notes
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fpink.capture.data.SettingsStore
@@ -10,6 +15,7 @@ import com.fpink.core.model.ZettelkastenCategory
 import com.fpink.core.storage.MarkdownVaultArchive
 import com.fpink.core.storage.NoteRepository
 import java.io.OutputStream
+import java.io.IOException
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -108,6 +114,7 @@ class NotesListViewModel(
     private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val clock: Clock = Clock.System,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ViewModel() {
     companion object {
         const val SEARCH_DEBOUNCE_MS = 150L
@@ -200,6 +207,10 @@ class NotesListViewModel(
                     val result = noteRepository.delete(id)
                     if (result.isFailure) {
                         failure = result.exceptionOrNull()
+                        failure?.let {
+                            if (it is CancellationException) throw it
+                            reporter.report(DiagnosticOperation.STORAGE_DELETE, classifyDiagnostic(it))
+                        }
                         break
                     }
                 }
@@ -242,6 +253,10 @@ class NotesListViewModel(
                     val result = noteRepository.save(note.copy(zettelkastenCategory = category))
                     if (result.isFailure) {
                         failure = result.exceptionOrNull()
+                        failure?.let {
+                            if (it is CancellationException) throw it
+                            reporter.report(DiagnosticOperation.STORAGE_SAVE, classifyDiagnostic(it))
+                        }
                         break
                     }
                 }
@@ -302,6 +317,17 @@ class NotesListViewModel(
         _uiState.update { it.copy(pendingExportIds = null) }
     }
 
+    fun shareFailed(error: Throwable) {
+        if (error is CancellationException) throw error
+        reporter.report(DiagnosticOperation.SHARE, classifyDiagnostic(error))
+    }
+
+    fun exportPickerFailed(error: Throwable) {
+        if (error is CancellationException) throw error
+        reporter.report(DiagnosticOperation.EXPORT, classifyDiagnostic(error))
+        cancelVaultExport()
+    }
+
     fun exportVault(target: VaultExportTarget) {
         val attempt = ++exportAttempt
         val state = _uiState.value
@@ -335,6 +361,7 @@ class NotesListViewModel(
                 discard(target)
                 throw cancelled
             } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.EXPORT, classifyDiagnostic(error))
                 val removed = discard(target)
                 _uiState.update { it.copy(exportError = VaultExportError(error.description(), partialFileRemains = !removed)) }
             } finally {
@@ -346,7 +373,18 @@ class NotesListViewModel(
     private var exportAttempt = 0
 
     private suspend fun discard(target: VaultExportTarget): Boolean =
-        withContext(NonCancellable + ioDispatcher) { runCatching { target.discard() }.getOrDefault(false) }
+        withContext(NonCancellable + ioDispatcher) {
+            try {
+                val removed = target.discard()
+                if (!removed) throw IOException()
+                true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(error))
+                false
+            }
+        }
 
     fun dismissExportError() {
         _uiState.update { it.copy(exportError = null) }
@@ -404,6 +442,8 @@ class NotesListViewModel(
                 if (_uiState.value.query.isNotBlank()) scheduleSearch(debounce = false)
             },
             onFailure = { error ->
+                if (error is CancellationException) throw error
+                reporter.report(DiagnosticOperation.STORAGE_LOAD, classifyDiagnostic(error))
                 _uiState.update { it.copy(error = NotesListError.Storage(error.description())) }
             },
         )

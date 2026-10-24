@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.theme
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fpink.capture.data.ThemeMode
@@ -21,7 +26,10 @@ data class ThemeUiState(
     val error: ThemeError? = null,
 )
 
-class ThemeViewModel(private val settings: ThemeSettings) : ViewModel() {
+class ThemeViewModel(
+    private val settings: ThemeSettings,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
+) : ViewModel() {
     private val _uiState = MutableStateFlow(ThemeUiState())
     val uiState = _uiState.asStateFlow()
     private data class Selection(val mode: ThemeMode, val revision: Long)
@@ -41,7 +49,8 @@ class ThemeViewModel(private val settings: ThemeSettings) : ViewModel() {
                     }
                 } catch (cancelled: CancellationException) {
                     throw cancelled
-                } catch (_: Exception) {
+                } catch (error: Exception) {
+                    reporter.report(DiagnosticOperation.SETTINGS_SAVE, classifyDiagnostic(error))
                     if (selection.revision == revision) {
                         _uiState.update { it.copy(mode = persisted, saving = false, error = ThemeError.WRITE) }
                     }
@@ -62,7 +71,8 @@ class ThemeViewModel(private val settings: ThemeSettings) : ViewModel() {
                 _uiState.value = ThemeUiState(mode = persisted, loading = false)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_LOAD, classifyDiagnostic(error))
                 _uiState.update { it.copy(loading = false, error = ThemeError.READ) }
             }
         }

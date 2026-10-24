@@ -28,6 +28,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.diagnostics.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/diagnostic_file_paths" />
+        </provider>
         <!-- ONNX Runtime's AAR auto-starts a 1DS telemetry client (mobile.events.data.microsoft.com)
              from this provider. FPInk never sends usage data, so it must not be initialized. -->
         <provider

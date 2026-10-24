@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.settings
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fpink.capture.data.SettingsStore
@@ -29,6 +34,7 @@ data class ZettelkastenSettingsUiState(
 
 class ZettelkastenSettingsViewModel(
     private val settingsStore: SettingsStore,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ZettelkastenSettingsUiState())
     val uiState = _uiState.asStateFlow()
@@ -40,7 +46,8 @@ class ZettelkastenSettingsViewModel(
                 _uiState.update { it.copy(categoryColors = stored, loading = false) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_LOAD, classifyDiagnostic(error))
                 _uiState.update { it.copy(loading = false, message = "Colours could not be loaded. Nothing was changed.") }
             }
         }
@@ -102,7 +109,8 @@ class ZettelkastenSettingsViewModel(
                 _uiState.update { it.copy(message = "Zettelkasten categories saved.") }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_SAVE, classifyDiagnostic(error))
                 _uiState.update { it.copy(message = "Could not save categories. Nothing was changed.") }
             } finally {
                 _uiState.update { it.copy(busy = false) }

@@ -36,7 +36,7 @@ fun ProcessingScreen(
     onDiscard: () -> Unit,
     onSettings: () -> Unit,
     viewModel: ProcessingViewModel = savedContainerViewModel { container, savedState ->
-        ProcessingViewModel(container.recognitionCoordinator, container.imageImports, savedState)
+        ProcessingViewModel(container.recognitionCoordinator, container.imageImports, savedState, reporter = container.diagnosticReporter)
     },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()

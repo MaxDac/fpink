@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.settings
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fpink.capture.data.RecognitionOption
@@ -56,6 +61,7 @@ class SettingsViewModel(
     private val settingsStore: SettingsStore,
     private val readinessChecks: Map<RecognitionStrategyId, suspend () -> Result<Unit>> = emptyMap(),
     options: List<RecognitionOption> = builtInRecognitionOptions(),
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(SettingsUiState(recognitionStrategies = recognitionStrategyOptions(options)))
     val uiState = _uiState.asStateFlow()
@@ -71,7 +77,8 @@ class SettingsViewModel(
                 refreshReadiness()
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_LOAD, classifyDiagnostic(error))
                 _uiState.update { it.copy(loading = false, message = "Settings could not be loaded.") }
             }
         }
@@ -82,7 +89,8 @@ class SettingsViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_LOAD, classifyDiagnostic(error))
                 _uiState.update { it.copy(message = "Recognition settings could not be loaded.") }
             }
         }
@@ -97,7 +105,8 @@ class SettingsViewModel(
                 settingsStore.save(strategy, removeConfig = strategy in RecognitionStrategyId.BUILT_IN)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_SAVE, classifyDiagnostic(error))
                 _uiState.update { it.copy(message = "Could not save the default recognition.") }
             }
         }
@@ -110,7 +119,8 @@ class SettingsViewModel(
                 settingsStore.saveZettelkastenEnabled(enabled)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_SAVE, classifyDiagnostic(error))
                 _uiState.update { it.copy(zettelkastenEnabled = !enabled, message = "Could not save the beta feature toggle.") }
             }
         }
@@ -121,10 +131,15 @@ class SettingsViewModel(
             val check = readinessChecks[option.id] ?: return@forEach
             viewModelScope.launch {
                 val status = withContext(Dispatchers.Default) {
-                    check().fold(
-                        onSuccess = { "Ready" },
-                        onFailure = { error -> error.message ?: "Unavailable" },
-                    )
+                    try {
+                        check().getOrThrow()
+                        "Ready"
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        reporter.report(DiagnosticOperation.SETTINGS_PROBE, classifyDiagnostic(error))
+                        error.message ?: "Unavailable"
+                    }
                 }
                 _uiState.update { state ->
                     state.copy(
