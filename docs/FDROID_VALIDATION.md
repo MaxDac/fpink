@@ -209,6 +209,14 @@ the toolchain matches: OpenJDK 21 and gradlew-fdroid. The build path is F-Droid'
 commit time. When bumping the image digest in `scripts/fdroid-rb-docker.sh`,
 rerun the Reproducibility workflow.
 
+The current Linux/amd64 image is pinned to
+`sha256:1ea8bef1820bff06c2974e31b4fc4c79c364cd24231b86e71fa4b926797e0dac`
+(upstream image revision `8f52ae3ce287bc28964db544b970b88dce9c38bf`,
+created 2026-10-21). It replaces the retired `9cb681...469a8` manifest, which
+the upstream registry no longer serves. Both builders obtain this pin from the
+same script; do not fall back to a floating tag or bypass the native-runtime
+hash/provenance checks when an image disappears.
+
 To debug a mismatch, run `diffoscope a.apk b.apk` (the Reproducibility workflow
 attaches reports) and look at the first differing entry:
 
