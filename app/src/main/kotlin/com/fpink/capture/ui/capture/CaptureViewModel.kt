@@ -1,5 +1,10 @@
 package com.fpink.capture.ui.capture
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -64,6 +69,7 @@ class CaptureViewModel(
     private val options: List<RecognitionOption> = builtInRecognitionOptions(),
     /** Why on-device recognition cannot run here (e.g. ARM translation), or null when it can. */
     private val onDeviceUnsupportedReason: String? = null,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
         CaptureUiState(
@@ -85,8 +91,8 @@ class CaptureViewModel(
         val restoredId = savedState.get<String>("sourceId")
         if (restoredId != null && savedState.get<Boolean>("transferred") != true) {
             val pendingCrop = savedState.get<Boolean>("cameraCropPending") == true
-            val cropFile = runCatching { images.cameraCropFile(restoredId) }.getOrNull()
-            val previewFile = runCatching { images.previewFile(restoredId) }.getOrNull()
+            val cropFile = restoredFile { images.cameraCropFile(restoredId) }
+            val previewFile = restoredFile { images.previewFile(restoredId) }
             val cropping = cropFile?.isFile == true && (pendingCrop || previewFile?.isFile != true)
             val file = if (cropping) cropFile else previewFile
             if (file?.isFile == true) {
@@ -102,11 +108,11 @@ class CaptureViewModel(
             } else {
                 clearSavedSource()
                 _uiState.update { it.copy(error = "The previous image is unavailable. Choose it again.") }
-                viewModelScope.launch { runCatching { images.discard(restoredId) } }
+                viewModelScope.launch { cleanup { images.discard(restoredId) } }
             }
         }
         viewModelScope.launch {
-            images.cleanExpired()
+            cleanup { images.cleanExpired() }
         }
         viewModelScope.launch {
             try {
@@ -116,7 +122,8 @@ class CaptureViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                reporter.report(DiagnosticOperation.SETTINGS_LOAD, classifyDiagnostic(error))
                 _uiState.update {
                     it.copy(providerAvailable = false, settingsError = "Recognition settings are unavailable. Open Settings before using this image.")
                 }
@@ -188,12 +195,25 @@ class CaptureViewModel(
         return true
     }
     fun error(message: String) = _uiState.update { it.copy(error = message, busy = false) }
+    fun cameraFailed(failure: Throwable, message: String) {
+        if (failure is CancellationException) throw failure
+        reporter.report(DiagnosticOperation.CAMERA, classifyDiagnostic(failure))
+        error(message)
+    }
     fun newCameraFile(): File = images.newCameraFile()
-    fun deleteCameraFile(file: File) = images.deleteCameraFile(file)
+    fun deleteCameraFile(file: File) {
+        try {
+            images.deleteCameraFile(file)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(failure))
+        }
+    }
 
     fun importCamera(file: File) {
         if (cleared) {
-            images.deleteCameraFile(file)
+            deleteCameraFile(file)
         } else {
             if (operation?.isActive == true) return
             operation = viewModelScope.launch {
@@ -219,7 +239,8 @@ class CaptureViewModel(
                     throw cancelled
                 } catch (failure: IllegalArgumentException) {
                     error(failure.message ?: "The captured photo is invalid. Retake it.")
-                } catch (_: Exception) {
+                } catch (failure: Exception) {
+                    reporter.report(DiagnosticOperation.CAMERA, classifyDiagnostic(failure))
                     error("Could not prepare the captured photo for cropping. Retake it or check available storage.")
                 }
             }
@@ -249,7 +270,8 @@ class CaptureViewModel(
                 throw cancelled
             } catch (failure: IllegalArgumentException) {
                 error(failure.message ?: "The crop selection is invalid. Adjust it and retry.")
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                reporter.report(DiagnosticOperation.CAMERA, classifyDiagnostic(failure))
                 error("Could not apply the crop. Check available storage and retry, or retake the photo.")
             }
         }
@@ -273,7 +295,10 @@ class CaptureViewModel(
                     )
                 }
                 refreshRecognition()
-            } catch (_: Exception) {
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(failure))
                 error("Could not remove the captured photo. Check free storage and retry.")
             }
         }
@@ -295,11 +320,13 @@ class CaptureViewModel(
                 if (previous != null) images.discard(previous)
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: SecurityException) {
+            } catch (failure: SecurityException) {
+                reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(failure))
                 error("The image provider denied access. Download the image locally and choose it again.")
             } catch (failure: IllegalArgumentException) {
                 error(failure.message ?: "Choose a supported image no larger than 24 MB.")
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                reporter.report(DiagnosticOperation.IMPORT, classifyDiagnostic(failure))
                 error("Could not import this image. It may be unavailable, corrupt, unsupported, or storage may be full.")
             }
         }
@@ -325,7 +352,10 @@ class CaptureViewModel(
                     )
                 }
                 refreshRecognition()
-            } catch (_: Exception) {
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(failure))
                 error("Could not remove the previous staged image. Check free storage and retry.")
             }
         }
@@ -345,7 +375,8 @@ class CaptureViewModel(
                 throw cancelled
             } catch (failure: RecognitionError.Configuration) {
                 error(failure.message ?: "Check recognition settings.")
-            } catch (_: Exception) {
+            } catch (failure: Exception) {
+                reporter.report(DiagnosticOperation.STORAGE_SAVE, classifyDiagnostic(failure))
                 error("Could not confirm the image and settings. Check available storage and try again.")
             }
         }
@@ -358,7 +389,10 @@ class CaptureViewModel(
                 _uiState.value.sourceId?.let { images.discard(it) }
                 clearSavedSource()
                 onComplete()
-            } catch (_: Exception) {
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(failure))
                 error("Could not remove the staged image. Try again.")
             }
         }
@@ -368,8 +402,29 @@ class CaptureViewModel(
         cleared = true
         if (savedState.get<Boolean>("transferred") != true) {
             _uiState.value.sourceId?.let { source ->
-                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { runCatching { images.discard(source) } }
+                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { cleanup { images.discard(source) } }
             }
+        }
+    }
+
+    private fun restoredFile(read: () -> File): File? = try {
+        read()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: IllegalArgumentException) {
+        null
+    } catch (failure: Exception) {
+        reporter.report(DiagnosticOperation.STORAGE_LOAD, classifyDiagnostic(failure))
+        null
+    }
+
+    private suspend fun cleanup(action: suspend () -> Unit) {
+        try {
+            action()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            reporter.report(DiagnosticOperation.CLEANUP, classifyDiagnostic(failure))
         }
     }
 

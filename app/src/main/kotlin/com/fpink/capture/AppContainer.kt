@@ -14,12 +14,22 @@ import com.fpink.core.ai.RecognitionStrategyId
 import com.fpink.core.ai.RecognitionStrategyRegistry
 import com.fpink.core.storage.NoteRepository
 import com.fpink.recognition.strategies.BuiltInStrategies
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.DiagnosticStore
+import java.io.File
 
-class AppContainer(context: Context) {
+class AppContainer(
+    context: Context,
+    val diagnostics: DiagnosticStore = DiagnosticStore(
+        File(context.noBackupFilesDir, "diagnostics"),
+        File(context.cacheDir, "diagnostics-share"),
+    ),
+) {
     val appContext: Context = context.applicationContext
+    val diagnosticReporter: DiagnosticReporter = diagnostics
 
-    val settingsStore = SettingsStore(context)
-    val imageImports = ImageImportStore(context)
+    val settingsStore = SettingsStore(context, reporter = diagnosticReporter)
+    val imageImports = ImageImportStore(context, reporter = diagnosticReporter)
 
     private val fileStore = AndroidFileStore(context)
     val noteRepository = NoteRepository(fileStore)
@@ -27,6 +37,7 @@ class AppContainer(context: Context) {
     val noteProcessor = DefaultNoteProcessor()
     val recognitionCoordinator = RecognitionCoordinator(
         imageImports, settingsStore, noteRepository, noteProcessor, ::recognitionStrategy,
+        reporter = diagnosticReporter,
     )
 
     /**

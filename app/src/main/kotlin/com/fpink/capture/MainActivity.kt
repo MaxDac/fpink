@@ -34,7 +34,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val theme = ViewModelProvider(this, viewModelFactory {
-            initializer { ThemeViewModel((application as FPInkApp).container.settingsStore) }
+            initializer {
+                val container = (application as FPInkApp).container
+                ThemeViewModel(container.settingsStore, reporter = container.diagnosticReporter)
+            }
         })[ThemeViewModel::class.java]
         // Keep the platform starting window until the persisted choice is known.
         window.decorView.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {

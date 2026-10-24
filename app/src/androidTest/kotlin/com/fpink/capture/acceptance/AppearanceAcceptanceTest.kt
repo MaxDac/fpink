@@ -22,8 +22,12 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.fpink.capture.data.ThemeMode
+import com.fpink.capture.BuildConfig
 import com.fpink.capture.ui.settings.SettingsScreen
 import com.fpink.capture.ui.settings.SettingsViewModel
+import com.fpink.capture.ui.settings.DiagnosticsViewModel
+import com.fpink.capture.diagnostics.DiagnosticStore
+import java.io.File
 import com.fpink.capture.ui.theme.FPInkTheme
 import com.fpink.capture.ui.theme.ThemeViewModel
 import com.fpink.core.ai.RecognitionStrategyId
@@ -43,6 +47,8 @@ class AppearanceAcceptanceTest {
     private lateinit var storage: AcceptanceStorage
     private lateinit var theme: ThemeViewModel
     private lateinit var settings: SettingsViewModel
+    private lateinit var diagnostics: DiagnosticsViewModel
+    private lateinit var diagnosticStore: DiagnosticStore
     private val models = ViewModelStore()
     private var backgroundLuminance = 0f
     private var backs = 0
@@ -53,8 +59,13 @@ class AppearanceAcceptanceTest {
         compose.runOnUiThread {
             theme = ThemeViewModel(storage.settings)
             settings = SettingsViewModel(storage.settings)
+            diagnosticStore = DiagnosticStore(
+                File(storage.context.noBackupFilesDir, "diagnostics"), File(storage.context.cacheDir, "diagnostics-share"),
+            )
+            diagnostics = DiagnosticsViewModel(diagnosticStore, full = BuildConfig.FLAVOR == "full")
             models.put("theme", theme)
             models.put("settings", settings)
+            models.put("diagnostics", diagnostics)
         }
         compose.setContent {
             val appearance by theme.uiState.collectAsStateWithLifecycle()
@@ -65,7 +76,7 @@ class AppearanceAcceptanceTest {
             CompositionLocalProvider(LocalConfiguration provides configuration) {
                 FPInkTheme(appearance.mode, compose.activity) {
                     backgroundLuminance = MaterialTheme.colorScheme.background.luminance()
-                    SettingsScreen({ backs++ }, appearance, theme::select, settings)
+                    SettingsScreen({ backs++ }, appearance, theme::select, settings, diagnosticsViewModel = diagnostics)
                 }
             }
         }
@@ -74,6 +85,8 @@ class AppearanceAcceptanceTest {
 
     @After fun tearDown() {
         compose.runOnUiThread { models.clear() }
+        runBlocking { diagnosticStore.clear() }
+        diagnosticStore.close()
         storage.close()
     }
 

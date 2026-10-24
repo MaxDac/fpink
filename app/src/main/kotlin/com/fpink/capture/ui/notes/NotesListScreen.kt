@@ -100,10 +100,18 @@ fun NotesListScreen(
     onSettingsClick: () -> Unit,
     resultMessage: String? = null,
     onResultShown: () -> Unit = {},
-    viewModel: NotesListViewModel = containerViewModel { NotesListViewModel(it.noteRepository, it.settingsStore) },
+    viewModel: NotesListViewModel = containerViewModel {
+        NotesListViewModel(it.noteRepository, it.settingsStore, reporter = it.diagnosticReporter)
+    },
     sourceViewModel: SourceImportViewModel = run {
         val context = LocalContext.current
-        containerViewModel { SourceImportViewModel(it.imageImports, AndroidClipboardImageReader(context)) }
+        containerViewModel {
+            SourceImportViewModel(
+                it.imageImports,
+                AndroidClipboardImageReader(context, reporter = it.diagnosticReporter),
+                reporter = it.diagnosticReporter,
+            )
+        }
     },
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -190,9 +198,11 @@ fun NotesListScreen(
         }
         try {
             shareLauncher.launch(Intent.createChooser(intent, if (json) jsonChooserTitle else textChooserTitle))
-        } catch (_: ActivityNotFoundException) {
+        } catch (failure: ActivityNotFoundException) {
+            viewModel.shareFailed(failure)
             shareError = shareUnavailable
-        } catch (_: SecurityException) {
+        } catch (failure: SecurityException) {
+            viewModel.shareFailed(failure)
             shareError = shareBlocked
         }
     }
@@ -206,8 +216,11 @@ fun NotesListScreen(
         if (!viewModel.prepareVaultExport(selectedOnly)) return
         try {
             exportLauncher.launch(SafVaultExportTarget.defaultFileName())
-        } catch (_: ActivityNotFoundException) {
-            viewModel.cancelVaultExport()
+        } catch (failure: ActivityNotFoundException) {
+            viewModel.exportPickerFailed(failure)
+            shareError = exportPickerUnavailable
+        } catch (failure: SecurityException) {
+            viewModel.exportPickerFailed(failure)
             shareError = exportPickerUnavailable
         }
     }
@@ -219,10 +232,10 @@ fun NotesListScreen(
         }
         try {
             picker.launch(Intent.createChooser(intent, if (files) "Choose an image file" else "Choose image using"))
-        } catch (_: ActivityNotFoundException) {
-            sourceViewModel.error("No compatible image provider is installed. Try File or install a gallery with an image chooser.")
-        } catch (_: SecurityException) {
-            sourceViewModel.error("Android could not open this image provider. Try File.")
+        } catch (failure: ActivityNotFoundException) {
+            sourceViewModel.pickerFailed(failure, "No compatible image provider is installed. Try File or install a gallery with an image chooser.")
+        } catch (failure: SecurityException) {
+            sourceViewModel.pickerFailed(failure, "Android could not open this image provider. Try File.")
         }
     }
     fun openSourceMenu() {

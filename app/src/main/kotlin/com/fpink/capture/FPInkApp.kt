@@ -1,6 +1,8 @@
 package com.fpink.capture
 
 import android.app.Application
+import com.fpink.capture.diagnostics.DiagnosticStore
+import java.io.File
 
 class FPInkApp : Application() {
     lateinit var container: AppContainer
@@ -8,6 +10,11 @@ class FPInkApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container = AppContainer(this)
+        val diagnostics = DiagnosticStore(
+            File(noBackupFilesDir, "diagnostics"),
+            File(cacheDir, "diagnostics-share"),
+        )
+        diagnostics.installCrashHandler()
+        container = AppContainer(this, diagnostics)
     }
 }
