@@ -1,5 +1,11 @@
 package com.fpink.capture.ui.detail
 
+import com.fpink.capture.diagnostics.DiagnosticOperation
+import com.fpink.capture.diagnostics.DiagnosticReporter
+import com.fpink.capture.diagnostics.NoOpDiagnosticReporter
+import com.fpink.capture.diagnostics.classifyDiagnostic
+import kotlinx.coroutines.CancellationException
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.fpink.capture.ui.applyTextEdit
@@ -30,6 +36,7 @@ data class NoteDetailUiState(
 class NoteDetailViewModel(
     private val noteId: String,
     private val noteRepository: NoteRepository,
+    private val reporter: DiagnosticReporter = NoOpDiagnosticReporter,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(NoteDetailUiState())
@@ -57,6 +64,8 @@ class NoteDetailViewModel(
                     }
                 },
                 onFailure = { e ->
+                    if (e is CancellationException) throw e
+                    reporter.report(DiagnosticOperation.STORAGE_LOAD, classifyDiagnostic(e))
                     _uiState.update {
                         it.copy(isLoading = false, error = "Failed to load note: ${e.message}")
                     }
@@ -107,6 +116,8 @@ class NoteDetailViewModel(
                     }
                 },
                 onFailure = { e ->
+                    if (e is CancellationException) throw e
+                    reporter.report(DiagnosticOperation.STORAGE_SAVE, classifyDiagnostic(e))
                     _uiState.update { it.copy(error = "Failed to save note: ${e.message}", isSaving = false) }
                 },
             )
@@ -120,6 +131,8 @@ class NoteDetailViewModel(
             noteRepository.delete(noteId).fold(
                 onSuccess = { _uiState.update { it.copy(deleted = true) } },
                 onFailure = { e ->
+                    if (e is CancellationException) throw e
+                    reporter.report(DiagnosticOperation.STORAGE_DELETE, classifyDiagnostic(e))
                     _uiState.update { it.copy(error = "Failed to delete note: ${e.message}", isSaving = false) }
                 },
             )

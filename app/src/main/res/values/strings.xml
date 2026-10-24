@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_help">Error logging is on by default. Logs contain only times and fixed error codes, never note content, images, credentials, addresses or exception messages. Logs and local exports share a 5 MiB limit. Records expire after 7 days and are pruned when the app starts, writes or exports. Java/Kotlin crashes are recorded; native crashes and ANRs are not.</string>
+    <string name="diagnostics_report">Report a problem</string>
+    <string name="diagnostics_export">Export complete retained logs</string>
+    <string name="diagnostics_clear">Clear logs</string>
+    <string name="diagnostics_share">Share logs</string>
+    <string name="diagnostics_cancel">Cancel</string>
+    <string name="diagnostics_open_draft">Open GitHub draft</string>
+    <string name="diagnostics_public_warning">This draft targets public MaxDac/fpink. Review the excerpt below before continuing. Do not add private content to a public issue.</string>
+    <string name="diagnostics_private_warning">This draft targets private MaxDac/fpink-private. Your browser must be signed in as a collaborator with access. There is no public fallback. If you cannot access it, export logs instead.</string>
+    <string name="diagnostics_browser_warning">Opening the draft sends this excerpt in a URL to your browser and GitHub before you submit. It may remain in browser history. FPInk does not sign in, upload automatically or submit the issue. Review and submit it yourself in the browser. The excerpt may omit older events to fit the URL; complete retained logs are available through export.</string>
+    <string name="diagnostics_export_warning">Share a sanitized text file containing all currently retained events. Choose the recipient yourself. FPInk does not upload it. Recipient copies cannot be recalled. Export files expire with the retention limit and may be removed by Clear logs or Android cache cleanup.</string>
+    <string name="diagnostics_clear_warning">Remove all local logs, crash records and prepared exports. Logging will continue. Copies already opened or saved by recipients cannot be recalled.</string>
+    <string name="diagnostics_unavailable">Diagnostics could not be read, exported or cleared. Check available storage and retry. No report was sent.</string>
+    <string name="diagnostics_recording_failed">Some error records could not be kept because recording failed or its queue was full. Retained logs may be incomplete. Check storage; Clear logs resets this warning.</string>
+    <string name="diagnostics_cleared">Local logs and prepared exports cleared. Logging continues.</string>
+    <string name="diagnostics_handoff_failed">Android could not open the browser or share menu. No issue was submitted. Retry, or use local export with a compatible app.</string>
     <string name="settings">Settings</string>
     <string name="back">Back</string>
     <string name="leave_a_tip">Leave a tip</string>
